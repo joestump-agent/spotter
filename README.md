@@ -60,7 +60,7 @@ Spotter is configured using environment variables. You can set these in your she
 | `SPOTTER_NAVIDROME_BASE_URL` | **Required.** The URL of your Navidrome instance. | *None* |
 | `SPOTTER_SPOTIFY_CLIENT_ID` | Spotify Client ID for API access. | *None* |
 | `SPOTTER_SPOTIFY_CLIENT_SECRET` | Spotify Client Secret. | *None* |
-| `SPOTTER_SPOTIFY_REDIRECT_URL` | OAuth callback URL for Spotify. | *None* |
+| `SPOTTER_SPOTIFY_REDIRECT_URL` | OAuth callback URL for Spotify. | `http://localhost:8080/auth/spotify/callback` |
 | `SPOTTER_LASTFM_API_KEY` | Last.fm API Key. | *None* |
 | `SPOTTER_LASTFM_SHARED_SECRET`| Last.fm Shared Secret. | *None* |
 | `SPOTTER_LASTFM_REDIRECT_URL` | Callback URL for Last.fm auth. | *None* |

@@ -4,6 +4,7 @@ spotter-server
 *.exe
 *.test
 *.out
+.env
 
 # Database
 spotter.db
