@@ -1,0 +1,65 @@
+package preferences
+
+import "spotter/internal/views/layouts"
+
+templ Index(spotifyConnected bool, lastfmConnected bool) {
+	@layouts.Dashboard("Preferences | Spotter") {
+		<div class="max-w-4xl mx-auto">
+            <div class="md:flex md:items-center md:justify-between mb-8">
+                <div class="min-w-0 flex-1">
+                    <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:truncate sm:text-3xl sm:tracking-tight">Preferences</h2>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <!-- Spotify Integration -->
+                <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Spotify Integration</h3>
+                        <div class="mt-2 max-w-xl text-sm text-gray-500 dark:text-gray-400">
+                            <p>Connect your Spotify account to import your listening history and get better recommendations.</p>
+                        </div>
+                        <div class="mt-5">
+                            if spotifyConnected {
+                                <div class="flex items-center space-x-4">
+                                    <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">Connected</span>
+                                    <form hx-post="/preferences/spotify/disconnect" hx-target="body">
+                                        <button type="submit" class="rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-white dark:ring-gray-600 dark:hover:bg-gray-600">Disconnect</button>
+                                    </form>
+                                </div>
+                            } else {
+                                <a href="/auth/spotify/login" class="inline-flex items-center rounded-md bg-[#1DB954] px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#1ed760] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1DB954]">
+                                    Connect Spotify
+                                </a>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Last.fm Integration -->
+                <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Last.fm Integration</h3>
+                        <div class="mt-2 max-w-xl text-sm text-gray-500 dark:text-gray-400">
+                            <p>Connect your Last.fm account to scrobble tracks and improve recommendations.</p>
+                        </div>
+                        <div class="mt-5">
+                             if lastfmConnected {
+                                <div class="flex items-center space-x-4">
+                                    <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">Connected</span>
+                                    <form hx-post="/preferences/lastfm/disconnect" hx-target="body">
+                                        <button type="submit" class="rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-white dark:ring-gray-600 dark:hover:bg-gray-600">Disconnect</button>
+                                    </form>
+                                </div>
+                            } else {
+                                <a href="/auth/lastfm/login" class="inline-flex items-center rounded-md bg-[#BA0000] px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#d51007] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#BA0000]">
+                                    Connect Last.fm
+                                </a>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+		</div>
+	}
+}

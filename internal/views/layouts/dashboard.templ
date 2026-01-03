@@ -1,0 +1,61 @@
+package layouts
+
+import "spotter/internal/views/icons"
+
+templ Dashboard(title string) {
+	@Base(title) {
+		<div class="flex h-screen overflow-hidden">
+			<!-- Sidebar -->
+			<aside class="w-64 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hidden md:flex md:flex-col">
+				<div class="h-full flex flex-col">
+					<!-- Logo / Brand -->
+					<div class="h-16 flex items-center justify-center border-b border-gray-200 dark:border-gray-700">
+						<h1 class="text-xl font-bold text-indigo-600 dark:text-indigo-400">Spotter</h1>
+					</div>
+					<!-- Nav -->
+					<nav class="flex-1 px-2 py-4 space-y-2">
+						<a href="/" class="flex items-center px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group">
+							@icons.Home("mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white")
+							Home
+						</a>
+						<a href="/recent" class="flex items-center px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group">
+							@icons.Clock("mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white")
+							Recent Listens
+						</a>
+						<a href="/preferences" class="flex items-center px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group">
+							@icons.Cog6Tooth("mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white")
+							Preferences
+						</a>
+					</nav>
+					<!-- Theme Toggle -->
+					<div class="border-t border-gray-200 dark:border-gray-700 p-4">
+						<button
+							type="button"
+							class="flex w-full items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group"
+							onclick="
+                                if (localStorage.theme === 'dark') {
+                                    localStorage.theme = 'light';
+                                    document.documentElement.classList.remove('dark');
+                                } else {
+                                    localStorage.theme = 'dark';
+                                    document.documentElement.classList.add('dark');
+                                }
+                            "
+						>
+							@icons.Sun("mr-3 h-6 w-6 hidden dark:block text-gray-400 group-hover:text-white")
+							@icons.Moon("mr-3 h-6 w-6 block dark:hidden text-gray-500 group-hover:text-gray-900")
+							<span class="block dark:hidden">Dark Mode</span>
+							<span class="hidden dark:block">Light Mode</span>
+						</button>
+					</div>
+				</div>
+			</aside>
+			<!-- Main Content -->
+			<main class="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
+				<div class="p-8">
+					{ children... }
+				</div>
+			</main>
+		</div>
+	}
+}

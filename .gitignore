@@ -1,0 +1,32 @@
+# Binaries
+bin/
+spotter-server
+*.exe
+*.test
+*.out
+
+# Database
+spotter.db
+*.sqlite
+*.sqlite3
+
+# Node
+node_modules/
+npm-debug.log
+
+# CSS (generated)
+static/css/output.css
+
+# Templ (generated)
+*_templ.go
+
+# Vendor
+vendor/
+
+# OS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,73 @@
+package recent
+
+import (
+	"spotter/ent"
+	"spotter/internal/views/layouts"
+	"time"
+)
+
+templ Index(listens []*ent.Listen) {
+	@layouts.Dashboard("Recent Listens | Spotter") {
+		<div class="max-w-6xl mx-auto">
+			<div class="md:flex md:items-center md:justify-between mb-8">
+				<div class="min-w-0 flex-1">
+					<h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:truncate sm:text-3xl sm:tracking-tight">Recent Listens</h2>
+				</div>
+				<div class="mt-4 flex md:ml-4 md:mt-0">
+					<button hx-post="/recent/refresh" hx-target="body" class="inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-white dark:ring-gray-600 dark:hover:bg-gray-600">
+						Refresh
+					</button>
+				</div>
+			</div>
+			<div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg overflow-hidden">
+				<div class="flow-root">
+					<div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+						<div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+							<table class="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
+								<thead class="bg-gray-50 dark:bg-gray-900">
+									<tr>
+										<th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-white sm:pl-6">Track</th>
+										<th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Artist</th>
+										<th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Album</th>
+										<th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Source</th>
+										<th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-white">Played At</th>
+									</tr>
+								</thead>
+								<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+									for _, listen := range listens {
+										<tr>
+											<td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-white sm:pl-6">
+												if listen.URL != "" {
+													<a href={ templ.URL(listen.URL) } target="_blank" class="hover:underline">{ listen.TrackName }</a>
+												} else {
+													{ listen.TrackName }
+												}
+											</td>
+											<td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{ listen.ArtistName }</td>
+											<td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{ listen.AlbumName }</td>
+											<td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+												if listen.Source == "spotify" {
+													<span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">Spotify</span>
+												} else if listen.Source == "navidrome" {
+													<span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20">Navidrome</span>
+												} else {
+													<span class="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">{ listen.Source }</span>
+												}
+											</td>
+											<td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{ listen.PlayedAt.Local().Format(time.RFC822) }</td>
+										</tr>
+									}
+									if len(listens) == 0 {
+										<tr>
+											<td colspan="5" class="py-10 text-center text-sm text-gray-500 dark:text-gray-400">No recent listens found.</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	}
+}

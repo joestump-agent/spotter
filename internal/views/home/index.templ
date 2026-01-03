@@ -1,0 +1,40 @@
+package home
+
+import "spotter/internal/views/layouts"
+
+templ Index() {
+	@layouts.Dashboard("Home | Spotter") {
+		<div class="max-w-4xl mx-auto">
+            <div class="md:flex md:items-center md:justify-between mb-8">
+                <div class="min-w-0 flex-1">
+                    <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:truncate sm:text-3xl sm:tracking-tight">AI Playlist Generator</h2>
+                </div>
+            </div>
+
+			<div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg mb-8">
+				<div class="px-4 py-5 sm:p-6">
+					<h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Create a new playlist</h3>
+					<div class="mt-2 max-w-xl text-sm text-gray-500 dark:text-gray-400">
+						<p>Enter a prompt below to generate a playlist based on your listening history and preferences.</p>
+					</div>
+					<form class="mt-5" hx-post="/generate" hx-target="#results" hx-indicator="#loading">
+						<div class="w-full">
+							<label for="prompt" class="sr-only">Prompt</label>
+                            <textarea id="prompt" name="prompt" rows="4" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 dark:bg-gray-700 dark:text-white dark:ring-gray-600" placeholder="e.g. A chill mix for coding on a rainy Sunday afternoon..."></textarea>
+						</div>
+						<div class="mt-4 flex items-center justify-between">
+                            <div id="loading" class="htmx-indicator text-sm text-indigo-600 dark:text-indigo-400 font-semibold animate-pulse">
+                                Generating playlist...
+                            </div>
+							<button type="submit" class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">Generate Playlist</button>
+						</div>
+					</form>
+				</div>
+			</div>
+
+            <div id="results" class="space-y-4">
+                <!-- Results will be loaded here -->
+            </div>
+		</div>
+	}
+}
