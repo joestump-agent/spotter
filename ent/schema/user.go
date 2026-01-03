@@ -20,6 +20,12 @@ func (User) Fields() []ent.Field {
 			Unique(),
 		field.String("email").
 			Optional(),
+		field.String("theme").
+			Default("dark"),
+		field.Text("system_prompt").
+			Optional(),
+		field.Int("pagination_size").
+			Default(25),
 		field.Time("last_login_at").
 			Default(time.Now),
 	}
@@ -34,6 +40,11 @@ func (User) Edges() []ent.Edge {
 			Unique(),
 		edge.To("navidrome_auth", NavidromeAuth.Type).
 			Unique(),
+		edge.To("playlists", Playlist.Type),
 		edge.To("listens", Listen.Type),
+		edge.To("sync_events", SyncEvent.Type),
+		// Catalog edges for metadata enrichment
+		edge.To("artists", Artist.Type),
+		edge.To("albums", Album.Type),
 	}
 }

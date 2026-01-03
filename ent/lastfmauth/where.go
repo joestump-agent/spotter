@@ -4,6 +4,7 @@ package lastfmauth
 
 import (
 	"spotter/ent/predicate"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -54,6 +55,11 @@ func IDLTE(id int) predicate.LastFMAuth {
 	return predicate.LastFMAuth(sql.FieldLTE(FieldID, id))
 }
 
+// LastSyncedAt applies equality check predicate on the "last_synced_at" field. It's identical to LastSyncedAtEQ.
+func LastSyncedAt(v time.Time) predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldEQ(FieldLastSyncedAt, v))
+}
+
 // SessionKey applies equality check predicate on the "session_key" field. It's identical to SessionKeyEQ.
 func SessionKey(v string) predicate.LastFMAuth {
 	return predicate.LastFMAuth(sql.FieldEQ(FieldSessionKey, v))
@@ -62,6 +68,56 @@ func SessionKey(v string) predicate.LastFMAuth {
 // Username applies equality check predicate on the "username" field. It's identical to UsernameEQ.
 func Username(v string) predicate.LastFMAuth {
 	return predicate.LastFMAuth(sql.FieldEQ(FieldUsername, v))
+}
+
+// LastSyncedAtEQ applies the EQ predicate on the "last_synced_at" field.
+func LastSyncedAtEQ(v time.Time) predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldEQ(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtNEQ applies the NEQ predicate on the "last_synced_at" field.
+func LastSyncedAtNEQ(v time.Time) predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldNEQ(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtIn applies the In predicate on the "last_synced_at" field.
+func LastSyncedAtIn(vs ...time.Time) predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldIn(FieldLastSyncedAt, vs...))
+}
+
+// LastSyncedAtNotIn applies the NotIn predicate on the "last_synced_at" field.
+func LastSyncedAtNotIn(vs ...time.Time) predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldNotIn(FieldLastSyncedAt, vs...))
+}
+
+// LastSyncedAtGT applies the GT predicate on the "last_synced_at" field.
+func LastSyncedAtGT(v time.Time) predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldGT(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtGTE applies the GTE predicate on the "last_synced_at" field.
+func LastSyncedAtGTE(v time.Time) predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldGTE(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtLT applies the LT predicate on the "last_synced_at" field.
+func LastSyncedAtLT(v time.Time) predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldLT(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtLTE applies the LTE predicate on the "last_synced_at" field.
+func LastSyncedAtLTE(v time.Time) predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldLTE(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtIsNil applies the IsNil predicate on the "last_synced_at" field.
+func LastSyncedAtIsNil() predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldIsNull(FieldLastSyncedAt))
+}
+
+// LastSyncedAtNotNil applies the NotNil predicate on the "last_synced_at" field.
+func LastSyncedAtNotNil() predicate.LastFMAuth {
+	return predicate.LastFMAuth(sql.FieldNotNull(FieldLastSyncedAt))
 }
 
 // SessionKeyEQ applies the EQ predicate on the "session_key" field.

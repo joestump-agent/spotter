@@ -1,34 +1,85 @@
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
+
 BINARY_NAME=spotter-server
 MAIN_PATH=./cmd/server/main.go
 
-.PHONY: all deps generate css build run clean docker-build test
+.PHONY: all help deps generate css build run dev test test-coverage clean docker-build docker-run
 
 all: build
 
-deps:
+help: ## Show this help message
+	@echo 'Usage:'
+	@echo '  make [target]'
+	@echo ''
+	@echo 'Available targets:'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+deps: ## Install all dependencies (Go, Node, tools)
+	@echo "Installing Go dependencies..."
 	go mod download
+	@echo "Installing development tools..."
 	go install github.com/a-h/templ/cmd/templ@latest
+	go install github.com/air-verse/air@latest
+	@echo "Installing Node dependencies..."
 	npm install
+	@echo "✓ Dependencies installed"
 
-generate:
+generate: ## Generate code (Ent schemas and Templ templates)
+	@echo "Generating Ent code..."
 	go generate ./ent
+	@echo "Generating Templ templates..."
 	templ generate
+	@echo "✓ Code generation complete"
 
-css:
+css: ## Build CSS from Tailwind
+	@echo "Building CSS..."
 	npx tailwindcss -i ./static/css/input.css -o ./static/css/output.css --minify
+	@echo "✓ CSS built"
 
-build: generate css
+build: generate css ## Build the application binary
+	@echo "Building $(BINARY_NAME)..."
 	go build -o $(BINARY_NAME) $(MAIN_PATH)
+	@echo "✓ Build complete: $(BINARY_NAME)"
 
-run: build
-	./$(BINARY_NAME)
+run: dev ## Alias for 'make dev'
 
-test: generate
+dev: ## Run development server with hot-reload (requires .env file)
+	@echo "Starting development server..."
+	@echo "Air: Go hot-reload on http://localhost:8080"
+	@echo "Templ: Template watching with proxy on http://localhost:7331"
+	@echo "Tailwind: CSS watching"
+	@echo ""
+	npx concurrently --kill-others --prefix none \
+		"air" \
+		"templ generate --watch --proxy='http://localhost:8080' --open-browser=false" \
+		"npx tailwindcss -i ./static/css/input.css -o ./static/css/output.css --watch"
+
+test: generate ## Run all tests
+	@echo "Running tests..."
 	go test -v ./...
 
-clean:
+test-coverage: generate ## Run tests with coverage report
+	@echo "Running tests with coverage..."
+	go test -v -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "✓ Coverage report generated: coverage.html"
+
+clean: ## Remove build artifacts
+	@echo "Cleaning build artifacts..."
 	rm -f $(BINARY_NAME)
 	rm -f ./static/css/output.css
+	rm -f coverage.out coverage.html
+	rm -rf tmp/
+	@echo "✓ Clean complete"
 
-docker-build:
+docker-build: ## Build Docker image
+	@echo "Building Docker image..."
 	docker build -t spotter .
+	@echo "✓ Docker image built: spotter"
+
+docker-run: ## Run application in Docker
+	@echo "Starting Spotter in Docker..."
+	docker run -p 8080:8080 --env-file .env spotter

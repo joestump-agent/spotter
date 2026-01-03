@@ -1,0 +1,429 @@
+package preferences
+
+import (
+	"spotter/internal/views/layouts"
+	"spotter/ent"
+	"spotter/internal/config"
+	"time"
+)
+
+func formatISO(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+templ Providers(user *ent.User, spotifyAuth *ent.SpotifyAuth, lastfmAuth *ent.LastFMAuth, navidromeAuth *ent.NavidromeAuth, cfg *config.Config) {
+	@layouts.Dashboard("Providers | Spotter", cfg, "/preferences/providers") {
+		<div class="max-w-5xl mx-auto">
+			<div class="mb-8">
+				<h2 class="text-3xl font-bold">Providers</h2>
+				<p class="text-base-content/60 mt-2">Manage your connected music services</p>
+			</div>
+
+			<div class="space-y-6">
+				<!-- Navidrome -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--musical-note] w-6 h-6" style="color: #4285F4;"></span>
+							Navidrome
+						</h3>
+						<p class="text-base-content/60 text-sm mt-2">
+							Your primary music server. Authentication is managed through your login credentials.
+						</p>
+						<div class="mt-4 space-y-3">
+							if navidromeAuth != nil {
+								<div>
+									<div class="inline-flex items-stretch rounded-lg overflow-visible">
+										<div class="btn min-w-56 gap-2 rounded-r-none pointer-events-none" style="background-color: #4285F4; border-color: #4285F4; color: white;">
+											<span class="icon-[heroicons--check-circle] w-5 h-5"></span>
+											Connected as { user.Username }
+										</div>
+										<div class="w-px bg-white/30"></div>
+										<details class="dropdown dropdown-end group">
+											<summary class="btn rounded-l-none border-l-0 list-none [&::-webkit-details-marker]:hidden" style="background-color: #4285F4; border-color: #4285F4; color: white;">
+												<span class="icon-[heroicons--chevron-down] w-5 h-5 transition-transform duration-200 group-open:rotate-180"></span>
+											</summary>
+											<ul class="dropdown-content menu bg-base-100 rounded-box z-50 w-52 p-2 shadow-xl border border-base-300 mt-1">
+												<li>
+													<button
+														hx-post="/preferences/navidrome/sync"
+														hx-swap="none"
+														class="flex items-center gap-2"
+														onclick="this.closest('details').removeAttribute('open')"
+													>
+														<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
+														Sync Now
+													</button>
+												</li>
+												<li>
+													<button
+														onclick="this.closest('details').removeAttribute('open'); document.getElementById('navidrome-rebuild-modal').showModal()"
+														class="flex items-center gap-2 text-warning"
+													>
+														<span class="icon-[heroicons--trash] w-4 h-4"></span>
+														Rebuild Data
+													</button>
+												</li>
+												<div class="divider my-1"></div>
+												<li>
+													<button
+														onclick="this.closest('details').removeAttribute('open'); document.getElementById('navidrome-logout-modal').showModal()"
+														class="flex items-center gap-2 text-error"
+													>
+														<span class="icon-[heroicons--arrow-right-on-rectangle] w-4 h-4"></span>
+														Log Out
+													</button>
+												</li>
+											</ul>
+										</details>
+									</div>
+									if !navidromeAuth.LastSyncedAt.IsZero() {
+										<div class="text-xs text-base-content/60 mt-2">
+											Last synced: <span class="timeago" datetime={ formatISO(navidromeAuth.LastSyncedAt) }>{ navidromeAuth.LastSyncedAt.Local().Format("Jan 02, 2006 at 3:04 PM") }</span>
+										</div>
+									} else {
+										<div class="text-xs text-base-content/60 mt-2">Never synced</div>
+									}
+								</div>
+								<!-- Navidrome Logout Modal -->
+								<dialog id="navidrome-logout-modal" class="modal">
+									<div class="modal-box">
+										<h3 class="font-bold text-lg">Log Out from Navidrome</h3>
+										<p class="py-4">Are you sure you want to log out? You will need to log in again to access Spotter.</p>
+										<div class="modal-action">
+											<form method="dialog">
+												<button class="btn btn-ghost">Cancel</button>
+											</form>
+											<a href="/logout" class="btn btn-error">
+												<span class="icon-[heroicons--arrow-right-on-rectangle] w-5 h-5"></span>
+												Log Out
+											</a>
+										</div>
+									</div>
+									<form method="dialog" class="modal-backdrop">
+										<button>close</button>
+									</form>
+								</dialog>
+								<!-- Navidrome Rebuild Modal -->
+								<dialog id="navidrome-rebuild-modal" class="modal">
+									<div class="modal-box">
+										<h3 class="font-bold text-lg flex items-center gap-2">
+											<span class="icon-[heroicons--exclamation-triangle] w-6 h-6 text-warning"></span>
+											Rebuild Navidrome Data
+										</h3>
+										<p class="py-4">This will <strong>delete all listening history and playlists</strong> from Navidrome and re-sync everything from scratch. This action cannot be undone.</p>
+										<div class="modal-action">
+											<form method="dialog">
+												<button class="btn btn-ghost">Cancel</button>
+											</form>
+											<button
+												class="btn btn-warning"
+												hx-post="/preferences/navidrome/rebuild"
+												hx-swap="none"
+												onclick="document.getElementById('navidrome-rebuild-modal').close()"
+											>
+												<span class="icon-[heroicons--trash] w-5 h-5"></span>
+												Delete &amp; Rebuild
+											</button>
+										</div>
+									</div>
+									<form method="dialog" class="modal-backdrop">
+										<button>close</button>
+									</form>
+								</dialog>
+							} else {
+								<div class="badge badge-ghost badge-lg gap-2">
+									<span class="icon-[heroicons--x-circle] w-4 h-4"></span>
+									Not Connected
+								</div>
+							}
+						</div>
+					</div>
+				</div>
+
+				<!-- Spotify -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[simple-icons--spotify] w-6 h-6 text-success"></span>
+							Spotify
+						</h3>
+						<p class="text-base-content/60 text-sm mt-2">
+							Connect your Spotify account to import listening history and get better recommendations.
+						</p>
+						<div class="mt-4">
+							if spotifyAuth != nil {
+								<div>
+									<div class="inline-flex items-stretch rounded-lg overflow-visible">
+										<div class="btn btn-success min-w-56 gap-2 rounded-r-none pointer-events-none">
+											<span class="icon-[heroicons--check-circle] w-5 h-5"></span>
+											if spotifyAuth.DisplayName != "" {
+												Connected as { spotifyAuth.DisplayName }
+											} else {
+												Connected
+											}
+										</div>
+										<div class="w-px bg-success-content/30"></div>
+										<details class="dropdown dropdown-end group">
+											<summary class="btn btn-success rounded-l-none border-l-0 list-none [&::-webkit-details-marker]:hidden">
+												<span class="icon-[heroicons--chevron-down] w-5 h-5 transition-transform duration-200 group-open:rotate-180"></span>
+											</summary>
+											<ul class="dropdown-content menu bg-base-100 rounded-box z-50 w-52 p-2 shadow-xl border border-base-300 mt-1">
+												<li>
+													<button
+														hx-post="/preferences/spotify/sync"
+														hx-swap="none"
+														class="flex items-center gap-2"
+														onclick="this.closest('details').removeAttribute('open')"
+													>
+														<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
+														Sync Now
+													</button>
+												</li>
+												<li>
+													<button
+														onclick="this.closest('details').removeAttribute('open'); document.getElementById('spotify-rebuild-modal').showModal()"
+														class="flex items-center gap-2 text-warning"
+													>
+														<span class="icon-[heroicons--trash] w-4 h-4"></span>
+														Rebuild Data
+													</button>
+												</li>
+												<div class="divider my-1"></div>
+												<li>
+													<button
+														onclick="this.closest('details').removeAttribute('open'); document.getElementById('spotify-disconnect-modal').showModal()"
+														class="flex items-center gap-2 text-error"
+													>
+														<span class="icon-[heroicons--x-mark] w-4 h-4"></span>
+														Disconnect
+													</button>
+												</li>
+											</ul>
+										</details>
+									</div>
+									if !spotifyAuth.LastSyncedAt.IsZero() {
+										<div class="text-xs text-base-content/60 mt-2">
+											Last synced: <span class="timeago" datetime={ formatISO(spotifyAuth.LastSyncedAt) }>{ spotifyAuth.LastSyncedAt.Local().Format("Jan 02, 2006 at 3:04 PM") }</span>
+										</div>
+									} else {
+										<div class="text-xs text-base-content/60 mt-2">Never synced</div>
+									}
+								</div>
+								<!-- Spotify Disconnect Modal -->
+								<dialog id="spotify-disconnect-modal" class="modal">
+									<div class="modal-box">
+										<h3 class="font-bold text-lg">Disconnect from Spotify</h3>
+										<p class="py-4">Are you sure you want to disconnect your Spotify account? Your synced data will remain, but no new data will be imported.</p>
+										<div class="modal-action">
+											<form method="dialog">
+												<button class="btn btn-ghost">Cancel</button>
+											</form>
+											<button
+												class="btn btn-error"
+												hx-post="/preferences/spotify/disconnect"
+												hx-target="body"
+												onclick="document.getElementById('spotify-disconnect-modal').close()"
+											>
+												<span class="icon-[heroicons--x-mark] w-5 h-5"></span>
+												Disconnect
+											</button>
+										</div>
+									</div>
+									<form method="dialog" class="modal-backdrop">
+										<button>close</button>
+									</form>
+								</dialog>
+								<!-- Spotify Rebuild Modal -->
+								<dialog id="spotify-rebuild-modal" class="modal">
+									<div class="modal-box">
+										<h3 class="font-bold text-lg flex items-center gap-2">
+											<span class="icon-[heroicons--exclamation-triangle] w-6 h-6 text-warning"></span>
+											Rebuild Spotify Data
+										</h3>
+										<p class="py-4">This will <strong>delete all listening history and playlists</strong> from Spotify and re-sync everything from scratch. This action cannot be undone.</p>
+										<div class="modal-action">
+											<form method="dialog">
+												<button class="btn btn-ghost">Cancel</button>
+											</form>
+											<button
+												class="btn btn-warning"
+												hx-post="/preferences/spotify/rebuild"
+												hx-swap="none"
+												onclick="document.getElementById('spotify-rebuild-modal').close()"
+											>
+												<span class="icon-[heroicons--trash] w-5 h-5"></span>
+												Delete &amp; Rebuild
+											</button>
+										</div>
+									</div>
+									<form method="dialog" class="modal-backdrop">
+										<button>close</button>
+									</form>
+								</dialog>
+							} else {
+								<a href="/auth/spotify/login" class="btn btn-success min-w-64 gap-2">
+									<span class="icon-[simple-icons--spotify] w-5 h-5"></span>
+									Connect Spotify
+								</a>
+							}
+						</div>
+					</div>
+				</div>
+
+				<!-- Last.fm -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[simple-icons--lastdotfm] w-6 h-6 text-error"></span>
+							Last.fm
+							<span class="badge badge-outline badge-sm">Coming Soon</span>
+						</h3>
+						<p class="text-base-content/60 text-sm mt-2">
+							Connect your Last.fm account to scrobble tracks and improve recommendations.
+						</p>
+						<div class="mt-4">
+							if lastfmAuth != nil {
+								<div>
+									<div class="inline-flex items-stretch rounded-lg overflow-visible">
+										<div class="btn btn-error min-w-56 gap-2 rounded-r-none pointer-events-none">
+											<span class="icon-[heroicons--check-circle] w-5 h-5"></span>
+											Connected as { lastfmAuth.Username }
+										</div>
+										<div class="w-px bg-error-content/30"></div>
+										<details class="dropdown dropdown-end group">
+											<summary class="btn btn-error rounded-l-none border-l-0 list-none [&::-webkit-details-marker]:hidden">
+												<span class="icon-[heroicons--chevron-down] w-5 h-5 transition-transform duration-200 group-open:rotate-180"></span>
+											</summary>
+											<ul class="dropdown-content menu bg-base-100 rounded-box z-50 w-52 p-2 shadow-xl border border-base-300 mt-1">
+												<li>
+													<button
+														hx-post="/preferences/lastfm/sync"
+														hx-swap="none"
+														class="flex items-center gap-2"
+														onclick="this.closest('details').removeAttribute('open')"
+													>
+														<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
+														Sync Now
+													</button>
+												</li>
+												<li>
+													<button
+														onclick="this.closest('details').removeAttribute('open'); document.getElementById('lastfm-rebuild-modal').showModal()"
+														class="flex items-center gap-2 text-warning"
+													>
+														<span class="icon-[heroicons--trash] w-4 h-4"></span>
+														Rebuild Data
+													</button>
+												</li>
+												<div class="divider my-1"></div>
+												<li>
+													<button
+														onclick="this.closest('details').removeAttribute('open'); document.getElementById('lastfm-disconnect-modal').showModal()"
+														class="flex items-center gap-2 text-error"
+													>
+														<span class="icon-[heroicons--x-mark] w-4 h-4"></span>
+														Disconnect
+													</button>
+												</li>
+											</ul>
+										</details>
+									</div>
+									if !lastfmAuth.LastSyncedAt.IsZero() {
+										<div class="text-xs text-base-content/60 mt-2">
+											Last synced: <span class="timeago" datetime={ formatISO(lastfmAuth.LastSyncedAt) }>{ lastfmAuth.LastSyncedAt.Local().Format("Jan 02, 2006 at 3:04 PM") }</span>
+										</div>
+									} else {
+										<div class="text-xs text-base-content/60 mt-2">Never synced</div>
+									}
+								</div>
+								<!-- Last.fm Disconnect Modal -->
+								<dialog id="lastfm-disconnect-modal" class="modal">
+									<div class="modal-box">
+										<h3 class="font-bold text-lg">Disconnect from Last.fm</h3>
+										<p class="py-4">Are you sure you want to disconnect your Last.fm account? Your synced data will remain, but no new data will be imported.</p>
+										<div class="modal-action">
+											<form method="dialog">
+												<button class="btn btn-ghost">Cancel</button>
+											</form>
+											<button
+												class="btn btn-error"
+												hx-post="/preferences/lastfm/disconnect"
+												hx-target="body"
+												onclick="document.getElementById('lastfm-disconnect-modal').close()"
+											>
+												<span class="icon-[heroicons--x-mark] w-5 h-5"></span>
+												Disconnect
+											</button>
+										</div>
+									</div>
+									<form method="dialog" class="modal-backdrop">
+										<button>close</button>
+									</form>
+								</dialog>
+								<!-- Last.fm Rebuild Modal -->
+								<dialog id="lastfm-rebuild-modal" class="modal">
+									<div class="modal-box">
+										<h3 class="font-bold text-lg flex items-center gap-2">
+											<span class="icon-[heroicons--exclamation-triangle] w-6 h-6 text-warning"></span>
+											Rebuild Last.fm Data
+										</h3>
+										<p class="py-4">This will <strong>delete all listening history</strong> from Last.fm and re-sync everything from scratch. This action cannot be undone.</p>
+										<div class="modal-action">
+											<form method="dialog">
+												<button class="btn btn-ghost">Cancel</button>
+											</form>
+											<button
+												class="btn btn-warning"
+												hx-post="/preferences/lastfm/rebuild"
+												hx-swap="none"
+												onclick="document.getElementById('lastfm-rebuild-modal').close()"
+											>
+												<span class="icon-[heroicons--trash] w-5 h-5"></span>
+												Delete &amp; Rebuild
+											</button>
+										</div>
+									</div>
+									<form method="dialog" class="modal-backdrop">
+										<button>close</button>
+									</form>
+								</dialog>
+							} else {
+								<button class="btn btn-error min-w-64 gap-2 btn-disabled" disabled>
+									<span class="icon-[simple-icons--lastdotfm] w-5 h-5"></span>
+									Connect Last.fm
+								</button>
+								<p class="text-xs text-base-content/50 mt-2">Last.fm integration is coming soon.</p>
+							}
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Timeago script -->
+		<script>
+			// Initialize timeago for all elements with the timeago class
+			(function() {
+				if (typeof timeago !== 'undefined') {
+					const nodes = document.querySelectorAll('.timeago');
+					if (nodes.length > 0) {
+						timeago.render(nodes);
+					}
+				}
+			})();
+
+			// Close dropdowns when clicking outside
+			document.addEventListener('click', function(e) {
+				if (!e.target.closest('details.dropdown')) {
+					document.querySelectorAll('details.dropdown[open]').forEach(function(details) {
+						details.removeAttribute('open');
+					});
+				}
+			});
+		</script>
+	}
+}

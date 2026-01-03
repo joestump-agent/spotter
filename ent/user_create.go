@@ -6,10 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"spotter/ent/album"
+	"spotter/ent/artist"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
 	"spotter/ent/navidromeauth"
+	"spotter/ent/playlist"
 	"spotter/ent/spotifyauth"
+	"spotter/ent/syncevent"
 	"spotter/ent/user"
 	"time"
 
@@ -40,6 +44,48 @@ func (_c *UserCreate) SetEmail(v string) *UserCreate {
 func (_c *UserCreate) SetNillableEmail(v *string) *UserCreate {
 	if v != nil {
 		_c.SetEmail(*v)
+	}
+	return _c
+}
+
+// SetTheme sets the "theme" field.
+func (_c *UserCreate) SetTheme(v string) *UserCreate {
+	_c.mutation.SetTheme(v)
+	return _c
+}
+
+// SetNillableTheme sets the "theme" field if the given value is not nil.
+func (_c *UserCreate) SetNillableTheme(v *string) *UserCreate {
+	if v != nil {
+		_c.SetTheme(*v)
+	}
+	return _c
+}
+
+// SetSystemPrompt sets the "system_prompt" field.
+func (_c *UserCreate) SetSystemPrompt(v string) *UserCreate {
+	_c.mutation.SetSystemPrompt(v)
+	return _c
+}
+
+// SetNillableSystemPrompt sets the "system_prompt" field if the given value is not nil.
+func (_c *UserCreate) SetNillableSystemPrompt(v *string) *UserCreate {
+	if v != nil {
+		_c.SetSystemPrompt(*v)
+	}
+	return _c
+}
+
+// SetPaginationSize sets the "pagination_size" field.
+func (_c *UserCreate) SetPaginationSize(v int) *UserCreate {
+	_c.mutation.SetPaginationSize(v)
+	return _c
+}
+
+// SetNillablePaginationSize sets the "pagination_size" field if the given value is not nil.
+func (_c *UserCreate) SetNillablePaginationSize(v *int) *UserCreate {
+	if v != nil {
+		_c.SetPaginationSize(*v)
 	}
 	return _c
 }
@@ -115,6 +161,21 @@ func (_c *UserCreate) SetNavidromeAuth(v *NavidromeAuth) *UserCreate {
 	return _c.SetNavidromeAuthID(v.ID)
 }
 
+// AddPlaylistIDs adds the "playlists" edge to the Playlist entity by IDs.
+func (_c *UserCreate) AddPlaylistIDs(ids ...int) *UserCreate {
+	_c.mutation.AddPlaylistIDs(ids...)
+	return _c
+}
+
+// AddPlaylists adds the "playlists" edges to the Playlist entity.
+func (_c *UserCreate) AddPlaylists(v ...*Playlist) *UserCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddPlaylistIDs(ids...)
+}
+
 // AddListenIDs adds the "listens" edge to the Listen entity by IDs.
 func (_c *UserCreate) AddListenIDs(ids ...int) *UserCreate {
 	_c.mutation.AddListenIDs(ids...)
@@ -128,6 +189,51 @@ func (_c *UserCreate) AddListens(v ...*Listen) *UserCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddListenIDs(ids...)
+}
+
+// AddSyncEventIDs adds the "sync_events" edge to the SyncEvent entity by IDs.
+func (_c *UserCreate) AddSyncEventIDs(ids ...int) *UserCreate {
+	_c.mutation.AddSyncEventIDs(ids...)
+	return _c
+}
+
+// AddSyncEvents adds the "sync_events" edges to the SyncEvent entity.
+func (_c *UserCreate) AddSyncEvents(v ...*SyncEvent) *UserCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddSyncEventIDs(ids...)
+}
+
+// AddArtistIDs adds the "artists" edge to the Artist entity by IDs.
+func (_c *UserCreate) AddArtistIDs(ids ...int) *UserCreate {
+	_c.mutation.AddArtistIDs(ids...)
+	return _c
+}
+
+// AddArtists adds the "artists" edges to the Artist entity.
+func (_c *UserCreate) AddArtists(v ...*Artist) *UserCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddArtistIDs(ids...)
+}
+
+// AddAlbumIDs adds the "albums" edge to the Album entity by IDs.
+func (_c *UserCreate) AddAlbumIDs(ids ...int) *UserCreate {
+	_c.mutation.AddAlbumIDs(ids...)
+	return _c
+}
+
+// AddAlbums adds the "albums" edges to the Album entity.
+func (_c *UserCreate) AddAlbums(v ...*Album) *UserCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAlbumIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -165,6 +271,14 @@ func (_c *UserCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *UserCreate) defaults() {
+	if _, ok := _c.mutation.Theme(); !ok {
+		v := user.DefaultTheme
+		_c.mutation.SetTheme(v)
+	}
+	if _, ok := _c.mutation.PaginationSize(); !ok {
+		v := user.DefaultPaginationSize
+		_c.mutation.SetPaginationSize(v)
+	}
 	if _, ok := _c.mutation.LastLoginAt(); !ok {
 		v := user.DefaultLastLoginAt()
 		_c.mutation.SetLastLoginAt(v)
@@ -175,6 +289,12 @@ func (_c *UserCreate) defaults() {
 func (_c *UserCreate) check() error {
 	if _, ok := _c.mutation.Username(); !ok {
 		return &ValidationError{Name: "username", err: errors.New(`ent: missing required field "User.username"`)}
+	}
+	if _, ok := _c.mutation.Theme(); !ok {
+		return &ValidationError{Name: "theme", err: errors.New(`ent: missing required field "User.theme"`)}
+	}
+	if _, ok := _c.mutation.PaginationSize(); !ok {
+		return &ValidationError{Name: "pagination_size", err: errors.New(`ent: missing required field "User.pagination_size"`)}
 	}
 	if _, ok := _c.mutation.LastLoginAt(); !ok {
 		return &ValidationError{Name: "last_login_at", err: errors.New(`ent: missing required field "User.last_login_at"`)}
@@ -212,6 +332,18 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Email(); ok {
 		_spec.SetField(user.FieldEmail, field.TypeString, value)
 		_node.Email = value
+	}
+	if value, ok := _c.mutation.Theme(); ok {
+		_spec.SetField(user.FieldTheme, field.TypeString, value)
+		_node.Theme = value
+	}
+	if value, ok := _c.mutation.SystemPrompt(); ok {
+		_spec.SetField(user.FieldSystemPrompt, field.TypeString, value)
+		_node.SystemPrompt = value
+	}
+	if value, ok := _c.mutation.PaginationSize(); ok {
+		_spec.SetField(user.FieldPaginationSize, field.TypeInt, value)
+		_node.PaginationSize = value
 	}
 	if value, ok := _c.mutation.LastLoginAt(); ok {
 		_spec.SetField(user.FieldLastLoginAt, field.TypeTime, value)
@@ -265,6 +397,22 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.PlaylistsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PlaylistsTable,
+			Columns: []string{user.PlaylistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(playlist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	if nodes := _c.mutation.ListensIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -274,6 +422,54 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SyncEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SyncEventsTable,
+			Columns: []string{user.SyncEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(syncevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ArtistsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ArtistsTable,
+			Columns: []string{user.ArtistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AlbumsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AlbumsTable,
+			Columns: []string{user.AlbumsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

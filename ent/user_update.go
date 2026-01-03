@@ -6,11 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"spotter/ent/album"
+	"spotter/ent/artist"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
 	"spotter/ent/navidromeauth"
+	"spotter/ent/playlist"
 	"spotter/ent/predicate"
 	"spotter/ent/spotifyauth"
+	"spotter/ent/syncevent"
 	"spotter/ent/user"
 	"time"
 
@@ -63,6 +67,61 @@ func (_u *UserUpdate) SetNillableEmail(v *string) *UserUpdate {
 // ClearEmail clears the value of the "email" field.
 func (_u *UserUpdate) ClearEmail() *UserUpdate {
 	_u.mutation.ClearEmail()
+	return _u
+}
+
+// SetTheme sets the "theme" field.
+func (_u *UserUpdate) SetTheme(v string) *UserUpdate {
+	_u.mutation.SetTheme(v)
+	return _u
+}
+
+// SetNillableTheme sets the "theme" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableTheme(v *string) *UserUpdate {
+	if v != nil {
+		_u.SetTheme(*v)
+	}
+	return _u
+}
+
+// SetSystemPrompt sets the "system_prompt" field.
+func (_u *UserUpdate) SetSystemPrompt(v string) *UserUpdate {
+	_u.mutation.SetSystemPrompt(v)
+	return _u
+}
+
+// SetNillableSystemPrompt sets the "system_prompt" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableSystemPrompt(v *string) *UserUpdate {
+	if v != nil {
+		_u.SetSystemPrompt(*v)
+	}
+	return _u
+}
+
+// ClearSystemPrompt clears the value of the "system_prompt" field.
+func (_u *UserUpdate) ClearSystemPrompt() *UserUpdate {
+	_u.mutation.ClearSystemPrompt()
+	return _u
+}
+
+// SetPaginationSize sets the "pagination_size" field.
+func (_u *UserUpdate) SetPaginationSize(v int) *UserUpdate {
+	_u.mutation.ResetPaginationSize()
+	_u.mutation.SetPaginationSize(v)
+	return _u
+}
+
+// SetNillablePaginationSize sets the "pagination_size" field if the given value is not nil.
+func (_u *UserUpdate) SetNillablePaginationSize(v *int) *UserUpdate {
+	if v != nil {
+		_u.SetPaginationSize(*v)
+	}
+	return _u
+}
+
+// AddPaginationSize adds value to the "pagination_size" field.
+func (_u *UserUpdate) AddPaginationSize(v int) *UserUpdate {
+	_u.mutation.AddPaginationSize(v)
 	return _u
 }
 
@@ -137,6 +196,21 @@ func (_u *UserUpdate) SetNavidromeAuth(v *NavidromeAuth) *UserUpdate {
 	return _u.SetNavidromeAuthID(v.ID)
 }
 
+// AddPlaylistIDs adds the "playlists" edge to the Playlist entity by IDs.
+func (_u *UserUpdate) AddPlaylistIDs(ids ...int) *UserUpdate {
+	_u.mutation.AddPlaylistIDs(ids...)
+	return _u
+}
+
+// AddPlaylists adds the "playlists" edges to the Playlist entity.
+func (_u *UserUpdate) AddPlaylists(v ...*Playlist) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddPlaylistIDs(ids...)
+}
+
 // AddListenIDs adds the "listens" edge to the Listen entity by IDs.
 func (_u *UserUpdate) AddListenIDs(ids ...int) *UserUpdate {
 	_u.mutation.AddListenIDs(ids...)
@@ -150,6 +224,51 @@ func (_u *UserUpdate) AddListens(v ...*Listen) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.AddListenIDs(ids...)
+}
+
+// AddSyncEventIDs adds the "sync_events" edge to the SyncEvent entity by IDs.
+func (_u *UserUpdate) AddSyncEventIDs(ids ...int) *UserUpdate {
+	_u.mutation.AddSyncEventIDs(ids...)
+	return _u
+}
+
+// AddSyncEvents adds the "sync_events" edges to the SyncEvent entity.
+func (_u *UserUpdate) AddSyncEvents(v ...*SyncEvent) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSyncEventIDs(ids...)
+}
+
+// AddArtistIDs adds the "artists" edge to the Artist entity by IDs.
+func (_u *UserUpdate) AddArtistIDs(ids ...int) *UserUpdate {
+	_u.mutation.AddArtistIDs(ids...)
+	return _u
+}
+
+// AddArtists adds the "artists" edges to the Artist entity.
+func (_u *UserUpdate) AddArtists(v ...*Artist) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddArtistIDs(ids...)
+}
+
+// AddAlbumIDs adds the "albums" edge to the Album entity by IDs.
+func (_u *UserUpdate) AddAlbumIDs(ids ...int) *UserUpdate {
+	_u.mutation.AddAlbumIDs(ids...)
+	return _u
+}
+
+// AddAlbums adds the "albums" edges to the Album entity.
+func (_u *UserUpdate) AddAlbums(v ...*Album) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddAlbumIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -175,6 +294,27 @@ func (_u *UserUpdate) ClearNavidromeAuth() *UserUpdate {
 	return _u
 }
 
+// ClearPlaylists clears all "playlists" edges to the Playlist entity.
+func (_u *UserUpdate) ClearPlaylists() *UserUpdate {
+	_u.mutation.ClearPlaylists()
+	return _u
+}
+
+// RemovePlaylistIDs removes the "playlists" edge to Playlist entities by IDs.
+func (_u *UserUpdate) RemovePlaylistIDs(ids ...int) *UserUpdate {
+	_u.mutation.RemovePlaylistIDs(ids...)
+	return _u
+}
+
+// RemovePlaylists removes "playlists" edges to Playlist entities.
+func (_u *UserUpdate) RemovePlaylists(v ...*Playlist) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemovePlaylistIDs(ids...)
+}
+
 // ClearListens clears all "listens" edges to the Listen entity.
 func (_u *UserUpdate) ClearListens() *UserUpdate {
 	_u.mutation.ClearListens()
@@ -194,6 +334,69 @@ func (_u *UserUpdate) RemoveListens(v ...*Listen) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveListenIDs(ids...)
+}
+
+// ClearSyncEvents clears all "sync_events" edges to the SyncEvent entity.
+func (_u *UserUpdate) ClearSyncEvents() *UserUpdate {
+	_u.mutation.ClearSyncEvents()
+	return _u
+}
+
+// RemoveSyncEventIDs removes the "sync_events" edge to SyncEvent entities by IDs.
+func (_u *UserUpdate) RemoveSyncEventIDs(ids ...int) *UserUpdate {
+	_u.mutation.RemoveSyncEventIDs(ids...)
+	return _u
+}
+
+// RemoveSyncEvents removes "sync_events" edges to SyncEvent entities.
+func (_u *UserUpdate) RemoveSyncEvents(v ...*SyncEvent) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSyncEventIDs(ids...)
+}
+
+// ClearArtists clears all "artists" edges to the Artist entity.
+func (_u *UserUpdate) ClearArtists() *UserUpdate {
+	_u.mutation.ClearArtists()
+	return _u
+}
+
+// RemoveArtistIDs removes the "artists" edge to Artist entities by IDs.
+func (_u *UserUpdate) RemoveArtistIDs(ids ...int) *UserUpdate {
+	_u.mutation.RemoveArtistIDs(ids...)
+	return _u
+}
+
+// RemoveArtists removes "artists" edges to Artist entities.
+func (_u *UserUpdate) RemoveArtists(v ...*Artist) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveArtistIDs(ids...)
+}
+
+// ClearAlbums clears all "albums" edges to the Album entity.
+func (_u *UserUpdate) ClearAlbums() *UserUpdate {
+	_u.mutation.ClearAlbums()
+	return _u
+}
+
+// RemoveAlbumIDs removes the "albums" edge to Album entities by IDs.
+func (_u *UserUpdate) RemoveAlbumIDs(ids ...int) *UserUpdate {
+	_u.mutation.RemoveAlbumIDs(ids...)
+	return _u
+}
+
+// RemoveAlbums removes "albums" edges to Album entities.
+func (_u *UserUpdate) RemoveAlbums(v ...*Album) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveAlbumIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -240,6 +443,21 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.EmailCleared() {
 		_spec.ClearField(user.FieldEmail, field.TypeString)
+	}
+	if value, ok := _u.mutation.Theme(); ok {
+		_spec.SetField(user.FieldTheme, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SystemPrompt(); ok {
+		_spec.SetField(user.FieldSystemPrompt, field.TypeString, value)
+	}
+	if _u.mutation.SystemPromptCleared() {
+		_spec.ClearField(user.FieldSystemPrompt, field.TypeString)
+	}
+	if value, ok := _u.mutation.PaginationSize(); ok {
+		_spec.SetField(user.FieldPaginationSize, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPaginationSize(); ok {
+		_spec.AddField(user.FieldPaginationSize, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.LastLoginAt(); ok {
 		_spec.SetField(user.FieldLastLoginAt, field.TypeTime, value)
@@ -331,6 +549,51 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.PlaylistsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PlaylistsTable,
+			Columns: []string{user.PlaylistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(playlist.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedPlaylistsIDs(); len(nodes) > 0 && !_u.mutation.PlaylistsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PlaylistsTable,
+			Columns: []string{user.PlaylistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(playlist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.PlaylistsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PlaylistsTable,
+			Columns: []string{user.PlaylistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(playlist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.ListensCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -369,6 +632,141 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SyncEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SyncEventsTable,
+			Columns: []string{user.SyncEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(syncevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSyncEventsIDs(); len(nodes) > 0 && !_u.mutation.SyncEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SyncEventsTable,
+			Columns: []string{user.SyncEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(syncevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SyncEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SyncEventsTable,
+			Columns: []string{user.SyncEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(syncevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ArtistsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ArtistsTable,
+			Columns: []string{user.ArtistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedArtistsIDs(); len(nodes) > 0 && !_u.mutation.ArtistsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ArtistsTable,
+			Columns: []string{user.ArtistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ArtistsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ArtistsTable,
+			Columns: []string{user.ArtistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AlbumsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AlbumsTable,
+			Columns: []string{user.AlbumsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedAlbumsIDs(); len(nodes) > 0 && !_u.mutation.AlbumsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AlbumsTable,
+			Columns: []string{user.AlbumsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AlbumsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AlbumsTable,
+			Columns: []string{user.AlbumsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -427,6 +825,61 @@ func (_u *UserUpdateOne) SetNillableEmail(v *string) *UserUpdateOne {
 // ClearEmail clears the value of the "email" field.
 func (_u *UserUpdateOne) ClearEmail() *UserUpdateOne {
 	_u.mutation.ClearEmail()
+	return _u
+}
+
+// SetTheme sets the "theme" field.
+func (_u *UserUpdateOne) SetTheme(v string) *UserUpdateOne {
+	_u.mutation.SetTheme(v)
+	return _u
+}
+
+// SetNillableTheme sets the "theme" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableTheme(v *string) *UserUpdateOne {
+	if v != nil {
+		_u.SetTheme(*v)
+	}
+	return _u
+}
+
+// SetSystemPrompt sets the "system_prompt" field.
+func (_u *UserUpdateOne) SetSystemPrompt(v string) *UserUpdateOne {
+	_u.mutation.SetSystemPrompt(v)
+	return _u
+}
+
+// SetNillableSystemPrompt sets the "system_prompt" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableSystemPrompt(v *string) *UserUpdateOne {
+	if v != nil {
+		_u.SetSystemPrompt(*v)
+	}
+	return _u
+}
+
+// ClearSystemPrompt clears the value of the "system_prompt" field.
+func (_u *UserUpdateOne) ClearSystemPrompt() *UserUpdateOne {
+	_u.mutation.ClearSystemPrompt()
+	return _u
+}
+
+// SetPaginationSize sets the "pagination_size" field.
+func (_u *UserUpdateOne) SetPaginationSize(v int) *UserUpdateOne {
+	_u.mutation.ResetPaginationSize()
+	_u.mutation.SetPaginationSize(v)
+	return _u
+}
+
+// SetNillablePaginationSize sets the "pagination_size" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillablePaginationSize(v *int) *UserUpdateOne {
+	if v != nil {
+		_u.SetPaginationSize(*v)
+	}
+	return _u
+}
+
+// AddPaginationSize adds value to the "pagination_size" field.
+func (_u *UserUpdateOne) AddPaginationSize(v int) *UserUpdateOne {
+	_u.mutation.AddPaginationSize(v)
 	return _u
 }
 
@@ -501,6 +954,21 @@ func (_u *UserUpdateOne) SetNavidromeAuth(v *NavidromeAuth) *UserUpdateOne {
 	return _u.SetNavidromeAuthID(v.ID)
 }
 
+// AddPlaylistIDs adds the "playlists" edge to the Playlist entity by IDs.
+func (_u *UserUpdateOne) AddPlaylistIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.AddPlaylistIDs(ids...)
+	return _u
+}
+
+// AddPlaylists adds the "playlists" edges to the Playlist entity.
+func (_u *UserUpdateOne) AddPlaylists(v ...*Playlist) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddPlaylistIDs(ids...)
+}
+
 // AddListenIDs adds the "listens" edge to the Listen entity by IDs.
 func (_u *UserUpdateOne) AddListenIDs(ids ...int) *UserUpdateOne {
 	_u.mutation.AddListenIDs(ids...)
@@ -514,6 +982,51 @@ func (_u *UserUpdateOne) AddListens(v ...*Listen) *UserUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.AddListenIDs(ids...)
+}
+
+// AddSyncEventIDs adds the "sync_events" edge to the SyncEvent entity by IDs.
+func (_u *UserUpdateOne) AddSyncEventIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.AddSyncEventIDs(ids...)
+	return _u
+}
+
+// AddSyncEvents adds the "sync_events" edges to the SyncEvent entity.
+func (_u *UserUpdateOne) AddSyncEvents(v ...*SyncEvent) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSyncEventIDs(ids...)
+}
+
+// AddArtistIDs adds the "artists" edge to the Artist entity by IDs.
+func (_u *UserUpdateOne) AddArtistIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.AddArtistIDs(ids...)
+	return _u
+}
+
+// AddArtists adds the "artists" edges to the Artist entity.
+func (_u *UserUpdateOne) AddArtists(v ...*Artist) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddArtistIDs(ids...)
+}
+
+// AddAlbumIDs adds the "albums" edge to the Album entity by IDs.
+func (_u *UserUpdateOne) AddAlbumIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.AddAlbumIDs(ids...)
+	return _u
+}
+
+// AddAlbums adds the "albums" edges to the Album entity.
+func (_u *UserUpdateOne) AddAlbums(v ...*Album) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddAlbumIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -539,6 +1052,27 @@ func (_u *UserUpdateOne) ClearNavidromeAuth() *UserUpdateOne {
 	return _u
 }
 
+// ClearPlaylists clears all "playlists" edges to the Playlist entity.
+func (_u *UserUpdateOne) ClearPlaylists() *UserUpdateOne {
+	_u.mutation.ClearPlaylists()
+	return _u
+}
+
+// RemovePlaylistIDs removes the "playlists" edge to Playlist entities by IDs.
+func (_u *UserUpdateOne) RemovePlaylistIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.RemovePlaylistIDs(ids...)
+	return _u
+}
+
+// RemovePlaylists removes "playlists" edges to Playlist entities.
+func (_u *UserUpdateOne) RemovePlaylists(v ...*Playlist) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemovePlaylistIDs(ids...)
+}
+
 // ClearListens clears all "listens" edges to the Listen entity.
 func (_u *UserUpdateOne) ClearListens() *UserUpdateOne {
 	_u.mutation.ClearListens()
@@ -558,6 +1092,69 @@ func (_u *UserUpdateOne) RemoveListens(v ...*Listen) *UserUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveListenIDs(ids...)
+}
+
+// ClearSyncEvents clears all "sync_events" edges to the SyncEvent entity.
+func (_u *UserUpdateOne) ClearSyncEvents() *UserUpdateOne {
+	_u.mutation.ClearSyncEvents()
+	return _u
+}
+
+// RemoveSyncEventIDs removes the "sync_events" edge to SyncEvent entities by IDs.
+func (_u *UserUpdateOne) RemoveSyncEventIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.RemoveSyncEventIDs(ids...)
+	return _u
+}
+
+// RemoveSyncEvents removes "sync_events" edges to SyncEvent entities.
+func (_u *UserUpdateOne) RemoveSyncEvents(v ...*SyncEvent) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSyncEventIDs(ids...)
+}
+
+// ClearArtists clears all "artists" edges to the Artist entity.
+func (_u *UserUpdateOne) ClearArtists() *UserUpdateOne {
+	_u.mutation.ClearArtists()
+	return _u
+}
+
+// RemoveArtistIDs removes the "artists" edge to Artist entities by IDs.
+func (_u *UserUpdateOne) RemoveArtistIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.RemoveArtistIDs(ids...)
+	return _u
+}
+
+// RemoveArtists removes "artists" edges to Artist entities.
+func (_u *UserUpdateOne) RemoveArtists(v ...*Artist) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveArtistIDs(ids...)
+}
+
+// ClearAlbums clears all "albums" edges to the Album entity.
+func (_u *UserUpdateOne) ClearAlbums() *UserUpdateOne {
+	_u.mutation.ClearAlbums()
+	return _u
+}
+
+// RemoveAlbumIDs removes the "albums" edge to Album entities by IDs.
+func (_u *UserUpdateOne) RemoveAlbumIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.RemoveAlbumIDs(ids...)
+	return _u
+}
+
+// RemoveAlbums removes "albums" edges to Album entities.
+func (_u *UserUpdateOne) RemoveAlbums(v ...*Album) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveAlbumIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -635,6 +1232,21 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	if _u.mutation.EmailCleared() {
 		_spec.ClearField(user.FieldEmail, field.TypeString)
 	}
+	if value, ok := _u.mutation.Theme(); ok {
+		_spec.SetField(user.FieldTheme, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SystemPrompt(); ok {
+		_spec.SetField(user.FieldSystemPrompt, field.TypeString, value)
+	}
+	if _u.mutation.SystemPromptCleared() {
+		_spec.ClearField(user.FieldSystemPrompt, field.TypeString)
+	}
+	if value, ok := _u.mutation.PaginationSize(); ok {
+		_spec.SetField(user.FieldPaginationSize, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPaginationSize(); ok {
+		_spec.AddField(user.FieldPaginationSize, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.LastLoginAt(); ok {
 		_spec.SetField(user.FieldLastLoginAt, field.TypeTime, value)
 	}
@@ -725,6 +1337,51 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.PlaylistsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PlaylistsTable,
+			Columns: []string{user.PlaylistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(playlist.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedPlaylistsIDs(); len(nodes) > 0 && !_u.mutation.PlaylistsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PlaylistsTable,
+			Columns: []string{user.PlaylistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(playlist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.PlaylistsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.PlaylistsTable,
+			Columns: []string{user.PlaylistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(playlist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.ListensCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -763,6 +1420,141 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SyncEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SyncEventsTable,
+			Columns: []string{user.SyncEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(syncevent.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSyncEventsIDs(); len(nodes) > 0 && !_u.mutation.SyncEventsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SyncEventsTable,
+			Columns: []string{user.SyncEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(syncevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SyncEventsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SyncEventsTable,
+			Columns: []string{user.SyncEventsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(syncevent.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ArtistsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ArtistsTable,
+			Columns: []string{user.ArtistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedArtistsIDs(); len(nodes) > 0 && !_u.mutation.ArtistsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ArtistsTable,
+			Columns: []string{user.ArtistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ArtistsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ArtistsTable,
+			Columns: []string{user.ArtistsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AlbumsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AlbumsTable,
+			Columns: []string{user.AlbumsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedAlbumsIDs(); len(nodes) > 0 && !_u.mutation.AlbumsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AlbumsTable,
+			Columns: []string{user.AlbumsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AlbumsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.AlbumsTable,
+			Columns: []string{user.AlbumsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

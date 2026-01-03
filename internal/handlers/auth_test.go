@@ -14,6 +14,7 @@ import (
 	"spotter/ent"
 	"spotter/ent/user"
 	"spotter/internal/config"
+	"spotter/internal/events"
 	"spotter/internal/handlers"
 	"spotter/internal/services"
 
@@ -36,8 +37,9 @@ func TestLogin_Get(t *testing.T) {
 	client := setupTestDB(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := &config.Config{}
-	syncer := services.NewSyncer(client, cfg, logger)
-	h := handlers.New(client, cfg, logger, syncer)
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, cfg, logger, bus)
+	h := handlers.New(client, cfg, logger, syncer, nil, bus)
 
 	req := httptest.NewRequest("GET", "/auth/login", nil)
 	w := httptest.NewRecorder()
@@ -47,7 +49,8 @@ func TestLogin_Get(t *testing.T) {
 	resp := w.Result()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body, _ := io.ReadAll(resp.Body)
-	assert.Contains(t, string(body), "Sign in to your account")
+	assert.Contains(t, string(body), "Spotter uses your Navidrome credentials")
+	assert.Contains(t, string(body), "Log in with Navidrome")
 }
 
 func TestPostLogin_Success(t *testing.T) {
@@ -72,8 +75,9 @@ func TestPostLogin_Success(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := &config.Config{}
 	cfg.Navidrome.BaseURL = ts.URL
-	syncer := services.NewSyncer(client, cfg, logger)
-	h := handlers.New(client, cfg, logger, syncer)
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, cfg, logger, bus)
+	h := handlers.New(client, cfg, logger, syncer, nil, bus)
 
 	// 3. Request
 	form := url.Values{}
@@ -130,8 +134,9 @@ func TestPostLogin_InvalidCredentials(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := &config.Config{}
 	cfg.Navidrome.BaseURL = ts.URL
-	syncer := services.NewSyncer(client, cfg, logger)
-	h := handlers.New(client, cfg, logger, syncer)
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, cfg, logger, bus)
+	h := handlers.New(client, cfg, logger, syncer, nil, bus)
 
 	// 3. Request
 	form := url.Values{}

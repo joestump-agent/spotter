@@ -1,0 +1,95 @@
+package config
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestLoadDefaults(t *testing.T) {
+	// Required config
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, "8080", cfg.Server.Port)
+	assert.Equal(t, "0.0.0.0", cfg.Server.Host)
+	assert.Equal(t, "5m", cfg.Sync.Interval)
+	assert.Equal(t, "sqlite3", cfg.Database.Driver)
+	assert.Equal(t, "file:spotter.db?cache=shared&_fk=1", cfg.Database.Source)
+	assert.Equal(t, "http://127.0.0.1:8080/auth/spotify/callback", cfg.Spotify.RedirectURL)
+	assert.Equal(t, "light,dark,cupcake", cfg.Theme.Available)
+	assert.Equal(t, "dark", cfg.Theme.Default)
+	assert.Equal(t, []string{"light", "dark", "cupcake"}, cfg.AvailableThemes())
+}
+
+func TestLoadEnvOverrides(t *testing.T) {
+	t.Setenv("SPOTTER_SERVER_PORT", "9090")
+	t.Setenv("SPOTTER_SERVER_HOST", "127.0.0.1")
+	t.Setenv("SPOTTER_DATABASE_DRIVER", "postgres")
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "https://navidrome.example.com")
+	t.Setenv("SPOTTER_SPOTIFY_REDIRECT_URL", "https://example.com/callback")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, "9090", cfg.Server.Port)
+	assert.Equal(t, "127.0.0.1", cfg.Server.Host)
+	assert.Equal(t, "postgres", cfg.Database.Driver)
+	assert.Equal(t, "https://navidrome.example.com", cfg.Navidrome.BaseURL)
+	assert.Equal(t, "https://example.com/callback", cfg.Spotify.RedirectURL)
+}
+
+func TestLoadMissingRequired(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "")
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.EqualError(t, err, "navidrome.base_url is required")
+}
+
+func TestSyncIntervalConfig(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_SYNC_INTERVAL", "10m")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, "10m", cfg.Sync.Interval)
+}
+
+func TestThemeConfig(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_THEME_AVAILABLE", "dark,light,cyberpunk,retro")
+	t.Setenv("SPOTTER_THEME_DEFAULT", "cyberpunk")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, "dark,light,cyberpunk,retro", cfg.Theme.Available)
+	assert.Equal(t, "cyberpunk", cfg.Theme.Default)
+	assert.Equal(t, []string{"dark", "light", "cyberpunk", "retro"}, cfg.AvailableThemes())
+}
+
+func TestAvailableThemesDefaultsWhenNotSet(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	// Don't set SPOTTER_THEME_AVAILABLE - should use defaults
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	// Should return default themes when not configured
+	assert.Equal(t, []string{"light", "dark", "cupcake"}, cfg.AvailableThemes())
+}
+
+func TestAvailableThemesTrimsWhitespace(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_THEME_AVAILABLE", " dark , light , cupcake ")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"dark", "light", "cupcake"}, cfg.AvailableThemes())
+}

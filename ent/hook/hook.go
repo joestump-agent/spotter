@@ -8,6 +8,54 @@ import (
 	"spotter/ent"
 )
 
+// The AlbumFunc type is an adapter to allow the use of ordinary
+// function as Album mutator.
+type AlbumFunc func(context.Context, *ent.AlbumMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AlbumFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AlbumMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AlbumMutation", m)
+}
+
+// The AlbumImageFunc type is an adapter to allow the use of ordinary
+// function as AlbumImage mutator.
+type AlbumImageFunc func(context.Context, *ent.AlbumImageMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AlbumImageFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AlbumImageMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AlbumImageMutation", m)
+}
+
+// The ArtistFunc type is an adapter to allow the use of ordinary
+// function as Artist mutator.
+type ArtistFunc func(context.Context, *ent.ArtistMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ArtistFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ArtistMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ArtistMutation", m)
+}
+
+// The ArtistImageFunc type is an adapter to allow the use of ordinary
+// function as ArtistImage mutator.
+type ArtistImageFunc func(context.Context, *ent.ArtistImageMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ArtistImageFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ArtistImageMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ArtistImageMutation", m)
+}
+
 // The LastFMAuthFunc type is an adapter to allow the use of ordinary
 // function as LastFMAuth mutator.
 type LastFMAuthFunc func(context.Context, *ent.LastFMAuthMutation) (ent.Value, error)
@@ -44,6 +92,18 @@ func (f NavidromeAuthFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.NavidromeAuthMutation", m)
 }
 
+// The PlaylistFunc type is an adapter to allow the use of ordinary
+// function as Playlist mutator.
+type PlaylistFunc func(context.Context, *ent.PlaylistMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PlaylistFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PlaylistMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PlaylistMutation", m)
+}
+
 // The SpotifyAuthFunc type is an adapter to allow the use of ordinary
 // function as SpotifyAuth mutator.
 type SpotifyAuthFunc func(context.Context, *ent.SpotifyAuthMutation) (ent.Value, error)
@@ -54,6 +114,30 @@ func (f SpotifyAuthFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SpotifyAuthMutation", m)
+}
+
+// The SyncEventFunc type is an adapter to allow the use of ordinary
+// function as SyncEvent mutator.
+type SyncEventFunc func(context.Context, *ent.SyncEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SyncEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SyncEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SyncEventMutation", m)
+}
+
+// The TrackFunc type is an adapter to allow the use of ordinary
+// function as Track mutator.
+type TrackFunc func(context.Context, *ent.TrackMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TrackFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TrackMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TrackMutation", m)
 }
 
 // The UserFunc type is an adapter to allow the use of ordinary

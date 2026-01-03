@@ -14,6 +14,10 @@ type SpotifyAuth struct {
 // Fields of the SpotifyAuth.
 func (SpotifyAuth) Fields() []ent.Field {
 	return []ent.Field{
+		field.String("display_name").
+			Optional(),
+		field.Time("last_synced_at").
+			Optional(),
 		field.String("access_token"),
 		field.String("refresh_token"),
 		field.Time("expiry"),

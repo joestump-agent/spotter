@@ -65,6 +65,21 @@ func Email(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldEmail, v))
 }
 
+// Theme applies equality check predicate on the "theme" field. It's identical to ThemeEQ.
+func Theme(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldTheme, v))
+}
+
+// SystemPrompt applies equality check predicate on the "system_prompt" field. It's identical to SystemPromptEQ.
+func SystemPrompt(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSystemPrompt, v))
+}
+
+// PaginationSize applies equality check predicate on the "pagination_size" field. It's identical to PaginationSizeEQ.
+func PaginationSize(v int) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPaginationSize, v))
+}
+
 // LastLoginAt applies equality check predicate on the "last_login_at" field. It's identical to LastLoginAtEQ.
 func LastLoginAt(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldLastLoginAt, v))
@@ -210,6 +225,186 @@ func EmailContainsFold(v string) predicate.User {
 	return predicate.User(sql.FieldContainsFold(FieldEmail, v))
 }
 
+// ThemeEQ applies the EQ predicate on the "theme" field.
+func ThemeEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldTheme, v))
+}
+
+// ThemeNEQ applies the NEQ predicate on the "theme" field.
+func ThemeNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldTheme, v))
+}
+
+// ThemeIn applies the In predicate on the "theme" field.
+func ThemeIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldTheme, vs...))
+}
+
+// ThemeNotIn applies the NotIn predicate on the "theme" field.
+func ThemeNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldTheme, vs...))
+}
+
+// ThemeGT applies the GT predicate on the "theme" field.
+func ThemeGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldTheme, v))
+}
+
+// ThemeGTE applies the GTE predicate on the "theme" field.
+func ThemeGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldTheme, v))
+}
+
+// ThemeLT applies the LT predicate on the "theme" field.
+func ThemeLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldTheme, v))
+}
+
+// ThemeLTE applies the LTE predicate on the "theme" field.
+func ThemeLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldTheme, v))
+}
+
+// ThemeContains applies the Contains predicate on the "theme" field.
+func ThemeContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldTheme, v))
+}
+
+// ThemeHasPrefix applies the HasPrefix predicate on the "theme" field.
+func ThemeHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldTheme, v))
+}
+
+// ThemeHasSuffix applies the HasSuffix predicate on the "theme" field.
+func ThemeHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldTheme, v))
+}
+
+// ThemeEqualFold applies the EqualFold predicate on the "theme" field.
+func ThemeEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldTheme, v))
+}
+
+// ThemeContainsFold applies the ContainsFold predicate on the "theme" field.
+func ThemeContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldTheme, v))
+}
+
+// SystemPromptEQ applies the EQ predicate on the "system_prompt" field.
+func SystemPromptEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSystemPrompt, v))
+}
+
+// SystemPromptNEQ applies the NEQ predicate on the "system_prompt" field.
+func SystemPromptNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldSystemPrompt, v))
+}
+
+// SystemPromptIn applies the In predicate on the "system_prompt" field.
+func SystemPromptIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldSystemPrompt, vs...))
+}
+
+// SystemPromptNotIn applies the NotIn predicate on the "system_prompt" field.
+func SystemPromptNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldSystemPrompt, vs...))
+}
+
+// SystemPromptGT applies the GT predicate on the "system_prompt" field.
+func SystemPromptGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldSystemPrompt, v))
+}
+
+// SystemPromptGTE applies the GTE predicate on the "system_prompt" field.
+func SystemPromptGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldSystemPrompt, v))
+}
+
+// SystemPromptLT applies the LT predicate on the "system_prompt" field.
+func SystemPromptLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldSystemPrompt, v))
+}
+
+// SystemPromptLTE applies the LTE predicate on the "system_prompt" field.
+func SystemPromptLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldSystemPrompt, v))
+}
+
+// SystemPromptContains applies the Contains predicate on the "system_prompt" field.
+func SystemPromptContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldSystemPrompt, v))
+}
+
+// SystemPromptHasPrefix applies the HasPrefix predicate on the "system_prompt" field.
+func SystemPromptHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldSystemPrompt, v))
+}
+
+// SystemPromptHasSuffix applies the HasSuffix predicate on the "system_prompt" field.
+func SystemPromptHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldSystemPrompt, v))
+}
+
+// SystemPromptIsNil applies the IsNil predicate on the "system_prompt" field.
+func SystemPromptIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldSystemPrompt))
+}
+
+// SystemPromptNotNil applies the NotNil predicate on the "system_prompt" field.
+func SystemPromptNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldSystemPrompt))
+}
+
+// SystemPromptEqualFold applies the EqualFold predicate on the "system_prompt" field.
+func SystemPromptEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldSystemPrompt, v))
+}
+
+// SystemPromptContainsFold applies the ContainsFold predicate on the "system_prompt" field.
+func SystemPromptContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldSystemPrompt, v))
+}
+
+// PaginationSizeEQ applies the EQ predicate on the "pagination_size" field.
+func PaginationSizeEQ(v int) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPaginationSize, v))
+}
+
+// PaginationSizeNEQ applies the NEQ predicate on the "pagination_size" field.
+func PaginationSizeNEQ(v int) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPaginationSize, v))
+}
+
+// PaginationSizeIn applies the In predicate on the "pagination_size" field.
+func PaginationSizeIn(vs ...int) predicate.User {
+	return predicate.User(sql.FieldIn(FieldPaginationSize, vs...))
+}
+
+// PaginationSizeNotIn applies the NotIn predicate on the "pagination_size" field.
+func PaginationSizeNotIn(vs ...int) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldPaginationSize, vs...))
+}
+
+// PaginationSizeGT applies the GT predicate on the "pagination_size" field.
+func PaginationSizeGT(v int) predicate.User {
+	return predicate.User(sql.FieldGT(FieldPaginationSize, v))
+}
+
+// PaginationSizeGTE applies the GTE predicate on the "pagination_size" field.
+func PaginationSizeGTE(v int) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldPaginationSize, v))
+}
+
+// PaginationSizeLT applies the LT predicate on the "pagination_size" field.
+func PaginationSizeLT(v int) predicate.User {
+	return predicate.User(sql.FieldLT(FieldPaginationSize, v))
+}
+
+// PaginationSizeLTE applies the LTE predicate on the "pagination_size" field.
+func PaginationSizeLTE(v int) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldPaginationSize, v))
+}
+
 // LastLoginAtEQ applies the EQ predicate on the "last_login_at" field.
 func LastLoginAtEQ(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldLastLoginAt, v))
@@ -319,6 +514,29 @@ func HasNavidromeAuthWith(preds ...predicate.NavidromeAuth) predicate.User {
 	})
 }
 
+// HasPlaylists applies the HasEdge predicate on the "playlists" edge.
+func HasPlaylists() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, PlaylistsTable, PlaylistsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasPlaylistsWith applies the HasEdge predicate on the "playlists" edge with a given conditions (other predicates).
+func HasPlaylistsWith(preds ...predicate.Playlist) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newPlaylistsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasListens applies the HasEdge predicate on the "listens" edge.
 func HasListens() predicate.User {
 	return predicate.User(func(s *sql.Selector) {
@@ -334,6 +552,75 @@ func HasListens() predicate.User {
 func HasListensWith(preds ...predicate.Listen) predicate.User {
 	return predicate.User(func(s *sql.Selector) {
 		step := newListensStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasSyncEvents applies the HasEdge predicate on the "sync_events" edge.
+func HasSyncEvents() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, SyncEventsTable, SyncEventsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSyncEventsWith applies the HasEdge predicate on the "sync_events" edge with a given conditions (other predicates).
+func HasSyncEventsWith(preds ...predicate.SyncEvent) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newSyncEventsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasArtists applies the HasEdge predicate on the "artists" edge.
+func HasArtists() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ArtistsTable, ArtistsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasArtistsWith applies the HasEdge predicate on the "artists" edge with a given conditions (other predicates).
+func HasArtistsWith(preds ...predicate.Artist) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newArtistsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasAlbums applies the HasEdge predicate on the "albums" edge.
+func HasAlbums() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, AlbumsTable, AlbumsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAlbumsWith applies the HasEdge predicate on the "albums" edge with a given conditions (other predicates).
+func HasAlbumsWith(preds ...predicate.Album) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newAlbumsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

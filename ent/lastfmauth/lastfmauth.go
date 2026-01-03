@@ -12,6 +12,8 @@ const (
 	Label = "last_fm_auth"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
+	// FieldLastSyncedAt holds the string denoting the last_synced_at field in the database.
+	FieldLastSyncedAt = "last_synced_at"
 	// FieldSessionKey holds the string denoting the session_key field in the database.
 	FieldSessionKey = "session_key"
 	// FieldUsername holds the string denoting the username field in the database.
@@ -32,6 +34,7 @@ const (
 // Columns holds all SQL columns for lastfmauth fields.
 var Columns = []string{
 	FieldID,
+	FieldLastSyncedAt,
 	FieldSessionKey,
 	FieldUsername,
 }
@@ -63,6 +66,11 @@ type OrderOption func(*sql.Selector)
 // ByID orders the results by the id field.
 func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
+}
+
+// ByLastSyncedAt orders the results by the last_synced_at field.
+func ByLastSyncedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastSyncedAt, opts...).ToFunc()
 }
 
 // BySessionKey orders the results by the session_key field.

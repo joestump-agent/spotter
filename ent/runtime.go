@@ -3,7 +3,14 @@
 package ent
 
 import (
+	"spotter/ent/album"
+	"spotter/ent/albumimage"
+	"spotter/ent/artist"
+	"spotter/ent/artistimage"
+	"spotter/ent/playlist"
 	"spotter/ent/schema"
+	"spotter/ent/syncevent"
+	"spotter/ent/track"
 	"spotter/ent/user"
 	"time"
 )
@@ -12,10 +19,136 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	albumFields := schema.Album{}.Fields()
+	_ = albumFields
+	// albumDescName is the schema descriptor for name field.
+	albumDescName := albumFields[0].Descriptor()
+	// album.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	album.NameValidator = albumDescName.Validators[0].(func(string) error)
+	// albumDescCreatedAt is the schema descriptor for created_at field.
+	albumDescCreatedAt := albumFields[12].Descriptor()
+	// album.DefaultCreatedAt holds the default value on creation for the created_at field.
+	album.DefaultCreatedAt = albumDescCreatedAt.Default.(func() time.Time)
+	// albumDescUpdatedAt is the schema descriptor for updated_at field.
+	albumDescUpdatedAt := albumFields[13].Descriptor()
+	// album.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	album.DefaultUpdatedAt = albumDescUpdatedAt.Default.(func() time.Time)
+	// album.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	album.UpdateDefaultUpdatedAt = albumDescUpdatedAt.UpdateDefault.(func() time.Time)
+	albumimageFields := schema.AlbumImage{}.Fields()
+	_ = albumimageFields
+	// albumimageDescSource is the schema descriptor for source field.
+	albumimageDescSource := albumimageFields[1].Descriptor()
+	// albumimage.SourceValidator is a validator for the "source" field. It is called by the builders before save.
+	albumimage.SourceValidator = albumimageDescSource.Validators[0].(func(string) error)
+	// albumimageDescIsPrimary is the schema descriptor for is_primary field.
+	albumimageDescIsPrimary := albumimageFields[8].Descriptor()
+	// albumimage.DefaultIsPrimary holds the default value on creation for the is_primary field.
+	albumimage.DefaultIsPrimary = albumimageDescIsPrimary.Default.(bool)
+	// albumimageDescCreatedAt is the schema descriptor for created_at field.
+	albumimageDescCreatedAt := albumimageFields[9].Descriptor()
+	// albumimage.DefaultCreatedAt holds the default value on creation for the created_at field.
+	albumimage.DefaultCreatedAt = albumimageDescCreatedAt.Default.(func() time.Time)
+	artistFields := schema.Artist{}.Fields()
+	_ = artistFields
+	// artistDescName is the schema descriptor for name field.
+	artistDescName := artistFields[0].Descriptor()
+	// artist.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	artist.NameValidator = artistDescName.Validators[0].(func(string) error)
+	// artistDescCreatedAt is the schema descriptor for created_at field.
+	artistDescCreatedAt := artistFields[11].Descriptor()
+	// artist.DefaultCreatedAt holds the default value on creation for the created_at field.
+	artist.DefaultCreatedAt = artistDescCreatedAt.Default.(func() time.Time)
+	// artistDescUpdatedAt is the schema descriptor for updated_at field.
+	artistDescUpdatedAt := artistFields[12].Descriptor()
+	// artist.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	artist.DefaultUpdatedAt = artistDescUpdatedAt.Default.(func() time.Time)
+	// artist.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	artist.UpdateDefaultUpdatedAt = artistDescUpdatedAt.UpdateDefault.(func() time.Time)
+	artistimageFields := schema.ArtistImage{}.Fields()
+	_ = artistimageFields
+	// artistimageDescSource is the schema descriptor for source field.
+	artistimageDescSource := artistimageFields[1].Descriptor()
+	// artistimage.SourceValidator is a validator for the "source" field. It is called by the builders before save.
+	artistimage.SourceValidator = artistimageDescSource.Validators[0].(func(string) error)
+	// artistimageDescURL is the schema descriptor for url field.
+	artistimageDescURL := artistimageFields[2].Descriptor()
+	// artistimage.URLValidator is a validator for the "url" field. It is called by the builders before save.
+	artistimage.URLValidator = artistimageDescURL.Validators[0].(func(string) error)
+	// artistimageDescIsPrimary is the schema descriptor for is_primary field.
+	artistimageDescIsPrimary := artistimageFields[7].Descriptor()
+	// artistimage.DefaultIsPrimary holds the default value on creation for the is_primary field.
+	artistimage.DefaultIsPrimary = artistimageDescIsPrimary.Default.(bool)
+	// artistimageDescCreatedAt is the schema descriptor for created_at field.
+	artistimageDescCreatedAt := artistimageFields[8].Descriptor()
+	// artistimage.DefaultCreatedAt holds the default value on creation for the created_at field.
+	artistimage.DefaultCreatedAt = artistimageDescCreatedAt.Default.(func() time.Time)
+	playlistFields := schema.Playlist{}.Fields()
+	_ = playlistFields
+	// playlistDescName is the schema descriptor for name field.
+	playlistDescName := playlistFields[1].Descriptor()
+	// playlist.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	playlist.NameValidator = playlistDescName.Validators[0].(func(string) error)
+	// playlistDescSource is the schema descriptor for source field.
+	playlistDescSource := playlistFields[3].Descriptor()
+	// playlist.SourceValidator is a validator for the "source" field. It is called by the builders before save.
+	playlist.SourceValidator = playlistDescSource.Validators[0].(func(string) error)
+	// playlistDescTrackCount is the schema descriptor for track_count field.
+	playlistDescTrackCount := playlistFields[6].Descriptor()
+	// playlist.DefaultTrackCount holds the default value on creation for the track_count field.
+	playlist.DefaultTrackCount = playlistDescTrackCount.Default.(int)
+	// playlistDescUniqueArtists is the schema descriptor for unique_artists field.
+	playlistDescUniqueArtists := playlistFields[7].Descriptor()
+	// playlist.DefaultUniqueArtists holds the default value on creation for the unique_artists field.
+	playlist.DefaultUniqueArtists = playlistDescUniqueArtists.Default.(int)
+	// playlistDescUniqueAlbums is the schema descriptor for unique_albums field.
+	playlistDescUniqueAlbums := playlistFields[8].Descriptor()
+	// playlist.DefaultUniqueAlbums holds the default value on creation for the unique_albums field.
+	playlist.DefaultUniqueAlbums = playlistDescUniqueAlbums.Default.(int)
+	// playlistDescCreatedAt is the schema descriptor for created_at field.
+	playlistDescCreatedAt := playlistFields[9].Descriptor()
+	// playlist.DefaultCreatedAt holds the default value on creation for the created_at field.
+	playlist.DefaultCreatedAt = playlistDescCreatedAt.Default.(func() time.Time)
+	// playlistDescUpdatedAt is the schema descriptor for updated_at field.
+	playlistDescUpdatedAt := playlistFields[10].Descriptor()
+	// playlist.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	playlist.DefaultUpdatedAt = playlistDescUpdatedAt.Default.(func() time.Time)
+	// playlist.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	playlist.UpdateDefaultUpdatedAt = playlistDescUpdatedAt.UpdateDefault.(func() time.Time)
+	synceventFields := schema.SyncEvent{}.Fields()
+	_ = synceventFields
+	// synceventDescCreatedAt is the schema descriptor for created_at field.
+	synceventDescCreatedAt := synceventFields[4].Descriptor()
+	// syncevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	syncevent.DefaultCreatedAt = synceventDescCreatedAt.Default.(func() time.Time)
+	trackFields := schema.Track{}.Fields()
+	_ = trackFields
+	// trackDescName is the schema descriptor for name field.
+	trackDescName := trackFields[0].Descriptor()
+	// track.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	track.NameValidator = trackDescName.Validators[0].(func(string) error)
+	// trackDescCreatedAt is the schema descriptor for created_at field.
+	trackDescCreatedAt := trackFields[21].Descriptor()
+	// track.DefaultCreatedAt holds the default value on creation for the created_at field.
+	track.DefaultCreatedAt = trackDescCreatedAt.Default.(func() time.Time)
+	// trackDescUpdatedAt is the schema descriptor for updated_at field.
+	trackDescUpdatedAt := trackFields[22].Descriptor()
+	// track.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	track.DefaultUpdatedAt = trackDescUpdatedAt.Default.(func() time.Time)
+	// track.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	track.UpdateDefaultUpdatedAt = trackDescUpdatedAt.UpdateDefault.(func() time.Time)
 	userFields := schema.User{}.Fields()
 	_ = userFields
+	// userDescTheme is the schema descriptor for theme field.
+	userDescTheme := userFields[2].Descriptor()
+	// user.DefaultTheme holds the default value on creation for the theme field.
+	user.DefaultTheme = userDescTheme.Default.(string)
+	// userDescPaginationSize is the schema descriptor for pagination_size field.
+	userDescPaginationSize := userFields[4].Descriptor()
+	// user.DefaultPaginationSize holds the default value on creation for the pagination_size field.
+	user.DefaultPaginationSize = userDescPaginationSize.Default.(int)
 	// userDescLastLoginAt is the schema descriptor for last_login_at field.
-	userDescLastLoginAt := userFields[2].Descriptor()
+	userDescLastLoginAt := userFields[5].Descriptor()
 	// user.DefaultLastLoginAt holds the default value on creation for the last_login_at field.
 	user.DefaultLastLoginAt = userDescLastLoginAt.Default.(func() time.Time)
 }

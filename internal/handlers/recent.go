@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"spotter/ent"
 	"spotter/ent/listen"
@@ -17,10 +18,32 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Refresh user to get pagination settings
+	u, err := h.Client.User.Query().
+		Where(user.ID(u.ID)).
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to query user", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get page number from query
+	page := 1
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := u.PaginationSize
+	offset := (page - 1) * pageSize
+
 	listens, err := h.Client.Listen.Query().
 		Where(listen.HasUserWith(user.ID(u.ID))).
 		Order(ent.Desc(listen.FieldPlayedAt)).
-		Limit(50).
+		Limit(pageSize).
+		Offset(offset).
 		All(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to fetch recent listens", "error", err)
@@ -28,7 +51,19 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Render(w, r, recent.Index(listens))
+	// Get total count for pagination
+	total, err := h.Client.Listen.Query().
+		Where(listen.HasUserWith(user.ID(u.ID))).
+		Count(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to count listens", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := (total + pageSize - 1) / pageSize
+
+	h.Render(w, r, recent.Index(listens, page, totalPages, h.Config))
 }
 
 func (h *Handler) RefreshRecentListens(w http.ResponseWriter, r *http.Request) {

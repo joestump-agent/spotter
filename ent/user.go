@@ -24,6 +24,12 @@ type User struct {
 	Username string `json:"username,omitempty"`
 	// Email holds the value of the "email" field.
 	Email string `json:"email,omitempty"`
+	// Theme holds the value of the "theme" field.
+	Theme string `json:"theme,omitempty"`
+	// SystemPrompt holds the value of the "system_prompt" field.
+	SystemPrompt string `json:"system_prompt,omitempty"`
+	// PaginationSize holds the value of the "pagination_size" field.
+	PaginationSize int `json:"pagination_size,omitempty"`
 	// LastLoginAt holds the value of the "last_login_at" field.
 	LastLoginAt time.Time `json:"last_login_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -40,11 +46,19 @@ type UserEdges struct {
 	LastfmAuth *LastFMAuth `json:"lastfm_auth,omitempty"`
 	// NavidromeAuth holds the value of the navidrome_auth edge.
 	NavidromeAuth *NavidromeAuth `json:"navidrome_auth,omitempty"`
+	// Playlists holds the value of the playlists edge.
+	Playlists []*Playlist `json:"playlists,omitempty"`
 	// Listens holds the value of the listens edge.
 	Listens []*Listen `json:"listens,omitempty"`
+	// SyncEvents holds the value of the sync_events edge.
+	SyncEvents []*SyncEvent `json:"sync_events,omitempty"`
+	// Artists holds the value of the artists edge.
+	Artists []*Artist `json:"artists,omitempty"`
+	// Albums holds the value of the albums edge.
+	Albums []*Album `json:"albums,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [4]bool
+	loadedTypes [8]bool
 }
 
 // SpotifyAuthOrErr returns the SpotifyAuth value or an error if the edge
@@ -80,13 +94,49 @@ func (e UserEdges) NavidromeAuthOrErr() (*NavidromeAuth, error) {
 	return nil, &NotLoadedError{edge: "navidrome_auth"}
 }
 
+// PlaylistsOrErr returns the Playlists value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) PlaylistsOrErr() ([]*Playlist, error) {
+	if e.loadedTypes[3] {
+		return e.Playlists, nil
+	}
+	return nil, &NotLoadedError{edge: "playlists"}
+}
+
 // ListensOrErr returns the Listens value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) ListensOrErr() ([]*Listen, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[4] {
 		return e.Listens, nil
 	}
 	return nil, &NotLoadedError{edge: "listens"}
+}
+
+// SyncEventsOrErr returns the SyncEvents value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) SyncEventsOrErr() ([]*SyncEvent, error) {
+	if e.loadedTypes[5] {
+		return e.SyncEvents, nil
+	}
+	return nil, &NotLoadedError{edge: "sync_events"}
+}
+
+// ArtistsOrErr returns the Artists value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) ArtistsOrErr() ([]*Artist, error) {
+	if e.loadedTypes[6] {
+		return e.Artists, nil
+	}
+	return nil, &NotLoadedError{edge: "artists"}
+}
+
+// AlbumsOrErr returns the Albums value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AlbumsOrErr() ([]*Album, error) {
+	if e.loadedTypes[7] {
+		return e.Albums, nil
+	}
+	return nil, &NotLoadedError{edge: "albums"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -94,9 +144,9 @@ func (*User) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case user.FieldID:
+		case user.FieldID, user.FieldPaginationSize:
 			values[i] = new(sql.NullInt64)
-		case user.FieldUsername, user.FieldEmail:
+		case user.FieldUsername, user.FieldEmail, user.FieldTheme, user.FieldSystemPrompt:
 			values[i] = new(sql.NullString)
 		case user.FieldLastLoginAt:
 			values[i] = new(sql.NullTime)
@@ -133,6 +183,24 @@ func (_m *User) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Email = value.String
 			}
+		case user.FieldTheme:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field theme", values[i])
+			} else if value.Valid {
+				_m.Theme = value.String
+			}
+		case user.FieldSystemPrompt:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field system_prompt", values[i])
+			} else if value.Valid {
+				_m.SystemPrompt = value.String
+			}
+		case user.FieldPaginationSize:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field pagination_size", values[i])
+			} else if value.Valid {
+				_m.PaginationSize = int(value.Int64)
+			}
 		case user.FieldLastLoginAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field last_login_at", values[i])
@@ -167,9 +235,29 @@ func (_m *User) QueryNavidromeAuth() *NavidromeAuthQuery {
 	return NewUserClient(_m.config).QueryNavidromeAuth(_m)
 }
 
+// QueryPlaylists queries the "playlists" edge of the User entity.
+func (_m *User) QueryPlaylists() *PlaylistQuery {
+	return NewUserClient(_m.config).QueryPlaylists(_m)
+}
+
 // QueryListens queries the "listens" edge of the User entity.
 func (_m *User) QueryListens() *ListenQuery {
 	return NewUserClient(_m.config).QueryListens(_m)
+}
+
+// QuerySyncEvents queries the "sync_events" edge of the User entity.
+func (_m *User) QuerySyncEvents() *SyncEventQuery {
+	return NewUserClient(_m.config).QuerySyncEvents(_m)
+}
+
+// QueryArtists queries the "artists" edge of the User entity.
+func (_m *User) QueryArtists() *ArtistQuery {
+	return NewUserClient(_m.config).QueryArtists(_m)
+}
+
+// QueryAlbums queries the "albums" edge of the User entity.
+func (_m *User) QueryAlbums() *AlbumQuery {
+	return NewUserClient(_m.config).QueryAlbums(_m)
 }
 
 // Update returns a builder for updating this User.
@@ -200,6 +288,15 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("email=")
 	builder.WriteString(_m.Email)
+	builder.WriteString(", ")
+	builder.WriteString("theme=")
+	builder.WriteString(_m.Theme)
+	builder.WriteString(", ")
+	builder.WriteString("system_prompt=")
+	builder.WriteString(_m.SystemPrompt)
+	builder.WriteString(", ")
+	builder.WriteString("pagination_size=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PaginationSize))
 	builder.WriteString(", ")
 	builder.WriteString("last_login_at=")
 	builder.WriteString(_m.LastLoginAt.Format(time.ANSIC))

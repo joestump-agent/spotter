@@ -12,6 +12,10 @@ const (
 	Label = "spotify_auth"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
+	// FieldDisplayName holds the string denoting the display_name field in the database.
+	FieldDisplayName = "display_name"
+	// FieldLastSyncedAt holds the string denoting the last_synced_at field in the database.
+	FieldLastSyncedAt = "last_synced_at"
 	// FieldAccessToken holds the string denoting the access_token field in the database.
 	FieldAccessToken = "access_token"
 	// FieldRefreshToken holds the string denoting the refresh_token field in the database.
@@ -34,6 +38,8 @@ const (
 // Columns holds all SQL columns for spotifyauth fields.
 var Columns = []string{
 	FieldID,
+	FieldDisplayName,
+	FieldLastSyncedAt,
 	FieldAccessToken,
 	FieldRefreshToken,
 	FieldExpiry,
@@ -66,6 +72,16 @@ type OrderOption func(*sql.Selector)
 // ByID orders the results by the id field.
 func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
+}
+
+// ByDisplayName orders the results by the display_name field.
+func ByDisplayName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDisplayName, opts...).ToFunc()
+}
+
+// ByLastSyncedAt orders the results by the last_synced_at field.
+func ByLastSyncedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastSyncedAt, opts...).ToFunc()
 }
 
 // ByAccessToken orders the results by the access_token field.

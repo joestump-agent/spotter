@@ -9,6 +9,7 @@ import (
 	"spotter/ent/lastfmauth"
 	"spotter/ent/predicate"
 	"spotter/ent/user"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -25,6 +26,26 @@ type LastFMAuthUpdate struct {
 // Where appends a list predicates to the LastFMAuthUpdate builder.
 func (_u *LastFMAuthUpdate) Where(ps ...predicate.LastFMAuth) *LastFMAuthUpdate {
 	_u.mutation.Where(ps...)
+	return _u
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (_u *LastFMAuthUpdate) SetLastSyncedAt(v time.Time) *LastFMAuthUpdate {
+	_u.mutation.SetLastSyncedAt(v)
+	return _u
+}
+
+// SetNillableLastSyncedAt sets the "last_synced_at" field if the given value is not nil.
+func (_u *LastFMAuthUpdate) SetNillableLastSyncedAt(v *time.Time) *LastFMAuthUpdate {
+	if v != nil {
+		_u.SetLastSyncedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastSyncedAt clears the value of the "last_synced_at" field.
+func (_u *LastFMAuthUpdate) ClearLastSyncedAt() *LastFMAuthUpdate {
+	_u.mutation.ClearLastSyncedAt()
 	return _u
 }
 
@@ -125,6 +146,12 @@ func (_u *LastFMAuthUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 			}
 		}
 	}
+	if value, ok := _u.mutation.LastSyncedAt(); ok {
+		_spec.SetField(lastfmauth.FieldLastSyncedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastSyncedAtCleared() {
+		_spec.ClearField(lastfmauth.FieldLastSyncedAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.SessionKey(); ok {
 		_spec.SetField(lastfmauth.FieldSessionKey, field.TypeString, value)
 	}
@@ -178,6 +205,26 @@ type LastFMAuthUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *LastFMAuthMutation
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (_u *LastFMAuthUpdateOne) SetLastSyncedAt(v time.Time) *LastFMAuthUpdateOne {
+	_u.mutation.SetLastSyncedAt(v)
+	return _u
+}
+
+// SetNillableLastSyncedAt sets the "last_synced_at" field if the given value is not nil.
+func (_u *LastFMAuthUpdateOne) SetNillableLastSyncedAt(v *time.Time) *LastFMAuthUpdateOne {
+	if v != nil {
+		_u.SetLastSyncedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastSyncedAt clears the value of the "last_synced_at" field.
+func (_u *LastFMAuthUpdateOne) ClearLastSyncedAt() *LastFMAuthUpdateOne {
+	_u.mutation.ClearLastSyncedAt()
+	return _u
 }
 
 // SetSessionKey sets the "session_key" field.
@@ -306,6 +353,12 @@ func (_u *LastFMAuthUpdateOne) sqlSave(ctx context.Context) (_node *LastFMAuth, 
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.LastSyncedAt(); ok {
+		_spec.SetField(lastfmauth.FieldLastSyncedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastSyncedAtCleared() {
+		_spec.ClearField(lastfmauth.FieldLastSyncedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.SessionKey(); ok {
 		_spec.SetField(lastfmauth.FieldSessionKey, field.TypeString, value)

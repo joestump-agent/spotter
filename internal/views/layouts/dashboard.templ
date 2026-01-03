@@ -1,59 +1,139 @@
 package layouts
 
-templ Dashboard(title string) {
+import (
+	"spotter/internal/config"
+	"spotter/internal/views/components"
+	"strings"
+)
+
+func isActive(currentPath, targetPath string) bool {
+	return currentPath == targetPath
+}
+
+func isPreferencesSection(currentPath string) bool {
+	return strings.HasPrefix(currentPath, "/preferences")
+}
+
+func isPreferencesActive(currentPath string) bool {
+	return isPreferencesSection(currentPath) &&
+		!isActive(currentPath, "/preferences/appearance") &&
+		!isActive(currentPath, "/preferences/ai") &&
+		!isActive(currentPath, "/preferences/providers") &&
+		!isActive(currentPath, "/preferences/tasks")
+}
+
+templ Dashboard(title string, cfg *config.Config, currentPath string) {
 	@Base(title) {
-		<div class="flex h-screen overflow-hidden">
-			<!-- Sidebar -->
-			<aside class="w-64 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hidden md:flex md:flex-col">
-				<div class="h-full flex flex-col">
-					<!-- Logo / Brand -->
-					<div class="h-16 flex items-center justify-center border-b border-gray-200 dark:border-gray-700">
-						<h1 class="text-xl font-bold text-indigo-600 dark:text-indigo-400">Spotter</h1>
+		<div class="drawer lg:drawer-open" hx-ext="sse" sse-connect="/events">
+			<input id="drawer-toggle" type="checkbox" class="drawer-toggle"/>
+			<!-- Main Content -->
+			<div class="drawer-content flex flex-col">
+				<!-- Navbar for mobile -->
+				<div class="navbar bg-base-100 lg:hidden shadow-sm">
+					<div class="flex-none">
+						<label for="drawer-toggle" class="btn btn-square btn-ghost">
+							<span class="icon-[heroicons--bars-3] w-6 h-6"></span>
+						</label>
 					</div>
-					<!-- Nav -->
-					<nav class="flex-1 px-2 py-4 space-y-2">
-						<a href="/" class="flex items-center px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group">
-							<span class="icon-[heroicons--home] mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"></span>
-							Home
-						</a>
-						<a href="/recent" class="flex items-center px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group">
-							<span class="icon-[heroicons--clock] mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"></span>
-							Recent Listens
-						</a>
-						<a href="/preferences" class="flex items-center px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group">
-							<span class="icon-[heroicons--cog-6-tooth] mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"></span>
-							Preferences
-						</a>
-					</nav>
-					<!-- Theme Toggle -->
-					<div class="border-t border-gray-200 dark:border-gray-700 p-4">
-						<button
-							type="button"
-							class="flex w-full items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group"
-							onclick="
-                                if (localStorage.theme === 'dark') {
-                                    localStorage.theme = 'light';
-                                    document.documentElement.classList.remove('dark');
-                                } else {
-                                    localStorage.theme = 'dark';
-                                    document.documentElement.classList.add('dark');
-                                }
-                            "
-						>
-							<span class="icon-[heroicons--sun] mr-3 h-6 w-6 hidden dark:block text-gray-400 group-hover:text-white"></span>
-							<span class="icon-[heroicons--moon] mr-3 h-6 w-6 block dark:hidden text-gray-500 group-hover:text-gray-900"></span>
-							<span class="block dark:hidden">Dark Mode</span>
-							<span class="hidden dark:block">Light Mode</span>
-						</button>
+					<div class="flex-1 flex items-center gap-2">
+						<span class="icon-[heroicons--musical-note] w-6 h-6 text-primary"></span>
+						<a href="/" class="btn btn-ghost text-xl font-bold text-primary tracking-wide">Spotter</a>
 					</div>
 				</div>
-			</aside>
-			<!-- Main Content -->
-			<main class="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
-				<div class="p-8">
+				<!-- Page Content -->
+				<div class="flex-1 p-6 lg:p-8 bg-base-200 min-h-screen">
 					{ children... }
 				</div>
-			</main>
+			</div>
+			<!-- Sidebar -->
+			<div class="drawer-side">
+				<label for="drawer-toggle" aria-label="close sidebar" class="drawer-overlay"></label>
+				<aside class="bg-base-100 w-80 min-h-full flex flex-col border-r border-base-300">
+					<!-- Logo -->
+					<div class="p-6 border-b border-base-300">
+						<a href="/" class="block">
+							<div class="flex items-center justify-center gap-3">
+								<span class="icon-[heroicons--musical-note] w-10 h-10 text-primary"></span>
+								<h1 class="text-3xl font-bold text-primary tracking-wide">Spotter</h1>
+							</div>
+						</a>
+					</div>
+					<!-- Navigation -->
+					<nav class="flex-1 p-4">
+						<ul class="menu menu-lg gap-1">
+							<li>
+								<a href="/" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/")) }>
+									<span class="icon-[heroicons--home] w-5 h-5"></span>
+									<span>Home</span>
+								</a>
+							</li>
+							<li>
+								<a href="/recent" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/recent")) }>
+									<span class="icon-[heroicons--clock] w-5 h-5"></span>
+									<span>Listens</span>
+								</a>
+							</li>
+							<li>
+								<a href="/playlists" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/playlists")) }>
+									<span class="icon-[heroicons--queue-list] w-5 h-5"></span>
+									<span>Playlists</span>
+								</a>
+							</li>
+							<li>
+								<details open?={ isPreferencesSection(currentPath) }>
+									<summary class={ "flex items-center gap-3", templ.KV("active", isPreferencesActive(currentPath)) }>
+										<span class="icon-[heroicons--cog-6-tooth] w-5 h-5"></span>
+										<span>Preferences</span>
+									</summary>
+									<ul>
+										<li>
+											<a href="/preferences/appearance" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/preferences/appearance")) }>
+												<span class="icon-[heroicons--paint-brush] w-5 h-5"></span>
+												<span>Appearance</span>
+											</a>
+										</li>
+										<li>
+											<a href="/preferences/ai" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/preferences/ai")) }>
+												<span class="icon-[heroicons--sparkles] w-5 h-5"></span>
+												<span>AI Prompt</span>
+											</a>
+										</li>
+										<li>
+											<a href="/preferences/providers" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/preferences/providers")) }>
+												<span class="icon-[heroicons--link] w-5 h-5"></span>
+												<span>Providers</span>
+											</a>
+										</li>
+										<li>
+											<a href="/preferences/tasks" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/preferences/tasks")) }>
+												<span class="icon-[heroicons--play-circle] w-5 h-5"></span>
+												<span>Tasks</span>
+											</a>
+										</li>
+									</ul>
+								</details>
+							</li>
+						</ul>
+					</nav>
+					<!-- Logout -->
+					<div class="p-4 border-t border-base-300">
+						<a href="/logout" class="btn btn-ghost btn-block justify-start gap-3">
+							<span class="icon-[heroicons--arrow-right-on-rectangle] w-5 h-5"></span>
+							<span>Logout</span>
+						</a>
+					</div>
+				</aside>
+			</div>
+			@components.ToastContainer()
 		</div>
+		<script>
+			// Theme initialization - runs immediately
+			(function() {
+				const defaultTheme = '{ cfg.Theme.Default }';
+				const savedTheme = localStorage.getItem('spotter-theme');
+				const activeTheme = savedTheme || defaultTheme;
+				document.documentElement.setAttribute('data-theme', activeTheme);
+			})();
+		</script>
 	}
 }

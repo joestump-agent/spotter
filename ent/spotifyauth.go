@@ -18,6 +18,10 @@ type SpotifyAuth struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
+	// DisplayName holds the value of the "display_name" field.
+	DisplayName string `json:"display_name,omitempty"`
+	// LastSyncedAt holds the value of the "last_synced_at" field.
+	LastSyncedAt time.Time `json:"last_synced_at,omitempty"`
 	// AccessToken holds the value of the "access_token" field.
 	AccessToken string `json:"access_token,omitempty"`
 	// RefreshToken holds the value of the "refresh_token" field.
@@ -58,9 +62,9 @@ func (*SpotifyAuth) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case spotifyauth.FieldID:
 			values[i] = new(sql.NullInt64)
-		case spotifyauth.FieldAccessToken, spotifyauth.FieldRefreshToken:
+		case spotifyauth.FieldDisplayName, spotifyauth.FieldAccessToken, spotifyauth.FieldRefreshToken:
 			values[i] = new(sql.NullString)
-		case spotifyauth.FieldExpiry:
+		case spotifyauth.FieldLastSyncedAt, spotifyauth.FieldExpiry:
 			values[i] = new(sql.NullTime)
 		case spotifyauth.ForeignKeys[0]: // user_spotify_auth
 			values[i] = new(sql.NullInt64)
@@ -85,6 +89,18 @@ func (_m *SpotifyAuth) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			_m.ID = int(value.Int64)
+		case spotifyauth.FieldDisplayName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field display_name", values[i])
+			} else if value.Valid {
+				_m.DisplayName = value.String
+			}
+		case spotifyauth.FieldLastSyncedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_synced_at", values[i])
+			} else if value.Valid {
+				_m.LastSyncedAt = value.Time
+			}
 		case spotifyauth.FieldAccessToken:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field access_token", values[i])
@@ -151,6 +167,12 @@ func (_m *SpotifyAuth) String() string {
 	var builder strings.Builder
 	builder.WriteString("SpotifyAuth(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
+	builder.WriteString("display_name=")
+	builder.WriteString(_m.DisplayName)
+	builder.WriteString(", ")
+	builder.WriteString("last_synced_at=")
+	builder.WriteString(_m.LastSyncedAt.Format(time.ANSIC))
+	builder.WriteString(", ")
 	builder.WriteString("access_token=")
 	builder.WriteString(_m.AccessToken)
 	builder.WriteString(", ")

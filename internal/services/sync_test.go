@@ -1,0 +1,643 @@
+package services_test
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"testing"
+	"time"
+
+	"spotter/ent"
+	"spotter/ent/enttest"
+	"spotter/internal/config"
+	"spotter/internal/events"
+	"spotter/internal/providers"
+	"spotter/internal/services"
+
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// mockProvider implements providers.Provider and providers.HistoryFetcher for testing
+type mockProvider struct {
+	providerType providers.Type
+	tracks       []providers.Track
+	playlists    []providers.Playlist
+	err          error
+}
+
+func (m *mockProvider) Type() providers.Type {
+	return m.providerType
+}
+
+func (m *mockProvider) GetRecentListens(ctx context.Context, since time.Time) ([]providers.Track, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.tracks, nil
+}
+
+func (m *mockProvider) GetPlaylists(ctx context.Context) ([]providers.Playlist, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.playlists, nil
+}
+
+func (m *mockProvider) CreatePlaylist(ctx context.Context, name, description string, tracks []providers.Track) error {
+	return nil
+}
+
+// mockFactory creates a factory that returns the given provider
+func mockFactory(p providers.Provider) providers.Factory {
+	return func(ctx context.Context, user *ent.User) (providers.Provider, error) {
+		return p, nil
+	}
+}
+
+func setupTestSyncer(t *testing.T) (*ent.Client, *services.Syncer, *events.Bus) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	bus := events.NewBus()
+
+	syncer := services.NewSyncer(client, cfg, logger, bus)
+	return client, syncer, bus
+}
+
+func createTestUser(t *testing.T, client *ent.Client) *ent.User {
+	ctx := context.Background()
+	user, err := client.User.Create().
+		SetUsername("testuser").
+		Save(ctx)
+	require.NoError(t, err)
+	return user
+}
+
+func TestSyncer_UpdatesLastSyncedAt_Navidrome(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Navidrome auth
+	user := createTestUser(t, client)
+	navidromeAuth, err := client.NavidromeAuth.Create().
+		SetUser(user).
+		SetPassword("testpassword").
+		Save(ctx)
+	require.NoError(t, err)
+	assert.True(t, navidromeAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be zero initially")
+
+	// Register mock Navidrome provider that returns some tracks
+	mockNavidrome := &mockProvider{
+		providerType: providers.TypeNavidrome,
+		tracks: []providers.Track{
+			{
+				ID:       "track1",
+				Name:     "Test Track",
+				Artist:   "Test Artist",
+				Album:    "Test Album",
+				PlayedAt: time.Now(),
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockNavidrome))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify LastSyncedAt was updated
+	updatedAuth, err := client.NavidromeAuth.Get(ctx, navidromeAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated after sync")
+	assert.WithinDuration(t, time.Now(), updatedAuth.LastSyncedAt, 5*time.Second)
+}
+
+func TestSyncer_UpdatesLastSyncedAt_Spotify(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Spotify auth
+	user := createTestUser(t, client)
+	spotifyAuth, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+	assert.True(t, spotifyAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be zero initially")
+
+	// Register mock Spotify provider
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks: []providers.Track{
+			{
+				ID:       "spotify:track:123",
+				Name:     "Spotify Track",
+				Artist:   "Spotify Artist",
+				Album:    "Spotify Album",
+				PlayedAt: time.Now(),
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify LastSyncedAt was updated
+	updatedAuth, err := client.SpotifyAuth.Get(ctx, spotifyAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated after sync")
+	assert.WithinDuration(t, time.Now(), updatedAuth.LastSyncedAt, 5*time.Second)
+}
+
+func TestSyncer_UpdatesLastSyncedAt_LastFM(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with LastFM auth
+	user := createTestUser(t, client)
+	lastfmAuth, err := client.LastFMAuth.Create().
+		SetUser(user).
+		SetUsername("lastfm_user").
+		SetSessionKey("test_session_key").
+		Save(ctx)
+	require.NoError(t, err)
+	assert.True(t, lastfmAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be zero initially")
+
+	// Register mock LastFM provider
+	mockLastFM := &mockProvider{
+		providerType: providers.TypeLastFM,
+		tracks: []providers.Track{
+			{
+				ID:       "lastfm:track:456",
+				Name:     "LastFM Track",
+				Artist:   "LastFM Artist",
+				Album:    "LastFM Album",
+				PlayedAt: time.Now(),
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockLastFM))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify LastSyncedAt was updated
+	updatedAuth, err := client.LastFMAuth.Get(ctx, lastfmAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated after sync")
+	assert.WithinDuration(t, time.Now(), updatedAuth.LastSyncedAt, 5*time.Second)
+}
+
+func TestSyncer_UpdatesLastSyncedAt_EvenWithNoNewTracks(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Spotify auth
+	user := createTestUser(t, client)
+	spotifyAuth, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock Spotify provider that returns no tracks
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks:       []providers.Track{}, // Empty - no new tracks
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify LastSyncedAt was still updated (sync was attempted)
+	updatedAuth, err := client.SpotifyAuth.Get(ctx, spotifyAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated even with no new tracks")
+}
+
+func TestSyncer_UpdatesLastSyncedAt_AfterPlaylistSync(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Spotify auth
+	user := createTestUser(t, client)
+	spotifyAuth, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock Spotify provider with playlists
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks:       []providers.Track{},
+		playlists: []providers.Playlist{
+			{
+				ID:          "playlist1",
+				Name:        "My Playlist",
+				Description: "Test playlist",
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify LastSyncedAt was updated
+	updatedAuth, err := client.SpotifyAuth.Get(ctx, spotifyAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated after playlist sync")
+}
+
+func TestSyncer_MultipleProviders_UpdatesAllLastSyncedAt(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with multiple auth providers
+	user := createTestUser(t, client)
+
+	navidromeAuth, err := client.NavidromeAuth.Create().
+		SetUser(user).
+		SetPassword("testpassword").
+		Save(ctx)
+	require.NoError(t, err)
+
+	spotifyAuth, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock providers for both
+	mockNavidrome := &mockProvider{
+		providerType: providers.TypeNavidrome,
+		tracks:       []providers.Track{},
+	}
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks:       []providers.Track{},
+	}
+	syncer.Register(mockFactory(mockNavidrome))
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify both LastSyncedAt were updated
+	updatedNavidrome, err := client.NavidromeAuth.Get(ctx, navidromeAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedNavidrome.LastSyncedAt.IsZero(), "Navidrome LastSyncedAt should be updated")
+
+	updatedSpotify, err := client.SpotifyAuth.Get(ctx, spotifyAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedSpotify.LastSyncedAt.IsZero(), "Spotify LastSyncedAt should be updated")
+}
+
+func TestSyncer_SyncRecentListens_UpdatesLastSyncedAt(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Spotify auth
+	user := createTestUser(t, client)
+	spotifyAuth, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock Spotify provider
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks:       []providers.Track{},
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run SyncRecentListens only
+	err = syncer.SyncRecentListens(ctx, user)
+	require.NoError(t, err)
+
+	// Verify LastSyncedAt was updated
+	updatedAuth, err := client.SpotifyAuth.Get(ctx, spotifyAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated after SyncRecentListens")
+}
+
+func TestSyncer_SyncPlaylists_UpdatesLastSyncedAt(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Spotify auth
+	user := createTestUser(t, client)
+	spotifyAuth, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock Spotify provider
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		playlists:    []providers.Playlist{},
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run SyncPlaylists only
+	err = syncer.SyncPlaylists(ctx, user)
+	require.NoError(t, err)
+
+	// Verify LastSyncedAt was updated
+	updatedAuth, err := client.SpotifyAuth.Get(ctx, spotifyAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated after SyncPlaylists")
+}
+
+func TestSyncer_PersistsListens(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Navidrome auth
+	user := createTestUser(t, client)
+	_, err := client.NavidromeAuth.Create().
+		SetUser(user).
+		SetPassword("testpassword").
+		Save(ctx)
+	require.NoError(t, err)
+
+	playedAt := time.Now().Add(-5 * time.Minute)
+
+	// Register mock Navidrome provider with tracks
+	mockNavidrome := &mockProvider{
+		providerType: providers.TypeNavidrome,
+		tracks: []providers.Track{
+			{
+				ID:       "track1",
+				Name:     "Test Track 1",
+				Artist:   "Test Artist",
+				Album:    "Test Album",
+				PlayedAt: playedAt,
+				URL:      "http://example.com/track1",
+			},
+			{
+				ID:       "track2",
+				Name:     "Test Track 2",
+				Artist:   "Another Artist",
+				Album:    "Another Album",
+				PlayedAt: playedAt.Add(time.Minute),
+				URL:      "http://example.com/track2",
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockNavidrome))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify listens were persisted
+	listens, err := client.Listen.Query().All(ctx)
+	require.NoError(t, err)
+	assert.Len(t, listens, 2, "Should have persisted 2 listens")
+
+	// Verify listen details
+	assert.Equal(t, "Test Track 1", listens[0].TrackName)
+	assert.Equal(t, "Test Artist", listens[0].ArtistName)
+	assert.Equal(t, "navidrome", listens[0].Source)
+}
+
+func TestSyncer_PersistsPlaylistsWithStats(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Spotify auth
+	user := createTestUser(t, client)
+	_, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock Spotify provider with playlists that have stats
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks:       []providers.Track{},
+		playlists: []providers.Playlist{
+			{
+				ID:            "playlist-1",
+				Name:          "My Test Playlist",
+				Description:   "A playlist for testing",
+				ImageURL:      "https://example.com/image.jpg",
+				ExternalURL:   "https://open.spotify.com/playlist/playlist-1",
+				TrackCount:    15,
+				UniqueArtists: 8,
+				UniqueAlbums:  5,
+			},
+			{
+				ID:            "playlist-2",
+				Name:          "Empty Playlist",
+				Description:   "",
+				ImageURL:      "",
+				ExternalURL:   "https://open.spotify.com/playlist/playlist-2",
+				TrackCount:    0,
+				UniqueArtists: 0,
+				UniqueAlbums:  0,
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify playlists were persisted with all fields
+	playlists, err := client.Playlist.Query().All(ctx)
+	require.NoError(t, err)
+	assert.Len(t, playlists, 2, "Should have persisted 2 playlists")
+
+	// Find the playlist with stats
+	var playlistWithStats *ent.Playlist
+	var emptyPlaylist *ent.Playlist
+	for _, pl := range playlists {
+		if pl.RemoteID == "playlist-1" {
+			playlistWithStats = pl
+		} else if pl.RemoteID == "playlist-2" {
+			emptyPlaylist = pl
+		}
+	}
+
+	require.NotNil(t, playlistWithStats)
+	assert.Equal(t, "My Test Playlist", playlistWithStats.Name)
+	assert.Equal(t, "A playlist for testing", playlistWithStats.Description)
+	assert.Equal(t, "https://example.com/image.jpg", playlistWithStats.ImageURL)
+	assert.Equal(t, "https://open.spotify.com/playlist/playlist-1", playlistWithStats.ExternalURL)
+	assert.Equal(t, 15, playlistWithStats.TrackCount)
+	assert.Equal(t, 8, playlistWithStats.UniqueArtists)
+	assert.Equal(t, 5, playlistWithStats.UniqueAlbums)
+	assert.Equal(t, "spotify", playlistWithStats.Source)
+
+	require.NotNil(t, emptyPlaylist)
+	assert.Equal(t, "Empty Playlist", emptyPlaylist.Name)
+	assert.Equal(t, 0, emptyPlaylist.TrackCount)
+	assert.Equal(t, 0, emptyPlaylist.UniqueArtists)
+	assert.Equal(t, 0, emptyPlaylist.UniqueAlbums)
+}
+
+func TestSyncer_UpdatesPlaylistStats(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Spotify auth
+	user := createTestUser(t, client)
+	_, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Create an existing playlist
+	_, err = client.Playlist.Create().
+		SetUser(user).
+		SetRemoteID("playlist-1").
+		SetName("Old Name").
+		SetDescription("Old description").
+		SetSource("spotify").
+		SetTrackCount(5).
+		SetUniqueArtists(3).
+		SetUniqueAlbums(2).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock Spotify provider with updated playlist data
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks:       []providers.Track{},
+		playlists: []providers.Playlist{
+			{
+				ID:            "playlist-1",
+				Name:          "Updated Name",
+				Description:   "Updated description",
+				ImageURL:      "https://example.com/new-image.jpg",
+				ExternalURL:   "https://open.spotify.com/playlist/playlist-1",
+				TrackCount:    25,
+				UniqueArtists: 12,
+				UniqueAlbums:  8,
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify playlist was updated
+	playlists, err := client.Playlist.Query().All(ctx)
+	require.NoError(t, err)
+	assert.Len(t, playlists, 1, "Should still have 1 playlist")
+
+	pl := playlists[0]
+	assert.Equal(t, "Updated Name", pl.Name)
+	assert.Equal(t, "Updated description", pl.Description)
+	assert.Equal(t, "https://example.com/new-image.jpg", pl.ImageURL)
+	assert.Equal(t, 25, pl.TrackCount)
+	assert.Equal(t, 12, pl.UniqueArtists)
+	assert.Equal(t, 8, pl.UniqueAlbums)
+}
+
+func TestSyncer_SendsNotifications(t *testing.T) {
+	client, syncer, bus := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Navidrome auth
+	user := createTestUser(t, client)
+	_, err := client.NavidromeAuth.Create().
+		SetUser(user).
+		SetPassword("testpassword").
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Subscribe to events
+	eventChan, cancel := bus.Subscribe(user.ID)
+	defer cancel()
+
+	// Register mock Navidrome provider with tracks
+	mockNavidrome := &mockProvider{
+		providerType: providers.TypeNavidrome,
+		tracks: []providers.Track{
+			{
+				ID:       "track1",
+				Name:     "Test Track",
+				Artist:   "Test Artist",
+				Album:    "Test Album",
+				PlayedAt: time.Now(),
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockNavidrome))
+
+	// Run sync in goroutine
+	done := make(chan error)
+	go func() {
+		done <- syncer.Sync(ctx, user)
+	}()
+
+	// Collect events
+	var receivedEvents []events.Event
+	timeout := time.After(2 * time.Second)
+
+collectLoop:
+	for {
+		select {
+		case event := <-eventChan:
+			receivedEvents = append(receivedEvents, event)
+		case err := <-done:
+			require.NoError(t, err)
+			// Give a little time for final events
+			time.Sleep(100 * time.Millisecond)
+			break collectLoop
+		case <-timeout:
+			t.Fatal("Timeout waiting for sync to complete")
+		}
+	}
+
+	// Verify we received notification events
+	assert.NotEmpty(t, receivedEvents, "Should have received events")
+
+	// Check for notification event
+	hasNotification := false
+	for _, event := range receivedEvents {
+		if event.Type == events.EventTypeNotification {
+			hasNotification = true
+			break
+		}
+	}
+	assert.True(t, hasNotification, "Should have received a notification event")
+}

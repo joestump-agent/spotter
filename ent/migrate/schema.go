@@ -8,9 +8,204 @@ import (
 )
 
 var (
+	// AlbumsColumns holds the columns for the "albums" table.
+	AlbumsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "sort_name", Type: field.TypeString, Nullable: true},
+		{Name: "musicbrainz_id", Type: field.TypeString, Nullable: true},
+		{Name: "spotify_id", Type: field.TypeString, Nullable: true},
+		{Name: "release_date", Type: field.TypeString, Nullable: true},
+		{Name: "year", Type: field.TypeInt, Nullable: true},
+		{Name: "genre", Type: field.TypeString, Nullable: true},
+		{Name: "tags", Type: field.TypeJSON, Nullable: true},
+		{Name: "popularity", Type: field.TypeInt, Nullable: true},
+		{Name: "total_tracks", Type: field.TypeInt, Nullable: true},
+		{Name: "album_type", Type: field.TypeString, Nullable: true},
+		{Name: "label", Type: field.TypeString, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "last_enriched_at", Type: field.TypeTime, Nullable: true},
+		{Name: "artist_albums", Type: field.TypeInt, Nullable: true},
+		{Name: "user_albums", Type: field.TypeInt},
+	}
+	// AlbumsTable holds the schema information for the "albums" table.
+	AlbumsTable = &schema.Table{
+		Name:       "albums",
+		Columns:    AlbumsColumns,
+		PrimaryKey: []*schema.Column{AlbumsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "albums_artists_albums",
+				Columns:    []*schema.Column{AlbumsColumns[16]},
+				RefColumns: []*schema.Column{ArtistsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "albums_users_albums",
+				Columns:    []*schema.Column{AlbumsColumns[17]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "album_name_user_albums_artist_albums",
+				Unique:  true,
+				Columns: []*schema.Column{AlbumsColumns[1], AlbumsColumns[17], AlbumsColumns[16]},
+			},
+			{
+				Name:    "album_musicbrainz_id",
+				Unique:  false,
+				Columns: []*schema.Column{AlbumsColumns[3]},
+			},
+			{
+				Name:    "album_spotify_id",
+				Unique:  false,
+				Columns: []*schema.Column{AlbumsColumns[4]},
+			},
+			{
+				Name:    "album_year",
+				Unique:  false,
+				Columns: []*schema.Column{AlbumsColumns[6]},
+			},
+		},
+	}
+	// AlbumImagesColumns holds the columns for the "album_images" table.
+	AlbumImagesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "image_type", Type: field.TypeEnum, Enums: []string{"cover_front", "cover_back", "cd_art", "booklet", "spine", "other"}, Default: "cover_front"},
+		{Name: "source", Type: field.TypeString},
+		{Name: "url", Type: field.TypeString, Nullable: true},
+		{Name: "local_path", Type: field.TypeString, Nullable: true},
+		{Name: "width", Type: field.TypeInt, Nullable: true},
+		{Name: "height", Type: field.TypeInt, Nullable: true},
+		{Name: "size_bytes", Type: field.TypeInt, Nullable: true},
+		{Name: "mime_type", Type: field.TypeString, Nullable: true},
+		{Name: "is_primary", Type: field.TypeBool, Default: false},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "album_images", Type: field.TypeInt},
+	}
+	// AlbumImagesTable holds the schema information for the "album_images" table.
+	AlbumImagesTable = &schema.Table{
+		Name:       "album_images",
+		Columns:    AlbumImagesColumns,
+		PrimaryKey: []*schema.Column{AlbumImagesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "album_images_albums_images",
+				Columns:    []*schema.Column{AlbumImagesColumns[11]},
+				RefColumns: []*schema.Column{AlbumsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "albumimage_image_type_album_images",
+				Unique:  false,
+				Columns: []*schema.Column{AlbumImagesColumns[1], AlbumImagesColumns[11]},
+			},
+			{
+				Name:    "albumimage_is_primary_album_images",
+				Unique:  false,
+				Columns: []*schema.Column{AlbumImagesColumns[9], AlbumImagesColumns[11]},
+			},
+		},
+	}
+	// ArtistsColumns holds the columns for the "artists" table.
+	ArtistsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "sort_name", Type: field.TypeString, Nullable: true},
+		{Name: "musicbrainz_id", Type: field.TypeString, Unique: true, Nullable: true},
+		{Name: "spotify_id", Type: field.TypeString, Unique: true, Nullable: true},
+		{Name: "lastfm_url", Type: field.TypeString, Nullable: true},
+		{Name: "navidrome_id", Type: field.TypeString, Nullable: true},
+		{Name: "bio", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "tags", Type: field.TypeJSON, Nullable: true},
+		{Name: "popularity", Type: field.TypeInt, Nullable: true},
+		{Name: "follower_count", Type: field.TypeInt, Nullable: true},
+		{Name: "genres", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "last_enriched_at", Type: field.TypeTime, Nullable: true},
+		{Name: "user_artists", Type: field.TypeInt},
+	}
+	// ArtistsTable holds the schema information for the "artists" table.
+	ArtistsTable = &schema.Table{
+		Name:       "artists",
+		Columns:    ArtistsColumns,
+		PrimaryKey: []*schema.Column{ArtistsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "artists_users_artists",
+				Columns:    []*schema.Column{ArtistsColumns[15]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "artist_name_user_artists",
+				Unique:  true,
+				Columns: []*schema.Column{ArtistsColumns[1], ArtistsColumns[15]},
+			},
+			{
+				Name:    "artist_musicbrainz_id",
+				Unique:  false,
+				Columns: []*schema.Column{ArtistsColumns[3]},
+			},
+			{
+				Name:    "artist_spotify_id",
+				Unique:  false,
+				Columns: []*schema.Column{ArtistsColumns[4]},
+			},
+		},
+	}
+	// ArtistImagesColumns holds the columns for the "artist_images" table.
+	ArtistImagesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "image_type", Type: field.TypeEnum, Enums: []string{"thumbnail", "background", "logo", "banner", "fanart"}},
+		{Name: "source", Type: field.TypeString},
+		{Name: "url", Type: field.TypeString},
+		{Name: "local_path", Type: field.TypeString, Nullable: true},
+		{Name: "width", Type: field.TypeInt, Nullable: true},
+		{Name: "height", Type: field.TypeInt, Nullable: true},
+		{Name: "likes", Type: field.TypeInt, Nullable: true},
+		{Name: "is_primary", Type: field.TypeBool, Default: false},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "artist_images", Type: field.TypeInt},
+	}
+	// ArtistImagesTable holds the schema information for the "artist_images" table.
+	ArtistImagesTable = &schema.Table{
+		Name:       "artist_images",
+		Columns:    ArtistImagesColumns,
+		PrimaryKey: []*schema.Column{ArtistImagesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "artist_images_artists_images",
+				Columns:    []*schema.Column{ArtistImagesColumns[10]},
+				RefColumns: []*schema.Column{ArtistsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "artistimage_url_artist_images",
+				Unique:  true,
+				Columns: []*schema.Column{ArtistImagesColumns[3], ArtistImagesColumns[10]},
+			},
+			{
+				Name:    "artistimage_image_type_artist_images",
+				Unique:  false,
+				Columns: []*schema.Column{ArtistImagesColumns[1], ArtistImagesColumns[10]},
+			},
+		},
+	}
 	// LastFmAuthsColumns holds the columns for the "last_fm_auths" table.
 	LastFmAuthsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "last_synced_at", Type: field.TypeTime, Nullable: true},
 		{Name: "session_key", Type: field.TypeString},
 		{Name: "username", Type: field.TypeString},
 		{Name: "user_lastfm_auth", Type: field.TypeInt, Unique: true},
@@ -23,7 +218,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "last_fm_auths_users_lastfm_auth",
-				Columns:    []*schema.Column{LastFmAuthsColumns[3]},
+				Columns:    []*schema.Column{LastFmAuthsColumns[4]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -65,6 +260,7 @@ var (
 	NavidromeAuthsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "password", Type: field.TypeString},
+		{Name: "last_synced_at", Type: field.TypeTime, Nullable: true},
 		{Name: "user_navidrome_auth", Type: field.TypeInt, Unique: true},
 	}
 	// NavidromeAuthsTable holds the schema information for the "navidrome_auths" table.
@@ -75,15 +271,54 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "navidrome_auths_users_navidrome_auth",
-				Columns:    []*schema.Column{NavidromeAuthsColumns[2]},
+				Columns:    []*schema.Column{NavidromeAuthsColumns[3]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
+			},
+		},
+	}
+	// PlaylistsColumns holds the columns for the "playlists" table.
+	PlaylistsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "remote_id", Type: field.TypeString},
+		{Name: "name", Type: field.TypeString},
+		{Name: "description", Type: field.TypeString, Nullable: true},
+		{Name: "source", Type: field.TypeString},
+		{Name: "image_url", Type: field.TypeString, Nullable: true},
+		{Name: "external_url", Type: field.TypeString, Nullable: true},
+		{Name: "track_count", Type: field.TypeInt, Default: 0},
+		{Name: "unique_artists", Type: field.TypeInt, Default: 0},
+		{Name: "unique_albums", Type: field.TypeInt, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_playlists", Type: field.TypeInt},
+	}
+	// PlaylistsTable holds the schema information for the "playlists" table.
+	PlaylistsTable = &schema.Table{
+		Name:       "playlists",
+		Columns:    PlaylistsColumns,
+		PrimaryKey: []*schema.Column{PlaylistsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "playlists_users_playlists",
+				Columns:    []*schema.Column{PlaylistsColumns[12]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "playlist_remote_id_source_user_playlists",
+				Unique:  true,
+				Columns: []*schema.Column{PlaylistsColumns[1], PlaylistsColumns[4], PlaylistsColumns[12]},
 			},
 		},
 	}
 	// SpotifyAuthsColumns holds the columns for the "spotify_auths" table.
 	SpotifyAuthsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "display_name", Type: field.TypeString, Nullable: true},
+		{Name: "last_synced_at", Type: field.TypeTime, Nullable: true},
 		{Name: "access_token", Type: field.TypeString},
 		{Name: "refresh_token", Type: field.TypeString},
 		{Name: "expiry", Type: field.TypeTime},
@@ -97,9 +332,126 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "spotify_auths_users_spotify_auth",
-				Columns:    []*schema.Column{SpotifyAuthsColumns[4]},
+				Columns:    []*schema.Column{SpotifyAuthsColumns[6]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
+			},
+		},
+	}
+	// SyncEventsColumns holds the columns for the "sync_events" table.
+	SyncEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "event_type", Type: field.TypeEnum, Enums: []string{"sync_started", "track_added", "track_skipped", "playlist_added", "playlist_skipped", "sync_completed", "sync_failed", "metadata_started", "metadata_completed", "metadata_failed", "artist_enriched", "album_enriched", "track_enriched", "image_downloaded", "catalog_built", "cleanup_started", "cleanup_completed", "data_reset"}},
+		{Name: "provider", Type: field.TypeString},
+		{Name: "message", Type: field.TypeString},
+		{Name: "metadata", Type: field.TypeString, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "user_sync_events", Type: field.TypeInt},
+	}
+	// SyncEventsTable holds the schema information for the "sync_events" table.
+	SyncEventsTable = &schema.Table{
+		Name:       "sync_events",
+		Columns:    SyncEventsColumns,
+		PrimaryKey: []*schema.Column{SyncEventsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "sync_events_users_sync_events",
+				Columns:    []*schema.Column{SyncEventsColumns[6]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "syncevent_created_at_user_sync_events",
+				Unique:  false,
+				Columns: []*schema.Column{SyncEventsColumns[5], SyncEventsColumns[6]},
+			},
+			{
+				Name:    "syncevent_provider_user_sync_events",
+				Unique:  false,
+				Columns: []*schema.Column{SyncEventsColumns[2], SyncEventsColumns[6]},
+			},
+			{
+				Name:    "syncevent_event_type_user_sync_events",
+				Unique:  false,
+				Columns: []*schema.Column{SyncEventsColumns[1], SyncEventsColumns[6]},
+			},
+		},
+	}
+	// TracksColumns holds the columns for the "tracks" table.
+	TracksColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "musicbrainz_id", Type: field.TypeString, Nullable: true},
+		{Name: "spotify_id", Type: field.TypeString, Nullable: true},
+		{Name: "navidrome_id", Type: field.TypeString, Nullable: true},
+		{Name: "duration_ms", Type: field.TypeInt, Nullable: true},
+		{Name: "track_number", Type: field.TypeInt, Nullable: true},
+		{Name: "disc_number", Type: field.TypeInt, Nullable: true},
+		{Name: "bpm", Type: field.TypeFloat64, Nullable: true},
+		{Name: "musical_key", Type: field.TypeString, Nullable: true},
+		{Name: "energy", Type: field.TypeFloat64, Nullable: true},
+		{Name: "danceability", Type: field.TypeFloat64, Nullable: true},
+		{Name: "valence", Type: field.TypeFloat64, Nullable: true},
+		{Name: "acousticness", Type: field.TypeFloat64, Nullable: true},
+		{Name: "instrumentalness", Type: field.TypeFloat64, Nullable: true},
+		{Name: "popularity", Type: field.TypeInt, Nullable: true},
+		{Name: "tags", Type: field.TypeJSON, Nullable: true},
+		{Name: "genres", Type: field.TypeJSON, Nullable: true},
+		{Name: "isrc", Type: field.TypeString, Nullable: true},
+		{Name: "spotify_url", Type: field.TypeString, Nullable: true},
+		{Name: "musicbrainz_url", Type: field.TypeString, Nullable: true},
+		{Name: "last_enriched_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "album_tracks", Type: field.TypeInt, Nullable: true},
+		{Name: "artist_tracks", Type: field.TypeInt, Nullable: true},
+	}
+	// TracksTable holds the schema information for the "tracks" table.
+	TracksTable = &schema.Table{
+		Name:       "tracks",
+		Columns:    TracksColumns,
+		PrimaryKey: []*schema.Column{TracksColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "tracks_albums_tracks",
+				Columns:    []*schema.Column{TracksColumns[24]},
+				RefColumns: []*schema.Column{AlbumsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "tracks_artists_tracks",
+				Columns:    []*schema.Column{TracksColumns[25]},
+				RefColumns: []*schema.Column{ArtistsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "track_name_artist_tracks",
+				Unique:  false,
+				Columns: []*schema.Column{TracksColumns[1], TracksColumns[25]},
+			},
+			{
+				Name:    "track_musicbrainz_id",
+				Unique:  false,
+				Columns: []*schema.Column{TracksColumns[2]},
+			},
+			{
+				Name:    "track_spotify_id",
+				Unique:  false,
+				Columns: []*schema.Column{TracksColumns[3]},
+			},
+			{
+				Name:    "track_navidrome_id",
+				Unique:  false,
+				Columns: []*schema.Column{TracksColumns[4]},
+			},
+			{
+				Name:    "track_isrc",
+				Unique:  false,
+				Columns: []*schema.Column{TracksColumns[18]},
 			},
 		},
 	}
@@ -108,6 +460,9 @@ var (
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "username", Type: field.TypeString, Unique: true},
 		{Name: "email", Type: field.TypeString, Nullable: true},
+		{Name: "theme", Type: field.TypeString, Default: "dark"},
+		{Name: "system_prompt", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "pagination_size", Type: field.TypeInt, Default: 25},
 		{Name: "last_login_at", Type: field.TypeTime},
 	}
 	// UsersTable holds the schema information for the "users" table.
@@ -118,17 +473,33 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		AlbumsTable,
+		AlbumImagesTable,
+		ArtistsTable,
+		ArtistImagesTable,
 		LastFmAuthsTable,
 		ListensTable,
 		NavidromeAuthsTable,
+		PlaylistsTable,
 		SpotifyAuthsTable,
+		SyncEventsTable,
+		TracksTable,
 		UsersTable,
 	}
 )
 
 func init() {
+	AlbumsTable.ForeignKeys[0].RefTable = ArtistsTable
+	AlbumsTable.ForeignKeys[1].RefTable = UsersTable
+	AlbumImagesTable.ForeignKeys[0].RefTable = AlbumsTable
+	ArtistsTable.ForeignKeys[0].RefTable = UsersTable
+	ArtistImagesTable.ForeignKeys[0].RefTable = ArtistsTable
 	LastFmAuthsTable.ForeignKeys[0].RefTable = UsersTable
 	ListensTable.ForeignKeys[0].RefTable = UsersTable
 	NavidromeAuthsTable.ForeignKeys[0].RefTable = UsersTable
+	PlaylistsTable.ForeignKeys[0].RefTable = UsersTable
 	SpotifyAuthsTable.ForeignKeys[0].RefTable = UsersTable
+	SyncEventsTable.ForeignKeys[0].RefTable = UsersTable
+	TracksTable.ForeignKeys[0].RefTable = AlbumsTable
+	TracksTable.ForeignKeys[1].RefTable = ArtistsTable
 }

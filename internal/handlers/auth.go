@@ -20,7 +20,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	h.Render(w, r, auth.Login())
+	h.Render(w, r, auth.Login(h.Config.Navidrome.BaseURL))
 }
 
 func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
@@ -85,21 +85,19 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Store the existing NavidromeAuth before updating user (edges are lost after Save)
+		existingNavidromeAuth := u.Edges.NavidromeAuth
+
 		// Update Navidrome Auth
-		if u.Edges.NavidromeAuth != nil {
-			_, err = h.Client.NavidromeAuth.UpdateOne(u.Edges.NavidromeAuth).
+		if existingNavidromeAuth != nil {
+			_, err = h.Client.NavidromeAuth.UpdateOne(existingNavidromeAuth).
 				SetPassword(password).
 				Save(r.Context())
-		} else {
-			_, err = h.Client.NavidromeAuth.Create().
-				SetUser(u).
-				SetPassword(password).
-				Save(r.Context())
-		}
-		if err != nil {
-			h.Logger.Error("Failed to save navidrome auth", "error", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
+			if err != nil {
+				h.Logger.Error("failed to update navidrome auth", "error", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 

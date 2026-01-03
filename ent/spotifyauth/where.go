@@ -55,6 +55,16 @@ func IDLTE(id int) predicate.SpotifyAuth {
 	return predicate.SpotifyAuth(sql.FieldLTE(FieldID, id))
 }
 
+// DisplayName applies equality check predicate on the "display_name" field. It's identical to DisplayNameEQ.
+func DisplayName(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldEQ(FieldDisplayName, v))
+}
+
+// LastSyncedAt applies equality check predicate on the "last_synced_at" field. It's identical to LastSyncedAtEQ.
+func LastSyncedAt(v time.Time) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldEQ(FieldLastSyncedAt, v))
+}
+
 // AccessToken applies equality check predicate on the "access_token" field. It's identical to AccessTokenEQ.
 func AccessToken(v string) predicate.SpotifyAuth {
 	return predicate.SpotifyAuth(sql.FieldEQ(FieldAccessToken, v))
@@ -68,6 +78,131 @@ func RefreshToken(v string) predicate.SpotifyAuth {
 // Expiry applies equality check predicate on the "expiry" field. It's identical to ExpiryEQ.
 func Expiry(v time.Time) predicate.SpotifyAuth {
 	return predicate.SpotifyAuth(sql.FieldEQ(FieldExpiry, v))
+}
+
+// DisplayNameEQ applies the EQ predicate on the "display_name" field.
+func DisplayNameEQ(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldEQ(FieldDisplayName, v))
+}
+
+// DisplayNameNEQ applies the NEQ predicate on the "display_name" field.
+func DisplayNameNEQ(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldNEQ(FieldDisplayName, v))
+}
+
+// DisplayNameIn applies the In predicate on the "display_name" field.
+func DisplayNameIn(vs ...string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldIn(FieldDisplayName, vs...))
+}
+
+// DisplayNameNotIn applies the NotIn predicate on the "display_name" field.
+func DisplayNameNotIn(vs ...string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldNotIn(FieldDisplayName, vs...))
+}
+
+// DisplayNameGT applies the GT predicate on the "display_name" field.
+func DisplayNameGT(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldGT(FieldDisplayName, v))
+}
+
+// DisplayNameGTE applies the GTE predicate on the "display_name" field.
+func DisplayNameGTE(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldGTE(FieldDisplayName, v))
+}
+
+// DisplayNameLT applies the LT predicate on the "display_name" field.
+func DisplayNameLT(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldLT(FieldDisplayName, v))
+}
+
+// DisplayNameLTE applies the LTE predicate on the "display_name" field.
+func DisplayNameLTE(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldLTE(FieldDisplayName, v))
+}
+
+// DisplayNameContains applies the Contains predicate on the "display_name" field.
+func DisplayNameContains(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldContains(FieldDisplayName, v))
+}
+
+// DisplayNameHasPrefix applies the HasPrefix predicate on the "display_name" field.
+func DisplayNameHasPrefix(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldHasPrefix(FieldDisplayName, v))
+}
+
+// DisplayNameHasSuffix applies the HasSuffix predicate on the "display_name" field.
+func DisplayNameHasSuffix(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldHasSuffix(FieldDisplayName, v))
+}
+
+// DisplayNameIsNil applies the IsNil predicate on the "display_name" field.
+func DisplayNameIsNil() predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldIsNull(FieldDisplayName))
+}
+
+// DisplayNameNotNil applies the NotNil predicate on the "display_name" field.
+func DisplayNameNotNil() predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldNotNull(FieldDisplayName))
+}
+
+// DisplayNameEqualFold applies the EqualFold predicate on the "display_name" field.
+func DisplayNameEqualFold(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldEqualFold(FieldDisplayName, v))
+}
+
+// DisplayNameContainsFold applies the ContainsFold predicate on the "display_name" field.
+func DisplayNameContainsFold(v string) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldContainsFold(FieldDisplayName, v))
+}
+
+// LastSyncedAtEQ applies the EQ predicate on the "last_synced_at" field.
+func LastSyncedAtEQ(v time.Time) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldEQ(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtNEQ applies the NEQ predicate on the "last_synced_at" field.
+func LastSyncedAtNEQ(v time.Time) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldNEQ(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtIn applies the In predicate on the "last_synced_at" field.
+func LastSyncedAtIn(vs ...time.Time) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldIn(FieldLastSyncedAt, vs...))
+}
+
+// LastSyncedAtNotIn applies the NotIn predicate on the "last_synced_at" field.
+func LastSyncedAtNotIn(vs ...time.Time) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldNotIn(FieldLastSyncedAt, vs...))
+}
+
+// LastSyncedAtGT applies the GT predicate on the "last_synced_at" field.
+func LastSyncedAtGT(v time.Time) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldGT(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtGTE applies the GTE predicate on the "last_synced_at" field.
+func LastSyncedAtGTE(v time.Time) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldGTE(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtLT applies the LT predicate on the "last_synced_at" field.
+func LastSyncedAtLT(v time.Time) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldLT(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtLTE applies the LTE predicate on the "last_synced_at" field.
+func LastSyncedAtLTE(v time.Time) predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldLTE(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtIsNil applies the IsNil predicate on the "last_synced_at" field.
+func LastSyncedAtIsNil() predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldIsNull(FieldLastSyncedAt))
+}
+
+// LastSyncedAtNotNil applies the NotNil predicate on the "last_synced_at" field.
+func LastSyncedAtNotNil() predicate.SpotifyAuth {
+	return predicate.SpotifyAuth(sql.FieldNotNull(FieldLastSyncedAt))
 }
 
 // AccessTokenEQ applies the EQ predicate on the "access_token" field.

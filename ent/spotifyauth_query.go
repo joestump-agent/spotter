@@ -299,12 +299,12 @@ func (_q *SpotifyAuthQuery) WithUser(opts ...func(*UserQuery)) *SpotifyAuthQuery
 // Example:
 //
 //	var v []struct {
-//		AccessToken string `json:"access_token,omitempty"`
+//		DisplayName string `json:"display_name,omitempty"`
 //		Count int `json:"count,omitempty"`
 //	}
 //
 //	client.SpotifyAuth.Query().
-//		GroupBy(spotifyauth.FieldAccessToken).
+//		GroupBy(spotifyauth.FieldDisplayName).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
 func (_q *SpotifyAuthQuery) GroupBy(field string, fields ...string) *SpotifyAuthGroupBy {
@@ -322,11 +322,11 @@ func (_q *SpotifyAuthQuery) GroupBy(field string, fields ...string) *SpotifyAuth
 // Example:
 //
 //	var v []struct {
-//		AccessToken string `json:"access_token,omitempty"`
+//		DisplayName string `json:"display_name,omitempty"`
 //	}
 //
 //	client.SpotifyAuth.Query().
-//		Select(spotifyauth.FieldAccessToken).
+//		Select(spotifyauth.FieldDisplayName).
 //		Scan(ctx, &v)
 func (_q *SpotifyAuthQuery) Select(fields ...string) *SpotifyAuthSelect {
 	_q.ctx.Fields = append(_q.ctx.Fields, fields...)

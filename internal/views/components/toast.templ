@@ -1,0 +1,81 @@
+package components
+
+import (
+	"fmt"
+	"time"
+)
+
+func toastID() string {
+	return fmt.Sprintf("toast-%d", time.Now().UnixNano())
+}
+
+script initToast(id string) {
+	var toast = document.getElementById(id);
+	if (!toast) return;
+
+	// Click anywhere on toast to dismiss
+	toast.onclick = function() {
+		toast.style.opacity = '0';
+		toast.style.transform = 'translateY(-8px)';
+		setTimeout(function() {
+			if (toast.parentNode) toast.remove();
+		}, 300);
+	};
+
+	// Animate in after a brief delay
+	setTimeout(function() {
+		toast.style.opacity = '1';
+		toast.style.transform = 'translateY(0)';
+	}, 50);
+
+	// Auto-dismiss after 5 seconds
+	setTimeout(function() {
+		if (toast && toast.parentNode) {
+			toast.style.opacity = '0';
+			toast.style.transform = 'translateY(-8px)';
+			setTimeout(function() {
+				if (toast.parentNode) toast.remove();
+			}, 300);
+		}
+	}, 5000);
+}
+
+templ Toast(title, message, iconType string) {
+	{{ id := toastID() }}
+	<div id={ id }
+		 class={
+			 "alert shadow-lg toast-item pointer-events-auto cursor-pointer relative w-80",
+			 templ.KV("alert-success", iconType == "play" || iconType == "success"),
+			 templ.KV("alert-info", iconType == "playlist" || iconType == "info" || iconType == ""),
+			 templ.KV("alert-warning", iconType == "warning"),
+			 templ.KV("alert-error", iconType == "error"),
+		 }
+		 role="alert"
+		 style="opacity: 0; transform: translateY(-8px); transition: opacity 0.3s ease, transform 0.3s ease;">
+		<div class="flex gap-3 items-start flex-1">
+			if iconType == "play" || iconType == "success" {
+				<span class="icon-[heroicons--check-circle] w-6 h-6 flex-shrink-0"></span>
+			} else if iconType == "playlist" {
+				<span class="icon-[heroicons--queue-list] w-6 h-6 flex-shrink-0"></span>
+			} else if iconType == "warning" {
+				<span class="icon-[heroicons--exclamation-triangle] w-6 h-6 flex-shrink-0"></span>
+			} else if iconType == "error" {
+				<span class="icon-[heroicons--x-circle] w-6 h-6 flex-shrink-0"></span>
+			} else {
+				<span class="icon-[heroicons--information-circle] w-6 h-6 flex-shrink-0"></span>
+			}
+			<div class="flex-1 pr-4">
+				<h3 class="font-bold">{ title }</h3>
+				<div class="text-sm">{ message }</div>
+			</div>
+		</div>
+		<span class="icon-[heroicons--x-mark] w-4 h-4 absolute top-2 right-2 opacity-60 hover:opacity-100"></span>
+	</div>
+	@initToast(id)
+}
+
+templ ToastContainer() {
+	<div id="toasts" class="toast toast-end toast-top z-50 gap-2 mt-4 mr-4"
+		 sse-swap="notification" hx-swap="beforeend">
+	</div>
+}

@@ -7,10 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"spotter/ent/album"
+	"spotter/ent/albumimage"
+	"spotter/ent/artist"
+	"spotter/ent/artistimage"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
 	"spotter/ent/navidromeauth"
+	"spotter/ent/playlist"
 	"spotter/ent/spotifyauth"
+	"spotter/ent/syncevent"
+	"spotter/ent/track"
 	"spotter/ent/user"
 	"sync"
 
@@ -77,10 +84,17 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
+			album.Table:         album.ValidColumn,
+			albumimage.Table:    albumimage.ValidColumn,
+			artist.Table:        artist.ValidColumn,
+			artistimage.Table:   artistimage.ValidColumn,
 			lastfmauth.Table:    lastfmauth.ValidColumn,
 			listen.Table:        listen.ValidColumn,
 			navidromeauth.Table: navidromeauth.ValidColumn,
+			playlist.Table:      playlist.ValidColumn,
 			spotifyauth.Table:   spotifyauth.ValidColumn,
+			syncevent.Table:     syncevent.ValidColumn,
+			track.Table:         track.ValidColumn,
 			user.Table:          user.ValidColumn,
 		})
 	})

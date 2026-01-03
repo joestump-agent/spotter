@@ -17,6 +17,8 @@ func (NavidromeAuth) Fields() []ent.Field {
 		// We need the password to sign requests (md5(password + salt))
 		// Note: In production, this field should be encrypted at rest.
 		field.String("password"),
+		field.Time("last_synced_at").
+			Optional(),
 	}
 }
 

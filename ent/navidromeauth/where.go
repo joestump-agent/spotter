@@ -4,6 +4,7 @@ package navidromeauth
 
 import (
 	"spotter/ent/predicate"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -57,6 +58,11 @@ func IDLTE(id int) predicate.NavidromeAuth {
 // Password applies equality check predicate on the "password" field. It's identical to PasswordEQ.
 func Password(v string) predicate.NavidromeAuth {
 	return predicate.NavidromeAuth(sql.FieldEQ(FieldPassword, v))
+}
+
+// LastSyncedAt applies equality check predicate on the "last_synced_at" field. It's identical to LastSyncedAtEQ.
+func LastSyncedAt(v time.Time) predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldEQ(FieldLastSyncedAt, v))
 }
 
 // PasswordEQ applies the EQ predicate on the "password" field.
@@ -122,6 +128,56 @@ func PasswordEqualFold(v string) predicate.NavidromeAuth {
 // PasswordContainsFold applies the ContainsFold predicate on the "password" field.
 func PasswordContainsFold(v string) predicate.NavidromeAuth {
 	return predicate.NavidromeAuth(sql.FieldContainsFold(FieldPassword, v))
+}
+
+// LastSyncedAtEQ applies the EQ predicate on the "last_synced_at" field.
+func LastSyncedAtEQ(v time.Time) predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldEQ(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtNEQ applies the NEQ predicate on the "last_synced_at" field.
+func LastSyncedAtNEQ(v time.Time) predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldNEQ(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtIn applies the In predicate on the "last_synced_at" field.
+func LastSyncedAtIn(vs ...time.Time) predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldIn(FieldLastSyncedAt, vs...))
+}
+
+// LastSyncedAtNotIn applies the NotIn predicate on the "last_synced_at" field.
+func LastSyncedAtNotIn(vs ...time.Time) predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldNotIn(FieldLastSyncedAt, vs...))
+}
+
+// LastSyncedAtGT applies the GT predicate on the "last_synced_at" field.
+func LastSyncedAtGT(v time.Time) predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldGT(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtGTE applies the GTE predicate on the "last_synced_at" field.
+func LastSyncedAtGTE(v time.Time) predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldGTE(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtLT applies the LT predicate on the "last_synced_at" field.
+func LastSyncedAtLT(v time.Time) predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldLT(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtLTE applies the LTE predicate on the "last_synced_at" field.
+func LastSyncedAtLTE(v time.Time) predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldLTE(FieldLastSyncedAt, v))
+}
+
+// LastSyncedAtIsNil applies the IsNil predicate on the "last_synced_at" field.
+func LastSyncedAtIsNil() predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldIsNull(FieldLastSyncedAt))
+}
+
+// LastSyncedAtNotNil applies the NotNil predicate on the "last_synced_at" field.
+func LastSyncedAtNotNil() predicate.NavidromeAuth {
+	return predicate.NavidromeAuth(sql.FieldNotNull(FieldLastSyncedAt))
 }
 
 // HasUser applies the HasEdge predicate on the "user" edge.

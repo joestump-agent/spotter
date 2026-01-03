@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/user"
+	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
@@ -18,6 +19,20 @@ type LastFMAuthCreate struct {
 	config
 	mutation *LastFMAuthMutation
 	hooks    []Hook
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (_c *LastFMAuthCreate) SetLastSyncedAt(v time.Time) *LastFMAuthCreate {
+	_c.mutation.SetLastSyncedAt(v)
+	return _c
+}
+
+// SetNillableLastSyncedAt sets the "last_synced_at" field if the given value is not nil.
+func (_c *LastFMAuthCreate) SetNillableLastSyncedAt(v *time.Time) *LastFMAuthCreate {
+	if v != nil {
+		_c.SetLastSyncedAt(*v)
+	}
+	return _c
 }
 
 // SetSessionKey sets the "session_key" field.
@@ -112,6 +127,10 @@ func (_c *LastFMAuthCreate) createSpec() (*LastFMAuth, *sqlgraph.CreateSpec) {
 		_node = &LastFMAuth{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(lastfmauth.Table, sqlgraph.NewFieldSpec(lastfmauth.FieldID, field.TypeInt))
 	)
+	if value, ok := _c.mutation.LastSyncedAt(); ok {
+		_spec.SetField(lastfmauth.FieldLastSyncedAt, field.TypeTime, value)
+		_node.LastSyncedAt = value
+	}
 	if value, ok := _c.mutation.SessionKey(); ok {
 		_spec.SetField(lastfmauth.FieldSessionKey, field.TypeString, value)
 		_node.SessionKey = value

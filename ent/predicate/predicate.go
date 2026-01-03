@@ -6,6 +6,18 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// Album is the predicate function for album builders.
+type Album func(*sql.Selector)
+
+// AlbumImage is the predicate function for albumimage builders.
+type AlbumImage func(*sql.Selector)
+
+// Artist is the predicate function for artist builders.
+type Artist func(*sql.Selector)
+
+// ArtistImage is the predicate function for artistimage builders.
+type ArtistImage func(*sql.Selector)
+
 // LastFMAuth is the predicate function for lastfmauth builders.
 type LastFMAuth func(*sql.Selector)
 
@@ -15,8 +27,17 @@ type Listen func(*sql.Selector)
 // NavidromeAuth is the predicate function for navidromeauth builders.
 type NavidromeAuth func(*sql.Selector)
 
+// Playlist is the predicate function for playlist builders.
+type Playlist func(*sql.Selector)
+
 // SpotifyAuth is the predicate function for spotifyauth builders.
 type SpotifyAuth func(*sql.Selector)
+
+// SyncEvent is the predicate function for syncevent builders.
+type SyncEvent func(*sql.Selector)
+
+// Track is the predicate function for track builders.
+type Track func(*sql.Selector)
 
 // User is the predicate function for user builders.
 type User func(*sql.Selector)

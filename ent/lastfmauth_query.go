@@ -299,12 +299,12 @@ func (_q *LastFMAuthQuery) WithUser(opts ...func(*UserQuery)) *LastFMAuthQuery {
 // Example:
 //
 //	var v []struct {
-//		SessionKey string `json:"session_key,omitempty"`
+//		LastSyncedAt time.Time `json:"last_synced_at,omitempty"`
 //		Count int `json:"count,omitempty"`
 //	}
 //
 //	client.LastFMAuth.Query().
-//		GroupBy(lastfmauth.FieldSessionKey).
+//		GroupBy(lastfmauth.FieldLastSyncedAt).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
 func (_q *LastFMAuthQuery) GroupBy(field string, fields ...string) *LastFMAuthGroupBy {
@@ -322,11 +322,11 @@ func (_q *LastFMAuthQuery) GroupBy(field string, fields ...string) *LastFMAuthGr
 // Example:
 //
 //	var v []struct {
-//		SessionKey string `json:"session_key,omitempty"`
+//		LastSyncedAt time.Time `json:"last_synced_at,omitempty"`
 //	}
 //
 //	client.LastFMAuth.Query().
-//		Select(lastfmauth.FieldSessionKey).
+//		Select(lastfmauth.FieldLastSyncedAt).
 //		Scan(ctx, &v)
 func (_q *LastFMAuthQuery) Select(fields ...string) *LastFMAuthSelect {
 	_q.ctx.Fields = append(_q.ctx.Fields, fields...)

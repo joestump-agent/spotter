@@ -1,65 +1,236 @@
 package preferences
 
-import "spotter/internal/views/layouts"
+import (
+	"spotter/internal/views/layouts"
+	"spotter/ent"
+	"spotter/internal/config"
+	"strconv"
+)
 
-templ Index(spotifyConnected bool, lastfmConnected bool) {
-	@layouts.Dashboard("Preferences | Spotter") {
-		<div class="max-w-4xl mx-auto">
-            <div class="md:flex md:items-center md:justify-between mb-8">
-                <div class="min-w-0 flex-1">
-                    <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:truncate sm:text-3xl sm:tracking-tight">Preferences</h2>
-                </div>
-            </div>
+templ Appearance(user *ent.User, cfg *config.Config) {
+	@layouts.Dashboard("Appearance | Spotter", cfg, "/preferences/appearance") {
+		<div class="max-w-5xl mx-auto">
+			<div class="mb-8">
+				<h2 class="text-3xl font-bold">Appearance</h2>
+				<p class="text-base-content/60 mt-2">Customize your visual preferences</p>
+			</div>
 
-            <div class="space-y-6">
-                <!-- Spotify Integration -->
-                <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Spotify Integration</h3>
-                        <div class="mt-2 max-w-xl text-sm text-gray-500 dark:text-gray-400">
-                            <p>Connect your Spotify account to import your listening history and get better recommendations.</p>
-                        </div>
-                        <div class="mt-5">
-                            if spotifyConnected {
-                                <div class="flex items-center space-x-4">
-                                    <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">Connected</span>
-                                    <form hx-post="/preferences/spotify/disconnect" hx-target="body">
-                                        <button type="submit" class="rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-white dark:ring-gray-600 dark:hover:bg-gray-600">Disconnect</button>
-                                    </form>
-                                </div>
-                            } else {
-                                <a href="/auth/spotify/login" class="inline-flex items-center rounded-md bg-[#1DB954] px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#1ed760] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1DB954]">
-                                    Connect Spotify
-                                </a>
-                            }
-                        </div>
-                    </div>
-                </div>
+			<div class="space-y-6">
+				<!-- Theme Settings Card -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--paint-brush] w-6 h-6"></span>
+							Theme & Display
+						</h3>
+						<form id="preferences-form" hx-post="/preferences/appearance" hx-swap="none" class="space-y-6 mt-4">
+							<!-- Theme Selection -->
+							<div class="form-control">
+								<label class="label">
+									<span class="label-text font-medium">Theme</span>
+									<span class="label-text-alt text-base-content/60">Choose your preferred color scheme</span>
+								</label>
+								<select
+									name="theme"
+									id="theme-select"
+									class="select select-bordered w-full"
+									onchange="applyTheme(this.value)"
+								>
+									for _, theme := range cfg.AvailableThemes() {
+										<option value={ theme } selected?={ user.Theme == theme }>{ theme }</option>
+									}
+								</select>
+							</div>
 
-                <!-- Last.fm Integration -->
-                <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <h3 class="text-base font-semibold leading-6 text-gray-900 dark:text-white">Last.fm Integration</h3>
-                        <div class="mt-2 max-w-xl text-sm text-gray-500 dark:text-gray-400">
-                            <p>Connect your Last.fm account to scrobble tracks and improve recommendations.</p>
-                        </div>
-                        <div class="mt-5">
-                             if lastfmConnected {
-                                <div class="flex items-center space-x-4">
-                                    <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">Connected</span>
-                                    <form hx-post="/preferences/lastfm/disconnect" hx-target="body">
-                                        <button type="submit" class="rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-white dark:ring-gray-600 dark:hover:bg-gray-600">Disconnect</button>
-                                    </form>
-                                </div>
-                            } else {
-                                <a href="/auth/lastfm/login" class="inline-flex items-center rounded-md bg-[#BA0000] px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#d51007] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#BA0000]">
-                                    Connect Last.fm
-                                </a>
-                            }
-                        </div>
-                    </div>
-                </div>
-            </div>
+							<!-- Pagination Size -->
+							<div class="form-control">
+								<label class="label">
+									<span class="label-text font-medium">Items Per Page</span>
+									<span class="label-text-alt text-base-content/60">Number of items to show per page</span>
+								</label>
+								<input
+									type="number"
+									name="pagination_size"
+									value={ strconv.Itoa(user.PaginationSize) }
+									min="10"
+									max="100"
+									step="5"
+									class="input input-bordered w-full max-w-xs"
+								/>
+							</div>
+
+							<div class="card-actions justify-end">
+								<button type="submit" class="btn btn-primary gap-2">
+									<span class="icon-[heroicons--check] w-5 h-5"></span>
+									Save Settings
+								</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
 		</div>
+
+		<script>
+			// Apply theme immediately when changed
+			function applyTheme(theme) {
+				document.documentElement.setAttribute('data-theme', theme);
+				localStorage.setItem('spotter-theme', theme);
+			}
+
+			// Show toast notification
+			function showToast(message, type) {
+				const container = document.getElementById('toasts');
+				if (!container) return;
+
+				const toast = document.createElement('div');
+				toast.className = 'alert shadow-lg';
+
+				let iconClass, alertClass;
+				if (type === 'success') {
+					alertClass = 'alert-success';
+					iconClass = 'icon-[heroicons--check-circle]';
+				} else {
+					alertClass = 'alert-error';
+					iconClass = 'icon-[heroicons--x-circle]';
+				}
+
+				toast.classList.add(alertClass);
+				toast.innerHTML = `
+					<span class="${iconClass} w-6 h-6"></span>
+					<span>${message}</span>
+				`;
+
+				container.appendChild(toast);
+
+				// Auto-remove after 4 seconds
+				setTimeout(() => {
+					toast.style.opacity = '0';
+					toast.style.transition = 'opacity 0.3s ease-out';
+					setTimeout(() => toast.remove(), 300);
+				}, 4000);
+			}
+
+			// Handle form submission
+			const form = document.getElementById('preferences-form');
+			if (form) {
+				form.addEventListener('htmx:afterRequest', function(event) {
+					if (event.detail.successful) {
+						showToast('Settings saved successfully!', 'success');
+					} else {
+						showToast('Failed to save settings. Please try again.', 'error');
+					}
+				});
+			}
+		</script>
+	}
+}
+
+templ AIPrompt(user *ent.User, cfg *config.Config) {
+	@layouts.Dashboard("AI Prompt | Spotter", cfg, "/preferences/ai") {
+		<div class="max-w-5xl mx-auto">
+			<div class="mb-8">
+				<h2 class="text-3xl font-bold">AI Prompt</h2>
+				<p class="text-base-content/60 mt-2">Customize the AI personality for playlist generation</p>
+			</div>
+
+			<div class="space-y-6">
+				<!-- AI Settings Card -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--sparkles] w-6 h-6"></span>
+							System Prompt
+						</h3>
+						<p class="text-base-content/60 text-sm mt-2">
+							The system prompt defines the AI's personality and behavior when generating playlists.
+							Customize it to get recommendations that match your style.
+						</p>
+						<form id="ai-prompt-form" hx-post="/preferences/ai" hx-swap="none" class="space-y-6 mt-4">
+							<!-- System Prompt -->
+							<div class="form-control">
+								<label class="label">
+									<span class="label-text font-medium">Custom System Prompt</span>
+								</label>
+								<textarea
+									name="system_prompt"
+									class="textarea textarea-bordered h-48 w-full font-mono text-sm"
+									placeholder="You are a music expert who creates personalized playlists based on the user's listening history and preferences..."
+								>{ user.SystemPrompt }</textarea>
+								<label class="label">
+									<span class="label-text-alt text-base-content/60">Leave blank to use the default AI behavior</span>
+								</label>
+							</div>
+
+							<div class="alert alert-info">
+								<span class="icon-[heroicons--information-circle] w-5 h-5"></span>
+								<div>
+									<h4 class="font-bold">Tips for writing a good prompt</h4>
+									<ul class="list-disc list-inside text-sm mt-1">
+										<li>Be specific about the type of music recommendations you want</li>
+										<li>Mention genres, moods, or eras you prefer</li>
+										<li>Include any constraints (e.g., "no explicit lyrics")</li>
+									</ul>
+								</div>
+							</div>
+
+							<div class="card-actions justify-end">
+								<button type="submit" class="btn btn-primary gap-2">
+									<span class="icon-[heroicons--check] w-5 h-5"></span>
+									Save Prompt
+								</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			// Show toast notification
+			function showToast(message, type) {
+				const container = document.getElementById('toasts');
+				if (!container) return;
+
+				const toast = document.createElement('div');
+				toast.className = 'alert shadow-lg';
+
+				let iconClass, alertClass;
+				if (type === 'success') {
+					alertClass = 'alert-success';
+					iconClass = 'icon-[heroicons--check-circle]';
+				} else {
+					alertClass = 'alert-error';
+					iconClass = 'icon-[heroicons--x-circle]';
+				}
+
+				toast.classList.add(alertClass);
+				toast.innerHTML = `
+					<span class="${iconClass} w-6 h-6"></span>
+					<span>${message}</span>
+				`;
+
+				container.appendChild(toast);
+
+				// Auto-remove after 4 seconds
+				setTimeout(() => {
+					toast.style.opacity = '0';
+					toast.style.transition = 'opacity 0.3s ease-out';
+					setTimeout(() => toast.remove(), 300);
+				}, 4000);
+			}
+
+			// Handle form submission
+			const form = document.getElementById('ai-prompt-form');
+			if (form) {
+				form.addEventListener('htmx:afterRequest', function(event) {
+					if (event.detail.successful) {
+						showToast('AI prompt saved successfully!', 'success');
+					} else {
+						showToast('Failed to save prompt. Please try again.', 'error');
+					}
+				});
+			}
+		</script>
 	}
 }

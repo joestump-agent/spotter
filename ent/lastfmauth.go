@@ -7,6 +7,7 @@ import (
 	"spotter/ent/lastfmauth"
 	"spotter/ent/user"
 	"strings"
+	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
@@ -17,6 +18,8 @@ type LastFMAuth struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
+	// LastSyncedAt holds the value of the "last_synced_at" field.
+	LastSyncedAt time.Time `json:"last_synced_at,omitempty"`
 	// SessionKey holds the value of the "session_key" field.
 	SessionKey string `json:"session_key,omitempty"`
 	// Username holds the value of the "username" field.
@@ -57,6 +60,8 @@ func (*LastFMAuth) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case lastfmauth.FieldSessionKey, lastfmauth.FieldUsername:
 			values[i] = new(sql.NullString)
+		case lastfmauth.FieldLastSyncedAt:
+			values[i] = new(sql.NullTime)
 		case lastfmauth.ForeignKeys[0]: // user_lastfm_auth
 			values[i] = new(sql.NullInt64)
 		default:
@@ -80,6 +85,12 @@ func (_m *LastFMAuth) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			_m.ID = int(value.Int64)
+		case lastfmauth.FieldLastSyncedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_synced_at", values[i])
+			} else if value.Valid {
+				_m.LastSyncedAt = value.Time
+			}
 		case lastfmauth.FieldSessionKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field session_key", values[i])
@@ -140,6 +151,9 @@ func (_m *LastFMAuth) String() string {
 	var builder strings.Builder
 	builder.WriteString("LastFMAuth(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
+	builder.WriteString("last_synced_at=")
+	builder.WriteString(_m.LastSyncedAt.Format(time.ANSIC))
+	builder.WriteString(", ")
 	builder.WriteString("session_key=")
 	builder.WriteString(_m.SessionKey)
 	builder.WriteString(", ")

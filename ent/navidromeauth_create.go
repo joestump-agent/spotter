@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"spotter/ent/navidromeauth"
 	"spotter/ent/user"
+	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
@@ -23,6 +24,20 @@ type NavidromeAuthCreate struct {
 // SetPassword sets the "password" field.
 func (_c *NavidromeAuthCreate) SetPassword(v string) *NavidromeAuthCreate {
 	_c.mutation.SetPassword(v)
+	return _c
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (_c *NavidromeAuthCreate) SetLastSyncedAt(v time.Time) *NavidromeAuthCreate {
+	_c.mutation.SetLastSyncedAt(v)
+	return _c
+}
+
+// SetNillableLastSyncedAt sets the "last_synced_at" field if the given value is not nil.
+func (_c *NavidromeAuthCreate) SetNillableLastSyncedAt(v *time.Time) *NavidromeAuthCreate {
+	if v != nil {
+		_c.SetLastSyncedAt(*v)
+	}
 	return _c
 }
 
@@ -106,6 +121,10 @@ func (_c *NavidromeAuthCreate) createSpec() (*NavidromeAuth, *sqlgraph.CreateSpe
 	if value, ok := _c.mutation.Password(); ok {
 		_spec.SetField(navidromeauth.FieldPassword, field.TypeString, value)
 		_node.Password = value
+	}
+	if value, ok := _c.mutation.LastSyncedAt(); ok {
+		_spec.SetField(navidromeauth.FieldLastSyncedAt, field.TypeTime, value)
+		_node.LastSyncedAt = value
 	}
 	if nodes := _c.mutation.UserIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

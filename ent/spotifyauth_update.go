@@ -29,6 +29,46 @@ func (_u *SpotifyAuthUpdate) Where(ps ...predicate.SpotifyAuth) *SpotifyAuthUpda
 	return _u
 }
 
+// SetDisplayName sets the "display_name" field.
+func (_u *SpotifyAuthUpdate) SetDisplayName(v string) *SpotifyAuthUpdate {
+	_u.mutation.SetDisplayName(v)
+	return _u
+}
+
+// SetNillableDisplayName sets the "display_name" field if the given value is not nil.
+func (_u *SpotifyAuthUpdate) SetNillableDisplayName(v *string) *SpotifyAuthUpdate {
+	if v != nil {
+		_u.SetDisplayName(*v)
+	}
+	return _u
+}
+
+// ClearDisplayName clears the value of the "display_name" field.
+func (_u *SpotifyAuthUpdate) ClearDisplayName() *SpotifyAuthUpdate {
+	_u.mutation.ClearDisplayName()
+	return _u
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (_u *SpotifyAuthUpdate) SetLastSyncedAt(v time.Time) *SpotifyAuthUpdate {
+	_u.mutation.SetLastSyncedAt(v)
+	return _u
+}
+
+// SetNillableLastSyncedAt sets the "last_synced_at" field if the given value is not nil.
+func (_u *SpotifyAuthUpdate) SetNillableLastSyncedAt(v *time.Time) *SpotifyAuthUpdate {
+	if v != nil {
+		_u.SetLastSyncedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastSyncedAt clears the value of the "last_synced_at" field.
+func (_u *SpotifyAuthUpdate) ClearLastSyncedAt() *SpotifyAuthUpdate {
+	_u.mutation.ClearLastSyncedAt()
+	return _u
+}
+
 // SetAccessToken sets the "access_token" field.
 func (_u *SpotifyAuthUpdate) SetAccessToken(v string) *SpotifyAuthUpdate {
 	_u.mutation.SetAccessToken(v)
@@ -140,6 +180,18 @@ func (_u *SpotifyAuthUpdate) sqlSave(ctx context.Context) (_node int, err error)
 			}
 		}
 	}
+	if value, ok := _u.mutation.DisplayName(); ok {
+		_spec.SetField(spotifyauth.FieldDisplayName, field.TypeString, value)
+	}
+	if _u.mutation.DisplayNameCleared() {
+		_spec.ClearField(spotifyauth.FieldDisplayName, field.TypeString)
+	}
+	if value, ok := _u.mutation.LastSyncedAt(); ok {
+		_spec.SetField(spotifyauth.FieldLastSyncedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastSyncedAtCleared() {
+		_spec.ClearField(spotifyauth.FieldLastSyncedAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.AccessToken(); ok {
 		_spec.SetField(spotifyauth.FieldAccessToken, field.TypeString, value)
 	}
@@ -196,6 +248,46 @@ type SpotifyAuthUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *SpotifyAuthMutation
+}
+
+// SetDisplayName sets the "display_name" field.
+func (_u *SpotifyAuthUpdateOne) SetDisplayName(v string) *SpotifyAuthUpdateOne {
+	_u.mutation.SetDisplayName(v)
+	return _u
+}
+
+// SetNillableDisplayName sets the "display_name" field if the given value is not nil.
+func (_u *SpotifyAuthUpdateOne) SetNillableDisplayName(v *string) *SpotifyAuthUpdateOne {
+	if v != nil {
+		_u.SetDisplayName(*v)
+	}
+	return _u
+}
+
+// ClearDisplayName clears the value of the "display_name" field.
+func (_u *SpotifyAuthUpdateOne) ClearDisplayName() *SpotifyAuthUpdateOne {
+	_u.mutation.ClearDisplayName()
+	return _u
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (_u *SpotifyAuthUpdateOne) SetLastSyncedAt(v time.Time) *SpotifyAuthUpdateOne {
+	_u.mutation.SetLastSyncedAt(v)
+	return _u
+}
+
+// SetNillableLastSyncedAt sets the "last_synced_at" field if the given value is not nil.
+func (_u *SpotifyAuthUpdateOne) SetNillableLastSyncedAt(v *time.Time) *SpotifyAuthUpdateOne {
+	if v != nil {
+		_u.SetLastSyncedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastSyncedAt clears the value of the "last_synced_at" field.
+func (_u *SpotifyAuthUpdateOne) ClearLastSyncedAt() *SpotifyAuthUpdateOne {
+	_u.mutation.ClearLastSyncedAt()
+	return _u
 }
 
 // SetAccessToken sets the "access_token" field.
@@ -338,6 +430,18 @@ func (_u *SpotifyAuthUpdateOne) sqlSave(ctx context.Context) (_node *SpotifyAuth
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.DisplayName(); ok {
+		_spec.SetField(spotifyauth.FieldDisplayName, field.TypeString, value)
+	}
+	if _u.mutation.DisplayNameCleared() {
+		_spec.ClearField(spotifyauth.FieldDisplayName, field.TypeString)
+	}
+	if value, ok := _u.mutation.LastSyncedAt(); ok {
+		_spec.SetField(spotifyauth.FieldLastSyncedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastSyncedAtCleared() {
+		_spec.ClearField(spotifyauth.FieldLastSyncedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.AccessToken(); ok {
 		_spec.SetField(spotifyauth.FieldAccessToken, field.TypeString, value)

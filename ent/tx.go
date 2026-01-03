@@ -12,14 +12,28 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// Album is the client for interacting with the Album builders.
+	Album *AlbumClient
+	// AlbumImage is the client for interacting with the AlbumImage builders.
+	AlbumImage *AlbumImageClient
+	// Artist is the client for interacting with the Artist builders.
+	Artist *ArtistClient
+	// ArtistImage is the client for interacting with the ArtistImage builders.
+	ArtistImage *ArtistImageClient
 	// LastFMAuth is the client for interacting with the LastFMAuth builders.
 	LastFMAuth *LastFMAuthClient
 	// Listen is the client for interacting with the Listen builders.
 	Listen *ListenClient
 	// NavidromeAuth is the client for interacting with the NavidromeAuth builders.
 	NavidromeAuth *NavidromeAuthClient
+	// Playlist is the client for interacting with the Playlist builders.
+	Playlist *PlaylistClient
 	// SpotifyAuth is the client for interacting with the SpotifyAuth builders.
 	SpotifyAuth *SpotifyAuthClient
+	// SyncEvent is the client for interacting with the SyncEvent builders.
+	SyncEvent *SyncEventClient
+	// Track is the client for interacting with the Track builders.
+	Track *TrackClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 
@@ -153,10 +167,17 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.Album = NewAlbumClient(tx.config)
+	tx.AlbumImage = NewAlbumImageClient(tx.config)
+	tx.Artist = NewArtistClient(tx.config)
+	tx.ArtistImage = NewArtistImageClient(tx.config)
 	tx.LastFMAuth = NewLastFMAuthClient(tx.config)
 	tx.Listen = NewListenClient(tx.config)
 	tx.NavidromeAuth = NewNavidromeAuthClient(tx.config)
+	tx.Playlist = NewPlaylistClient(tx.config)
 	tx.SpotifyAuth = NewSpotifyAuthClient(tx.config)
+	tx.SyncEvent = NewSyncEventClient(tx.config)
+	tx.Track = NewTrackClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 }
 
@@ -167,7 +188,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: LastFMAuth.QueryXXX(), the query will be executed
+// applies a query, for example: Album.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

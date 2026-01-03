@@ -9,6 +9,7 @@ import (
 	"spotter/ent/navidromeauth"
 	"spotter/ent/predicate"
 	"spotter/ent/user"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -39,6 +40,26 @@ func (_u *NavidromeAuthUpdate) SetNillablePassword(v *string) *NavidromeAuthUpda
 	if v != nil {
 		_u.SetPassword(*v)
 	}
+	return _u
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (_u *NavidromeAuthUpdate) SetLastSyncedAt(v time.Time) *NavidromeAuthUpdate {
+	_u.mutation.SetLastSyncedAt(v)
+	return _u
+}
+
+// SetNillableLastSyncedAt sets the "last_synced_at" field if the given value is not nil.
+func (_u *NavidromeAuthUpdate) SetNillableLastSyncedAt(v *time.Time) *NavidromeAuthUpdate {
+	if v != nil {
+		_u.SetLastSyncedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastSyncedAt clears the value of the "last_synced_at" field.
+func (_u *NavidromeAuthUpdate) ClearLastSyncedAt() *NavidromeAuthUpdate {
+	_u.mutation.ClearLastSyncedAt()
 	return _u
 }
 
@@ -114,6 +135,12 @@ func (_u *NavidromeAuthUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	if value, ok := _u.mutation.Password(); ok {
 		_spec.SetField(navidromeauth.FieldPassword, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.LastSyncedAt(); ok {
+		_spec.SetField(navidromeauth.FieldLastSyncedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastSyncedAtCleared() {
+		_spec.ClearField(navidromeauth.FieldLastSyncedAt, field.TypeTime)
+	}
 	if _u.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2O,
@@ -174,6 +201,26 @@ func (_u *NavidromeAuthUpdateOne) SetNillablePassword(v *string) *NavidromeAuthU
 	if v != nil {
 		_u.SetPassword(*v)
 	}
+	return _u
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (_u *NavidromeAuthUpdateOne) SetLastSyncedAt(v time.Time) *NavidromeAuthUpdateOne {
+	_u.mutation.SetLastSyncedAt(v)
+	return _u
+}
+
+// SetNillableLastSyncedAt sets the "last_synced_at" field if the given value is not nil.
+func (_u *NavidromeAuthUpdateOne) SetNillableLastSyncedAt(v *time.Time) *NavidromeAuthUpdateOne {
+	if v != nil {
+		_u.SetLastSyncedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastSyncedAt clears the value of the "last_synced_at" field.
+func (_u *NavidromeAuthUpdateOne) ClearLastSyncedAt() *NavidromeAuthUpdateOne {
+	_u.mutation.ClearLastSyncedAt()
 	return _u
 }
 
@@ -278,6 +325,12 @@ func (_u *NavidromeAuthUpdateOne) sqlSave(ctx context.Context) (_node *Navidrome
 	}
 	if value, ok := _u.mutation.Password(); ok {
 		_spec.SetField(navidromeauth.FieldPassword, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.LastSyncedAt(); ok {
+		_spec.SetField(navidromeauth.FieldLastSyncedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastSyncedAtCleared() {
+		_spec.ClearField(navidromeauth.FieldLastSyncedAt, field.TypeTime)
 	}
 	if _u.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{

@@ -14,6 +14,8 @@ type LastFMAuth struct {
 // Fields of the LastFMAuth.
 func (LastFMAuth) Fields() []ent.Field {
 	return []ent.Field{
+		field.Time("last_synced_at").
+			Optional(),
 		field.String("session_key"),
 		field.String("username"),
 	}

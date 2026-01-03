@@ -7,6 +7,7 @@ import (
 
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/events"
 	"spotter/internal/services"
 
 	"github.com/a-h/templ"
@@ -17,18 +18,22 @@ type contextKey string
 const UserContextKey contextKey = "user"
 
 type Handler struct {
-	Client *ent.Client
-	Config *config.Config
-	Logger *slog.Logger
-	Syncer *services.Syncer
+	Client      *ent.Client
+	Config      *config.Config
+	Logger      *slog.Logger
+	Syncer      *services.Syncer
+	MetadataSvc *services.MetadataService
+	Bus         *events.Bus
 }
 
-func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *services.Syncer) *Handler {
+func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *services.Syncer, metadataSvc *services.MetadataService, bus *events.Bus) *Handler {
 	return &Handler{
-		Client: client,
-		Config: cfg,
-		Logger: logger,
-		Syncer: syncer,
+		Client:      client,
+		Config:      cfg,
+		Logger:      logger,
+		Syncer:      syncer,
+		MetadataSvc: metadataSvc,
+		Bus:         bus,
 	}
 }
 

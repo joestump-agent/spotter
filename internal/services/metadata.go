@@ -1,0 +1,1238 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"spotter/ent"
+	"spotter/ent/album"
+	"spotter/ent/albumimage"
+	"spotter/ent/artist"
+	"spotter/ent/artistimage"
+	"spotter/ent/listen"
+	"spotter/ent/playlist"
+	"spotter/ent/syncevent"
+	"spotter/ent/track"
+	"spotter/ent/user"
+	"spotter/internal/config"
+	"spotter/internal/enrichers"
+	"spotter/internal/events"
+)
+
+// MetadataService handles catalog building and metadata enrichment.
+type MetadataService struct {
+	Client     *ent.Client
+	Config     *config.Config
+	Logger     *slog.Logger
+	Bus        *events.Bus
+	Registry   *enrichers.Registry
+	httpClient *http.Client
+}
+
+// NewMetadataService creates a new metadata service.
+func NewMetadataService(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *MetadataService {
+	return &MetadataService{
+		Client:   client,
+		Config:   cfg,
+		Logger:   logger,
+		Bus:      bus,
+		Registry: enrichers.NewRegistry(),
+		httpClient: &http.Client{
+			Timeout: 60 * time.Second,
+		},
+	}
+}
+
+// Register adds a new enricher factory to the service.
+func (s *MetadataService) Register(t enrichers.Type, factory enrichers.Factory) {
+	s.Registry.Register(t, factory)
+}
+
+// logEvent persists a sync event to the database.
+func (s *MetadataService) logEvent(ctx context.Context, u *ent.User, eventType syncevent.EventType, provider string, message string, metadata map[string]interface{}) {
+	builder := s.Client.SyncEvent.Create().
+		SetUser(u).
+		SetEventType(eventType).
+		SetProvider(provider).
+		SetMessage(message)
+
+	if metadata != nil {
+		if metadataJSON, err := json.Marshal(metadata); err == nil {
+			builder.SetMetadata(string(metadataJSON))
+		}
+	}
+
+	if _, err := builder.Save(ctx); err != nil {
+		s.Logger.Warn("failed to log sync event", "event_type", eventType, "provider", provider, "error", err)
+	}
+}
+
+// SyncAll performs a full metadata sync for a user.
+// This scans listens/playlists, builds the catalog, and enriches metadata.
+func (s *MetadataService) SyncAll(ctx context.Context, u *ent.User) error {
+	if !s.Config.Metadata.Enabled {
+		s.Logger.Debug("metadata enrichment disabled, skipping")
+		return nil
+	}
+
+	s.Logger.Info("starting metadata sync", "username", u.Username)
+
+	// Notify user
+	s.Bus.Publish(u.ID, events.Event{
+		Type: events.EventTypeNotification,
+		Payload: events.NotificationPayload{
+			Title:    "Metadata Enrichment",
+			Message:  "Starting metadata enrichment...",
+			IconType: "info",
+		},
+	})
+
+	// Log start event
+	s.logEvent(ctx, u, syncevent.EventTypeMetadataStarted, "metadata",
+		"Started metadata enrichment", nil)
+
+	// Refresh user with all edges
+	refreshedUser, err := s.Client.User.Query().
+		Where(user.ID(u.ID)).
+		WithSpotifyAuth().
+		WithNavidromeAuth().
+		WithLastfmAuth().
+		Only(ctx)
+	if err != nil {
+		s.logEvent(ctx, u, syncevent.EventTypeMetadataFailed, "metadata",
+			fmt.Sprintf("Failed to refresh user: %v", err), nil)
+		return fmt.Errorf("failed to refresh user: %w", err)
+	}
+
+	stats := map[string]interface{}{
+		"artists_enriched":  0,
+		"albums_enriched":   0,
+		"tracks_enriched":   0,
+		"images_downloaded": 0,
+	}
+
+	// Step 1: Build catalog from listens and playlists
+	if err := s.BuildCatalog(ctx, refreshedUser); err != nil {
+		s.Logger.Error("failed to build catalog", "error", err)
+		s.logEvent(ctx, u, syncevent.EventTypeMetadataFailed, "metadata",
+			fmt.Sprintf("Failed to build catalog: %v", err), nil)
+		// Continue with enrichment for existing entries
+	}
+
+	// Step 2: Enrich artists
+	artistCount, err := s.EnrichArtists(ctx, refreshedUser)
+	if err != nil {
+		s.Logger.Error("failed to enrich artists", "error", err)
+	}
+	stats["artists_enriched"] = artistCount
+
+	// Step 3: Enrich albums
+	albumCount, err := s.EnrichAlbums(ctx, refreshedUser)
+	if err != nil {
+		s.Logger.Error("failed to enrich albums", "error", err)
+	}
+	stats["albums_enriched"] = albumCount
+
+	// Step 4: Enrich tracks
+	trackCount, err := s.EnrichTracks(ctx, refreshedUser)
+	if err != nil {
+		s.Logger.Error("failed to enrich tracks", "error", err)
+	}
+	stats["tracks_enriched"] = trackCount
+
+	// Step 5: Download images
+	if s.Config.Metadata.Images.Download {
+		imageCount, err := s.DownloadImages(ctx, refreshedUser)
+		if err != nil {
+			s.Logger.Error("failed to download images", "error", err)
+		}
+		stats["images_downloaded"] = imageCount
+	}
+
+	// Log completion
+	s.logEvent(ctx, u, syncevent.EventTypeMetadataCompleted, "metadata",
+		fmt.Sprintf("Completed metadata enrichment: %d artists, %d albums, %d tracks enriched",
+			stats["artists_enriched"], stats["albums_enriched"], stats["tracks_enriched"]), stats)
+
+	// Notify user
+	s.Bus.Publish(u.ID, events.Event{
+		Type: events.EventTypeNotification,
+		Payload: events.NotificationPayload{
+			Title:    "Metadata Enrichment Complete",
+			Message:  fmt.Sprintf("Enriched %d artists, %d albums, %d tracks", stats["artists_enriched"], stats["albums_enriched"], stats["tracks_enriched"]),
+			IconType: "success",
+		},
+	})
+
+	s.Logger.Info("metadata sync completed", "username", u.Username, "stats", stats)
+	return nil
+}
+
+// BuildCatalog scans listens and playlists to create catalog entries.
+func (s *MetadataService) BuildCatalog(ctx context.Context, u *ent.User) error {
+	s.Logger.Info("building catalog from listens and playlists", "username", u.Username)
+
+	// Get all listens for the user
+	listens, err := s.Client.Listen.Query().
+		Where(listen.HasUserWith(user.ID(u.ID))).
+		All(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to query listens: %w", err)
+	}
+
+	s.Logger.Debug("processing listens", "count", len(listens))
+
+	artistsAdded := 0
+	albumsAdded := 0
+	tracksAdded := 0
+
+	// Process listens
+	for _, l := range listens {
+		added, err := s.processListenEntry(ctx, u, l.ArtistName, l.AlbumName, l.TrackName)
+		if err != nil {
+			s.Logger.Warn("failed to process listen entry",
+				"artist", l.ArtistName,
+				"album", l.AlbumName,
+				"track", l.TrackName,
+				"error", err)
+		}
+		if added != nil {
+			if added["artist"] {
+				artistsAdded++
+			}
+			if added["album"] {
+				albumsAdded++
+			}
+			if added["track"] {
+				tracksAdded++
+			}
+		}
+	}
+
+	// Get all playlists for the user (we store track info in listens already, so this is supplementary)
+	playlists, err := s.Client.Playlist.Query().
+		Where(playlist.HasUserWith(user.ID(u.ID))).
+		All(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to query playlists: %w", err)
+	}
+
+	s.Logger.Debug("found playlists", "count", len(playlists))
+
+	// Log catalog build event
+	s.logEvent(ctx, u, syncevent.EventTypeCatalogBuilt, "metadata",
+		fmt.Sprintf("Built catalog: %d artists, %d albums, %d tracks added", artistsAdded, albumsAdded, tracksAdded),
+		map[string]interface{}{
+			"artists_added":     artistsAdded,
+			"albums_added":      albumsAdded,
+			"tracks_added":      tracksAdded,
+			"listens_processed": len(listens),
+			"playlists_found":   len(playlists),
+		})
+
+	s.Logger.Info("catalog building completed",
+		"username", u.Username,
+		"listens_processed", len(listens),
+		"playlists_found", len(playlists),
+		"artists_added", artistsAdded,
+		"albums_added", albumsAdded,
+		"tracks_added", tracksAdded)
+
+	return nil
+}
+
+// processListenEntry ensures artist, album, and track entries exist in the catalog.
+// Returns a map indicating what was newly added.
+func (s *MetadataService) processListenEntry(ctx context.Context, u *ent.User, artistName, albumName, trackName string) (map[string]bool, error) {
+	if artistName == "" {
+		return nil, nil
+	}
+
+	added := map[string]bool{"artist": false, "album": false, "track": false}
+
+	// Get or create artist
+	art, isNew, err := s.getOrCreateArtist(ctx, u, artistName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get/create artist: %w", err)
+	}
+	added["artist"] = isNew
+
+	// Get or create album (if we have one)
+	var alb *ent.Album
+	if albumName != "" {
+		alb, isNew, err = s.getOrCreateAlbum(ctx, u, art, albumName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get/create album: %w", err)
+		}
+		added["album"] = isNew
+	}
+
+	// Get or create track
+	if trackName != "" {
+		_, isNew, err = s.getOrCreateTrack(ctx, art, alb, trackName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get/create track: %w", err)
+		}
+		added["track"] = isNew
+	}
+
+	return added, nil
+}
+
+// getOrCreateArtist finds or creates an artist in the catalog.
+func (s *MetadataService) getOrCreateArtist(ctx context.Context, u *ent.User, name string) (*ent.Artist, bool, error) {
+	// Try to find existing artist
+	existing, err := s.Client.Artist.Query().
+		Where(
+			artist.HasUserWith(user.ID(u.ID)),
+			artist.Name(name),
+		).
+		Only(ctx)
+	if err == nil {
+		return existing, false, nil
+	}
+	if !ent.IsNotFound(err) {
+		return nil, false, err
+	}
+
+	// Create new artist
+	newArtist, err := s.Client.Artist.Create().
+		SetName(name).
+		SetUser(u).
+		Save(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	return newArtist, true, nil
+}
+
+// getOrCreateAlbum finds or creates an album in the catalog.
+func (s *MetadataService) getOrCreateAlbum(ctx context.Context, u *ent.User, art *ent.Artist, name string) (*ent.Album, bool, error) {
+	// Try to find existing album
+	existing, err := s.Client.Album.Query().
+		Where(
+			album.HasUserWith(user.ID(u.ID)),
+			album.HasArtistWith(artist.ID(art.ID)),
+			album.Name(name),
+		).
+		Only(ctx)
+	if err == nil {
+		return existing, false, nil
+	}
+	if !ent.IsNotFound(err) {
+		return nil, false, err
+	}
+
+	// Create new album
+	newAlbum, err := s.Client.Album.Create().
+		SetName(name).
+		SetUser(u).
+		SetArtist(art).
+		Save(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	return newAlbum, true, nil
+}
+
+// getOrCreateTrack finds or creates a track in the catalog.
+func (s *MetadataService) getOrCreateTrack(ctx context.Context, art *ent.Artist, alb *ent.Album, name string) (*ent.Track, bool, error) {
+	// Build query
+	query := s.Client.Track.Query().
+		Where(
+			track.Name(name),
+			track.HasArtistWith(artist.ID(art.ID)),
+		)
+
+	if alb != nil {
+		query = query.Where(track.HasAlbumWith(album.ID(alb.ID)))
+	}
+
+	existing, err := query.Only(ctx)
+	if err == nil {
+		return existing, false, nil
+	}
+	if !ent.IsNotFound(err) {
+		return nil, false, err
+	}
+
+	// Create new track
+	create := s.Client.Track.Create().
+		SetName(name).
+		SetArtist(art)
+
+	if alb != nil {
+		create = create.SetAlbum(alb)
+	}
+
+	newTrack, err := create.Save(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	return newTrack, true, nil
+}
+
+// getActiveEnrichers returns enrichers in the configured order.
+func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) ([]enrichers.Enricher, error) {
+	order := s.Config.MetadataEnricherOrder()
+	var active []enrichers.Enricher
+
+	for _, name := range order {
+		t, ok := enrichers.ParseType(name)
+		if !ok {
+			s.Logger.Warn("unknown enricher type in order", "type", name)
+			continue
+		}
+
+		factory, ok := s.Registry.Get(t)
+		if !ok {
+			s.Logger.Debug("no factory registered for enricher", "type", t)
+			continue
+		}
+
+		enricher, err := factory(ctx, u)
+		if err != nil {
+			s.Logger.Error("failed to create enricher", "type", t, "error", err)
+			continue
+		}
+		if enricher == nil {
+			s.Logger.Debug("enricher not available", "type", t)
+			continue
+		}
+		if !enricher.IsAvailable() {
+			s.Logger.Debug("enricher not configured", "type", t)
+			continue
+		}
+
+		active = append(active, enricher)
+	}
+
+	return active, nil
+}
+
+// EnrichArtists runs enrichment on all artists that need it.
+func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, error) {
+	s.Logger.Info("enriching artists", "username", u.Username)
+
+	enricherList, err := s.getActiveEnrichers(ctx, u)
+	if err != nil {
+		return 0, err
+	}
+
+	// Get artists that need enrichment (not enriched in the last 24 hours)
+	cutoff := time.Now().Add(-24 * time.Hour)
+	artists, err := s.Client.Artist.Query().
+		Where(
+			artist.HasUserWith(user.ID(u.ID)),
+			artist.Or(
+				artist.LastEnrichedAtIsNil(),
+				artist.LastEnrichedAtLT(cutoff),
+			),
+		).
+		Limit(100). // Process in batches
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query artists: %w", err)
+	}
+
+	s.Logger.Debug("found artists to enrich", "count", len(artists))
+
+	enrichedCount := 0
+	for _, art := range artists {
+		if err := s.enrichArtist(ctx, u, art, enricherList); err != nil {
+			s.Logger.Warn("failed to enrich artist", "artist", art.Name, "error", err)
+			continue
+		}
+		enrichedCount++
+	}
+
+	return enrichedCount, nil
+}
+
+// enrichArtist runs all enrichers on a single artist.
+func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *ent.Artist, enricherList []enrichers.Enricher) error {
+	s.Logger.Debug("enriching artist", "name", art.Name)
+
+	update := s.Client.Artist.UpdateOne(art)
+	var allTags []string
+	var allGenres []string
+	enrichersUsed := []string{}
+
+	for _, e := range enricherList {
+		artistEnricher, ok := e.(enrichers.ArtistEnricher)
+		if !ok {
+			continue
+		}
+
+		data, err := artistEnricher.EnrichArtist(ctx, art)
+		if err != nil {
+			s.Logger.Warn("enricher failed for artist",
+				"enricher", e.Name(),
+				"artist", art.Name,
+				"error", err)
+			continue
+		}
+		if data == nil {
+			continue
+		}
+
+		enrichersUsed = append(enrichersUsed, e.Name())
+
+		// Apply enrichment data (Artist has string fields, not *string)
+		if data.MusicBrainzID != "" && art.MusicbrainzID == "" {
+			update = update.SetMusicbrainzID(data.MusicBrainzID)
+		}
+		if data.SpotifyID != "" && art.SpotifyID == "" {
+			update = update.SetSpotifyID(data.SpotifyID)
+		}
+		if data.NavidromeID != "" && art.NavidromeID == "" {
+			update = update.SetNavidromeID(data.NavidromeID)
+		}
+		if data.LastFMURL != "" && art.LastfmURL == "" {
+			update = update.SetLastfmURL(data.LastFMURL)
+		}
+		if data.SortName != "" && art.SortName == "" {
+			update = update.SetSortName(data.SortName)
+		}
+		if data.Bio != "" && art.Bio == "" {
+			update = update.SetBio(data.Bio)
+		}
+		if data.Popularity != nil && art.Popularity == nil {
+			update = update.SetPopularity(*data.Popularity)
+		}
+		if data.FollowerCount != nil && art.FollowerCount == nil {
+			update = update.SetFollowerCount(*data.FollowerCount)
+		}
+
+		// Merge tags and genres
+		allTags = append(allTags, data.Tags...)
+		allGenres = append(allGenres, data.Genres...)
+
+		// Get images
+		images, err := artistEnricher.GetArtistImages(ctx, art)
+		if err != nil {
+			s.Logger.Warn("failed to get artist images",
+				"enricher", e.Name(),
+				"artist", art.Name,
+				"error", err)
+		} else {
+			if err := s.saveArtistImages(ctx, art, images); err != nil {
+				s.Logger.Warn("failed to save artist images", "artist", art.Name, "error", err)
+			}
+		}
+	}
+
+	// Deduplicate and set tags/genres
+	if len(allTags) > 0 {
+		update = update.SetTags(uniqueStrings(allTags))
+	}
+	if len(allGenres) > 0 {
+		update = update.SetGenres(uniqueStrings(allGenres))
+	}
+
+	// Update last enriched timestamp
+	update = update.SetLastEnrichedAt(time.Now())
+
+	_, err := update.Save(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Log enrichment event
+	if len(enrichersUsed) > 0 {
+		s.logEvent(ctx, u, syncevent.EventTypeArtistEnriched, "metadata",
+			fmt.Sprintf("Enriched artist: %s", art.Name),
+			map[string]interface{}{
+				"artist":    art.Name,
+				"enrichers": enrichersUsed,
+			})
+	}
+
+	return nil
+}
+
+// saveArtistImages saves artist images to the database.
+func (s *MetadataService) saveArtistImages(ctx context.Context, art *ent.Artist, images []enrichers.ImageData) error {
+	for _, img := range images {
+		// Check if image already exists
+		exists, err := s.Client.ArtistImage.Query().
+			Where(
+				artistimage.HasArtistWith(artist.ID(art.ID)),
+				artistimage.URL(img.URL),
+			).
+			Exist(ctx)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+
+		// Create image record
+		create := s.Client.ArtistImage.Create().
+			SetArtist(art).
+			SetSource(img.Source).
+			SetURL(img.URL).
+			SetIsPrimary(img.IsPrimary)
+
+		// Map image type
+		switch img.Type {
+		case "thumbnail":
+			create = create.SetImageType(artistimage.ImageTypeThumbnail)
+		case "background":
+			create = create.SetImageType(artistimage.ImageTypeBackground)
+		case "logo":
+			create = create.SetImageType(artistimage.ImageTypeLogo)
+		case "banner":
+			create = create.SetImageType(artistimage.ImageTypeBanner)
+		case "fanart":
+			create = create.SetImageType(artistimage.ImageTypeFanart)
+		default:
+			create = create.SetImageType(artistimage.ImageTypeThumbnail)
+		}
+
+		if img.Width > 0 {
+			create = create.SetWidth(img.Width)
+		}
+		if img.Height > 0 {
+			create = create.SetHeight(img.Height)
+		}
+		if img.Likes > 0 {
+			create = create.SetLikes(img.Likes)
+		}
+
+		if _, err := create.Save(ctx); err != nil {
+			s.Logger.Warn("failed to save artist image", "url", img.URL, "error", err)
+		}
+	}
+
+	return nil
+}
+
+// EnrichAlbums runs enrichment on all albums that need it.
+func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, error) {
+	s.Logger.Info("enriching albums", "username", u.Username)
+
+	enricherList, err := s.getActiveEnrichers(ctx, u)
+	if err != nil {
+		return 0, err
+	}
+
+	cutoff := time.Now().Add(-24 * time.Hour)
+	albums, err := s.Client.Album.Query().
+		Where(
+			album.HasUserWith(user.ID(u.ID)),
+			album.Or(
+				album.LastEnrichedAtIsNil(),
+				album.LastEnrichedAtLT(cutoff),
+			),
+		).
+		WithArtist().
+		Limit(100).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query albums: %w", err)
+	}
+
+	s.Logger.Debug("found albums to enrich", "count", len(albums))
+
+	enrichedCount := 0
+	for _, alb := range albums {
+		if err := s.enrichAlbum(ctx, u, alb, enricherList); err != nil {
+			s.Logger.Warn("failed to enrich album", "album", alb.Name, "error", err)
+			continue
+		}
+		enrichedCount++
+	}
+
+	return enrichedCount, nil
+}
+
+// enrichAlbum runs all enrichers on a single album.
+func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent.Album, enricherList []enrichers.Enricher) error {
+	s.Logger.Debug("enriching album", "name", alb.Name)
+
+	update := s.Client.Album.UpdateOne(alb)
+	var allTags []string
+	enrichersUsed := []string{}
+
+	for _, e := range enricherList {
+		albumEnricher, ok := e.(enrichers.AlbumEnricher)
+		if !ok {
+			continue
+		}
+
+		data, err := albumEnricher.EnrichAlbum(ctx, alb)
+		if err != nil {
+			s.Logger.Warn("enricher failed for album",
+				"enricher", e.Name(),
+				"album", alb.Name,
+				"error", err)
+			continue
+		}
+		if data == nil {
+			continue
+		}
+
+		enrichersUsed = append(enrichersUsed, e.Name())
+
+		// Apply enrichment data (Album has string fields, not *string)
+		if data.MusicBrainzID != "" && alb.MusicbrainzID == "" {
+			update = update.SetMusicbrainzID(data.MusicBrainzID)
+		}
+		if data.SpotifyID != "" && alb.SpotifyID == "" {
+			update = update.SetSpotifyID(data.SpotifyID)
+		}
+		if data.ReleaseDate != "" && alb.ReleaseDate == "" {
+			update = update.SetReleaseDate(data.ReleaseDate)
+		}
+		if data.Year > 0 && alb.Year == 0 {
+			update = update.SetYear(data.Year)
+		}
+		if data.Genre != "" && alb.Genre == "" {
+			update = update.SetGenre(data.Genre)
+		}
+		if data.AlbumType != "" && alb.AlbumType == "" {
+			update = update.SetAlbumType(data.AlbumType)
+		}
+		if data.Label != "" && alb.Label == "" {
+			update = update.SetLabel(data.Label)
+		}
+		if data.TotalTracks > 0 && alb.TotalTracks == 0 {
+			update = update.SetTotalTracks(data.TotalTracks)
+		}
+		if data.Popularity > 0 && alb.Popularity == 0 {
+			update = update.SetPopularity(data.Popularity)
+		}
+
+		allTags = append(allTags, data.Tags...)
+
+		// Get images
+		images, err := albumEnricher.GetAlbumImages(ctx, alb)
+		if err != nil {
+			s.Logger.Warn("failed to get album images",
+				"enricher", e.Name(),
+				"album", alb.Name,
+				"error", err)
+		} else {
+			if err := s.saveAlbumImages(ctx, alb, images); err != nil {
+				s.Logger.Warn("failed to save album images", "album", alb.Name, "error", err)
+			}
+		}
+	}
+
+	if len(allTags) > 0 {
+		update = update.SetTags(uniqueStrings(allTags))
+	}
+
+	update = update.SetLastEnrichedAt(time.Now())
+
+	_, err := update.Save(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Log enrichment event
+	if len(enrichersUsed) > 0 {
+		s.logEvent(ctx, u, syncevent.EventTypeAlbumEnriched, "metadata",
+			fmt.Sprintf("Enriched album: %s", alb.Name),
+			map[string]interface{}{
+				"album":     alb.Name,
+				"enrichers": enrichersUsed,
+			})
+	}
+
+	return nil
+}
+
+// saveAlbumImages saves album images to the database.
+func (s *MetadataService) saveAlbumImages(ctx context.Context, alb *ent.Album, images []enrichers.ImageData) error {
+	for _, img := range images {
+		// Check URL - for local URLs we use a different identifier
+		imgURL := img.URL
+		if imgURL == "" {
+			continue
+		}
+
+		// Check if image already exists
+		exists, err := s.Client.AlbumImage.Query().
+			Where(
+				albumimage.HasAlbumWith(album.ID(alb.ID)),
+				albumimage.URL(imgURL),
+			).
+			Exist(ctx)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+
+		// Create image record
+		create := s.Client.AlbumImage.Create().
+			SetAlbum(alb).
+			SetSource(img.Source).
+			SetURL(imgURL).
+			SetIsPrimary(img.IsPrimary)
+
+		// Map image type
+		switch img.Type {
+		case "cover_front":
+			create = create.SetImageType(albumimage.ImageTypeCoverFront)
+		case "cover_back":
+			create = create.SetImageType(albumimage.ImageTypeCoverBack)
+		case "cd_art":
+			create = create.SetImageType(albumimage.ImageTypeCdArt)
+		case "booklet":
+			create = create.SetImageType(albumimage.ImageTypeBooklet)
+		case "spine":
+			create = create.SetImageType(albumimage.ImageTypeSpine)
+		default:
+			create = create.SetImageType(albumimage.ImageTypeCoverFront)
+		}
+
+		if img.Width > 0 {
+			create = create.SetWidth(img.Width)
+		}
+		if img.Height > 0 {
+			create = create.SetHeight(img.Height)
+		}
+
+		if _, err := create.Save(ctx); err != nil {
+			s.Logger.Warn("failed to save album image", "url", imgURL, "error", err)
+		}
+	}
+
+	return nil
+}
+
+// EnrichTracks runs enrichment on all tracks that need it.
+func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, error) {
+	s.Logger.Info("enriching tracks", "username", u.Username)
+
+	enricherList, err := s.getActiveEnrichers(ctx, u)
+	if err != nil {
+		return 0, err
+	}
+
+	cutoff := time.Now().Add(-24 * time.Hour)
+	// Get tracks via their artists (which belong to users)
+	tracks, err := s.Client.Track.Query().
+		Where(
+			track.Or(
+				track.LastEnrichedAtIsNil(),
+				track.LastEnrichedAtLT(cutoff),
+			),
+		).
+		WithArtist(func(q *ent.ArtistQuery) {
+			q.Where(artist.HasUserWith(user.ID(u.ID)))
+		}).
+		WithAlbum().
+		Limit(200).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query tracks: %w", err)
+	}
+
+	// Filter to only tracks that belong to this user's artists
+	var userTracks []*ent.Track
+	for _, t := range tracks {
+		if t.Edges.Artist != nil {
+			userTracks = append(userTracks, t)
+		}
+	}
+
+	s.Logger.Debug("found tracks to enrich", "count", len(userTracks))
+
+	enrichedCount := 0
+	for _, t := range userTracks {
+		if err := s.enrichTrack(ctx, u, t, enricherList); err != nil {
+			s.Logger.Warn("failed to enrich track", "track", t.Name, "error", err)
+			continue
+		}
+		enrichedCount++
+	}
+
+	return enrichedCount, nil
+}
+
+// enrichTrack runs all enrichers on a single track.
+func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.Track, enricherList []enrichers.Enricher) error {
+	s.Logger.Debug("enriching track", "name", t.Name)
+
+	update := s.Client.Track.UpdateOne(t)
+	var allTags []string
+	var allGenres []string
+	enrichersUsed := []string{}
+
+	for _, e := range enricherList {
+		trackEnricher, ok := e.(enrichers.TrackEnricher)
+		if !ok {
+			continue
+		}
+
+		data, err := trackEnricher.EnrichTrack(ctx, t)
+		if err != nil {
+			s.Logger.Warn("enricher failed for track",
+				"enricher", e.Name(),
+				"track", t.Name,
+				"error", err)
+			continue
+		}
+		if data == nil {
+			continue
+		}
+
+		enrichersUsed = append(enrichersUsed, e.Name())
+
+		// Apply enrichment data (Track has *string fields due to Nillable())
+		if data.MusicBrainzID != "" && (t.MusicbrainzID == nil || *t.MusicbrainzID == "") {
+			update = update.SetMusicbrainzID(data.MusicBrainzID)
+		}
+		if data.SpotifyID != "" && (t.SpotifyID == nil || *t.SpotifyID == "") {
+			update = update.SetSpotifyID(data.SpotifyID)
+		}
+		if data.NavidromeID != "" && (t.NavidromeID == nil || *t.NavidromeID == "") {
+			update = update.SetNavidromeID(data.NavidromeID)
+		}
+		if data.ISRC != "" && (t.Isrc == nil || *t.Isrc == "") {
+			update = update.SetIsrc(data.ISRC)
+		}
+		if data.DurationMs > 0 && (t.DurationMs == nil || *t.DurationMs == 0) {
+			update = update.SetDurationMs(data.DurationMs)
+		}
+		if data.TrackNumber > 0 && (t.TrackNumber == nil || *t.TrackNumber == 0) {
+			update = update.SetTrackNumber(data.TrackNumber)
+		}
+		if data.DiscNumber > 0 && (t.DiscNumber == nil || *t.DiscNumber == 0) {
+			update = update.SetDiscNumber(data.DiscNumber)
+		}
+		if data.BPM != nil && t.Bpm == nil {
+			update = update.SetBpm(*data.BPM)
+		}
+		if data.MusicalKey != "" && (t.MusicalKey == nil || *t.MusicalKey == "") {
+			update = update.SetMusicalKey(data.MusicalKey)
+		}
+		if data.Energy != nil && t.Energy == nil {
+			update = update.SetEnergy(*data.Energy)
+		}
+		if data.Danceability != nil && t.Danceability == nil {
+			update = update.SetDanceability(*data.Danceability)
+		}
+		if data.Valence != nil && t.Valence == nil {
+			update = update.SetValence(*data.Valence)
+		}
+		if data.Acousticness != nil && t.Acousticness == nil {
+			update = update.SetAcousticness(*data.Acousticness)
+		}
+		if data.Instrumentalness != nil && t.Instrumentalness == nil {
+			update = update.SetInstrumentalness(*data.Instrumentalness)
+		}
+		if data.Popularity != nil && t.Popularity == nil {
+			update = update.SetPopularity(*data.Popularity)
+		}
+		if data.SpotifyURL != "" && (t.SpotifyURL == nil || *t.SpotifyURL == "") {
+			update = update.SetSpotifyURL(data.SpotifyURL)
+		}
+		if data.MusicBrainzURL != "" && (t.MusicbrainzURL == nil || *t.MusicbrainzURL == "") {
+			update = update.SetMusicbrainzURL(data.MusicBrainzURL)
+		}
+
+		allTags = append(allTags, data.Tags...)
+		allGenres = append(allGenres, data.Genres...)
+	}
+
+	if len(allTags) > 0 {
+		update = update.SetTags(uniqueStrings(allTags))
+	}
+	if len(allGenres) > 0 {
+		update = update.SetGenres(uniqueStrings(allGenres))
+	}
+
+	update = update.SetLastEnrichedAt(time.Now())
+
+	_, err := update.Save(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Log enrichment event (only for tracks with enrichers used to avoid spam)
+	if len(enrichersUsed) > 0 {
+		s.logEvent(ctx, u, syncevent.EventTypeTrackEnriched, "metadata",
+			fmt.Sprintf("Enriched track: %s", t.Name),
+			map[string]interface{}{
+				"track":     t.Name,
+				"enrichers": enrichersUsed,
+			})
+	}
+
+	return nil
+}
+
+// DownloadImages downloads all pending images to local storage.
+func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int, error) {
+	s.Logger.Info("downloading images", "username", u.Username)
+
+	baseDir := s.Config.Metadata.Images.Directory
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create images directory: %w", err)
+	}
+
+	downloadedCount := 0
+
+	// Download artist images
+	artistImages, err := s.Client.ArtistImage.Query().
+		Where(
+			artistimage.LocalPathIsNil(),
+			artistimage.HasArtistWith(artist.HasUserWith(user.ID(u.ID))),
+		).
+		WithArtist().
+		Limit(50).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query artist images: %w", err)
+	}
+
+	for _, img := range artistImages {
+		if err := s.downloadArtistImage(ctx, u, img, baseDir); err != nil {
+			s.Logger.Warn("failed to download artist image", "url", img.URL, "error", err)
+		} else {
+			downloadedCount++
+		}
+	}
+
+	// Download album images
+	albumImages, err := s.Client.AlbumImage.Query().
+		Where(
+			albumimage.LocalPathIsNil(),
+			albumimage.HasAlbumWith(album.HasUserWith(user.ID(u.ID))),
+		).
+		WithAlbum().
+		Limit(50).
+		All(ctx)
+	if err != nil {
+		return downloadedCount, fmt.Errorf("failed to query album images: %w", err)
+	}
+
+	for _, img := range albumImages {
+		if err := s.downloadAlbumImage(ctx, u, img, baseDir); err != nil {
+			s.Logger.Warn("failed to download album image", "error", err)
+		} else {
+			downloadedCount++
+		}
+	}
+
+	return downloadedCount, nil
+}
+
+// downloadArtistImage downloads a single artist image.
+func (s *MetadataService) downloadArtistImage(ctx context.Context, u *ent.User, img *ent.ArtistImage, baseDir string) error {
+	if img.URL == "" {
+		return nil
+	}
+
+	// Create directory for artist
+	artistDir := filepath.Join(baseDir, "artists", sanitizeFilename(img.Edges.Artist.Name))
+	if err := os.MkdirAll(artistDir, 0755); err != nil {
+		return err
+	}
+
+	// Determine filename
+	ext := getImageExtension(img.URL)
+	filename := fmt.Sprintf("%s_%d%s", img.ImageType.String(), img.ID, ext)
+	localPath := filepath.Join(artistDir, filename)
+
+	// Download image
+	if err := s.downloadFile(ctx, img.URL, localPath); err != nil {
+		return err
+	}
+
+	// Update database
+	_, err := s.Client.ArtistImage.UpdateOne(img).
+		SetLocalPath(localPath).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Log image download event
+	s.logEvent(ctx, u, syncevent.EventTypeImageDownloaded, "metadata",
+		fmt.Sprintf("Downloaded artist image: %s", img.Edges.Artist.Name),
+		map[string]interface{}{
+			"artist":     img.Edges.Artist.Name,
+			"image_type": img.ImageType.String(),
+			"source":     img.Source,
+		})
+
+	return nil
+}
+
+// downloadAlbumImage downloads a single album image.
+func (s *MetadataService) downloadAlbumImage(ctx context.Context, u *ent.User, img *ent.AlbumImage, baseDir string) error {
+	if img.URL == "" {
+		return nil
+	}
+
+	// Create directory for album
+	artistName := "unknown"
+	if img.Edges.Album != nil && img.Edges.Album.Edges.Artist != nil {
+		artistName = img.Edges.Album.Edges.Artist.Name
+	}
+	albumDir := filepath.Join(baseDir, "albums", sanitizeFilename(artistName), sanitizeFilename(img.Edges.Album.Name))
+	if err := os.MkdirAll(albumDir, 0755); err != nil {
+		return err
+	}
+
+	// Determine filename
+	ext := getImageExtension(img.URL)
+	filename := fmt.Sprintf("%s_%d%s", img.ImageType.String(), img.ID, ext)
+	localPath := filepath.Join(albumDir, filename)
+
+	// Download image
+	if err := s.downloadFile(ctx, img.URL, localPath); err != nil {
+		return err
+	}
+
+	// Update database
+	_, err := s.Client.AlbumImage.UpdateOne(img).
+		SetLocalPath(localPath).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Log image download event
+	s.logEvent(ctx, u, syncevent.EventTypeImageDownloaded, "metadata",
+		fmt.Sprintf("Downloaded album image: %s", img.Edges.Album.Name),
+		map[string]interface{}{
+			"album":      img.Edges.Album.Name,
+			"image_type": img.ImageType.String(),
+			"source":     img.Source,
+		})
+
+	return nil
+}
+
+// downloadFile downloads a file from a URL to a local path.
+func (s *MetadataService) downloadFile(ctx context.Context, url, localPath string) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	file, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, resp.Body)
+	return err
+}
+
+// EnrichNewListens enriches catalog entries for newly synced listens.
+// This is called by the sync service when new tracks are added.
+func (s *MetadataService) EnrichNewListens(ctx context.Context, u *ent.User, artistName, albumName, trackName string) {
+	if !s.Config.Metadata.Enabled {
+		return
+	}
+
+	// Process the listen entry to ensure catalog entries exist
+	added, err := s.processListenEntry(ctx, u, artistName, albumName, trackName)
+	if err != nil {
+		s.Logger.Warn("failed to process listen entry for enrichment",
+			"artist", artistName,
+			"album", albumName,
+			"track", trackName,
+			"error", err)
+		return
+	}
+
+	// Only enrich if something new was added
+	if added == nil || (!added["artist"] && !added["album"] && !added["track"]) {
+		return
+	}
+
+	s.Logger.Debug("new catalog entries added, will be enriched in next sync",
+		"artist", artistName,
+		"album", albumName,
+		"track", trackName,
+		"added", added)
+}
+
+// Helper functions
+
+// uniqueStrings returns a deduplicated slice of strings.
+func uniqueStrings(s []string) []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0, len(s))
+	for _, v := range s {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		lower := strings.ToLower(v)
+		if _, ok := seen[lower]; !ok {
+			seen[lower] = struct{}{}
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+// sanitizeFilename makes a string safe for use as a filename.
+func sanitizeFilename(s string) string {
+	// Replace problematic characters
+	replacer := strings.NewReplacer(
+		"/", "_",
+		"\\", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+	)
+	s = replacer.Replace(s)
+	// Trim whitespace
+	s = strings.TrimSpace(s)
+	// Limit length
+	if len(s) > 100 {
+		s = s[:100]
+	}
+	return s
+}
+
+// getImageExtension extracts the file extension from a URL.
+func getImageExtension(url string) string {
+	// Try to get extension from URL
+	if idx := strings.LastIndex(url, "."); idx != -1 {
+		ext := strings.ToLower(url[idx:])
+		if idx := strings.Index(ext, "?"); idx != -1 {
+			ext = ext[:idx]
+		}
+		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" {
+			return ext
+		}
+	}
+	return ".jpg" // Default to jpg
+}

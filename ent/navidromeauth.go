@@ -7,6 +7,7 @@ import (
 	"spotter/ent/navidromeauth"
 	"spotter/ent/user"
 	"strings"
+	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
@@ -19,6 +20,8 @@ type NavidromeAuth struct {
 	ID int `json:"id,omitempty"`
 	// Password holds the value of the "password" field.
 	Password string `json:"password,omitempty"`
+	// LastSyncedAt holds the value of the "last_synced_at" field.
+	LastSyncedAt time.Time `json:"last_synced_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the NavidromeAuthQuery when eager-loading is set.
 	Edges               NavidromeAuthEdges `json:"edges"`
@@ -55,6 +58,8 @@ func (*NavidromeAuth) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case navidromeauth.FieldPassword:
 			values[i] = new(sql.NullString)
+		case navidromeauth.FieldLastSyncedAt:
+			values[i] = new(sql.NullTime)
 		case navidromeauth.ForeignKeys[0]: // user_navidrome_auth
 			values[i] = new(sql.NullInt64)
 		default:
@@ -83,6 +88,12 @@ func (_m *NavidromeAuth) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field password", values[i])
 			} else if value.Valid {
 				_m.Password = value.String
+			}
+		case navidromeauth.FieldLastSyncedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_synced_at", values[i])
+			} else if value.Valid {
+				_m.LastSyncedAt = value.Time
 			}
 		case navidromeauth.ForeignKeys[0]:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -134,6 +145,9 @@ func (_m *NavidromeAuth) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
 	builder.WriteString("password=")
 	builder.WriteString(_m.Password)
+	builder.WriteString(", ")
+	builder.WriteString("last_synced_at=")
+	builder.WriteString(_m.LastSyncedAt.Format(time.ANSIC))
 	builder.WriteByte(')')
 	return builder.String()
 }

@@ -18,6 +18,12 @@ const (
 	FieldUsername = "username"
 	// FieldEmail holds the string denoting the email field in the database.
 	FieldEmail = "email"
+	// FieldTheme holds the string denoting the theme field in the database.
+	FieldTheme = "theme"
+	// FieldSystemPrompt holds the string denoting the system_prompt field in the database.
+	FieldSystemPrompt = "system_prompt"
+	// FieldPaginationSize holds the string denoting the pagination_size field in the database.
+	FieldPaginationSize = "pagination_size"
 	// FieldLastLoginAt holds the string denoting the last_login_at field in the database.
 	FieldLastLoginAt = "last_login_at"
 	// EdgeSpotifyAuth holds the string denoting the spotify_auth edge name in mutations.
@@ -26,8 +32,16 @@ const (
 	EdgeLastfmAuth = "lastfm_auth"
 	// EdgeNavidromeAuth holds the string denoting the navidrome_auth edge name in mutations.
 	EdgeNavidromeAuth = "navidrome_auth"
+	// EdgePlaylists holds the string denoting the playlists edge name in mutations.
+	EdgePlaylists = "playlists"
 	// EdgeListens holds the string denoting the listens edge name in mutations.
 	EdgeListens = "listens"
+	// EdgeSyncEvents holds the string denoting the sync_events edge name in mutations.
+	EdgeSyncEvents = "sync_events"
+	// EdgeArtists holds the string denoting the artists edge name in mutations.
+	EdgeArtists = "artists"
+	// EdgeAlbums holds the string denoting the albums edge name in mutations.
+	EdgeAlbums = "albums"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 	// SpotifyAuthTable is the table that holds the spotify_auth relation/edge.
@@ -51,6 +65,13 @@ const (
 	NavidromeAuthInverseTable = "navidrome_auths"
 	// NavidromeAuthColumn is the table column denoting the navidrome_auth relation/edge.
 	NavidromeAuthColumn = "user_navidrome_auth"
+	// PlaylistsTable is the table that holds the playlists relation/edge.
+	PlaylistsTable = "playlists"
+	// PlaylistsInverseTable is the table name for the Playlist entity.
+	// It exists in this package in order to avoid circular dependency with the "playlist" package.
+	PlaylistsInverseTable = "playlists"
+	// PlaylistsColumn is the table column denoting the playlists relation/edge.
+	PlaylistsColumn = "user_playlists"
 	// ListensTable is the table that holds the listens relation/edge.
 	ListensTable = "listens"
 	// ListensInverseTable is the table name for the Listen entity.
@@ -58,6 +79,27 @@ const (
 	ListensInverseTable = "listens"
 	// ListensColumn is the table column denoting the listens relation/edge.
 	ListensColumn = "user_listens"
+	// SyncEventsTable is the table that holds the sync_events relation/edge.
+	SyncEventsTable = "sync_events"
+	// SyncEventsInverseTable is the table name for the SyncEvent entity.
+	// It exists in this package in order to avoid circular dependency with the "syncevent" package.
+	SyncEventsInverseTable = "sync_events"
+	// SyncEventsColumn is the table column denoting the sync_events relation/edge.
+	SyncEventsColumn = "user_sync_events"
+	// ArtistsTable is the table that holds the artists relation/edge.
+	ArtistsTable = "artists"
+	// ArtistsInverseTable is the table name for the Artist entity.
+	// It exists in this package in order to avoid circular dependency with the "artist" package.
+	ArtistsInverseTable = "artists"
+	// ArtistsColumn is the table column denoting the artists relation/edge.
+	ArtistsColumn = "user_artists"
+	// AlbumsTable is the table that holds the albums relation/edge.
+	AlbumsTable = "albums"
+	// AlbumsInverseTable is the table name for the Album entity.
+	// It exists in this package in order to avoid circular dependency with the "album" package.
+	AlbumsInverseTable = "albums"
+	// AlbumsColumn is the table column denoting the albums relation/edge.
+	AlbumsColumn = "user_albums"
 )
 
 // Columns holds all SQL columns for user fields.
@@ -65,6 +107,9 @@ var Columns = []string{
 	FieldID,
 	FieldUsername,
 	FieldEmail,
+	FieldTheme,
+	FieldSystemPrompt,
+	FieldPaginationSize,
 	FieldLastLoginAt,
 }
 
@@ -79,6 +124,10 @@ func ValidColumn(column string) bool {
 }
 
 var (
+	// DefaultTheme holds the default value on creation for the "theme" field.
+	DefaultTheme string
+	// DefaultPaginationSize holds the default value on creation for the "pagination_size" field.
+	DefaultPaginationSize int
 	// DefaultLastLoginAt holds the default value on creation for the "last_login_at" field.
 	DefaultLastLoginAt func() time.Time
 )
@@ -99,6 +148,21 @@ func ByUsername(opts ...sql.OrderTermOption) OrderOption {
 // ByEmail orders the results by the email field.
 func ByEmail(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEmail, opts...).ToFunc()
+}
+
+// ByTheme orders the results by the theme field.
+func ByTheme(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTheme, opts...).ToFunc()
+}
+
+// BySystemPrompt orders the results by the system_prompt field.
+func BySystemPrompt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSystemPrompt, opts...).ToFunc()
+}
+
+// ByPaginationSize orders the results by the pagination_size field.
+func ByPaginationSize(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPaginationSize, opts...).ToFunc()
 }
 
 // ByLastLoginAt orders the results by the last_login_at field.
@@ -127,6 +191,20 @@ func ByNavidromeAuthField(field string, opts ...sql.OrderTermOption) OrderOption
 	}
 }
 
+// ByPlaylistsCount orders the results by playlists count.
+func ByPlaylistsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newPlaylistsStep(), opts...)
+	}
+}
+
+// ByPlaylists orders the results by playlists terms.
+func ByPlaylists(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newPlaylistsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByListensCount orders the results by listens count.
 func ByListensCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -138,6 +216,48 @@ func ByListensCount(opts ...sql.OrderTermOption) OrderOption {
 func ByListens(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newListensStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// BySyncEventsCount orders the results by sync_events count.
+func BySyncEventsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newSyncEventsStep(), opts...)
+	}
+}
+
+// BySyncEvents orders the results by sync_events terms.
+func BySyncEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSyncEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByArtistsCount orders the results by artists count.
+func ByArtistsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newArtistsStep(), opts...)
+	}
+}
+
+// ByArtists orders the results by artists terms.
+func ByArtists(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newArtistsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAlbumsCount orders the results by albums count.
+func ByAlbumsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAlbumsStep(), opts...)
+	}
+}
+
+// ByAlbums orders the results by albums terms.
+func ByAlbums(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAlbumsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
 func newSpotifyAuthStep() *sqlgraph.Step {
@@ -161,10 +281,38 @@ func newNavidromeAuthStep() *sqlgraph.Step {
 		sqlgraph.Edge(sqlgraph.O2O, false, NavidromeAuthTable, NavidromeAuthColumn),
 	)
 }
+func newPlaylistsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(PlaylistsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, PlaylistsTable, PlaylistsColumn),
+	)
+}
 func newListensStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ListensInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, ListensTable, ListensColumn),
+	)
+}
+func newSyncEventsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SyncEventsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, SyncEventsTable, SyncEventsColumn),
+	)
+}
+func newArtistsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ArtistsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ArtistsTable, ArtistsColumn),
+	)
+}
+func newAlbumsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AlbumsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AlbumsTable, AlbumsColumn),
 	)
 }

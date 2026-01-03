@@ -7,11 +7,15 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"math"
+	"spotter/ent/album"
+	"spotter/ent/artist"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
 	"spotter/ent/navidromeauth"
+	"spotter/ent/playlist"
 	"spotter/ent/predicate"
 	"spotter/ent/spotifyauth"
+	"spotter/ent/syncevent"
 	"spotter/ent/user"
 
 	"entgo.io/ent"
@@ -30,7 +34,11 @@ type UserQuery struct {
 	withSpotifyAuth   *SpotifyAuthQuery
 	withLastfmAuth    *LastFMAuthQuery
 	withNavidromeAuth *NavidromeAuthQuery
+	withPlaylists     *PlaylistQuery
 	withListens       *ListenQuery
+	withSyncEvents    *SyncEventQuery
+	withArtists       *ArtistQuery
+	withAlbums        *AlbumQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -133,6 +141,28 @@ func (_q *UserQuery) QueryNavidromeAuth() *NavidromeAuthQuery {
 	return query
 }
 
+// QueryPlaylists chains the current query on the "playlists" edge.
+func (_q *UserQuery) QueryPlaylists() *PlaylistQuery {
+	query := (&PlaylistClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(playlist.Table, playlist.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.PlaylistsTable, user.PlaylistsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // QueryListens chains the current query on the "listens" edge.
 func (_q *UserQuery) QueryListens() *ListenQuery {
 	query := (&ListenClient{config: _q.config}).Query()
@@ -148,6 +178,72 @@ func (_q *UserQuery) QueryListens() *ListenQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(listen.Table, listen.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.ListensTable, user.ListensColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QuerySyncEvents chains the current query on the "sync_events" edge.
+func (_q *UserQuery) QuerySyncEvents() *SyncEventQuery {
+	query := (&SyncEventClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(syncevent.Table, syncevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.SyncEventsTable, user.SyncEventsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryArtists chains the current query on the "artists" edge.
+func (_q *UserQuery) QueryArtists() *ArtistQuery {
+	query := (&ArtistClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(artist.Table, artist.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ArtistsTable, user.ArtistsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAlbums chains the current query on the "albums" edge.
+func (_q *UserQuery) QueryAlbums() *AlbumQuery {
+	query := (&AlbumClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(album.Table, album.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.AlbumsTable, user.AlbumsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -350,7 +446,11 @@ func (_q *UserQuery) Clone() *UserQuery {
 		withSpotifyAuth:   _q.withSpotifyAuth.Clone(),
 		withLastfmAuth:    _q.withLastfmAuth.Clone(),
 		withNavidromeAuth: _q.withNavidromeAuth.Clone(),
+		withPlaylists:     _q.withPlaylists.Clone(),
 		withListens:       _q.withListens.Clone(),
+		withSyncEvents:    _q.withSyncEvents.Clone(),
+		withArtists:       _q.withArtists.Clone(),
+		withAlbums:        _q.withAlbums.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -390,6 +490,17 @@ func (_q *UserQuery) WithNavidromeAuth(opts ...func(*NavidromeAuthQuery)) *UserQ
 	return _q
 }
 
+// WithPlaylists tells the query-builder to eager-load the nodes that are connected to
+// the "playlists" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithPlaylists(opts ...func(*PlaylistQuery)) *UserQuery {
+	query := (&PlaylistClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withPlaylists = query
+	return _q
+}
+
 // WithListens tells the query-builder to eager-load the nodes that are connected to
 // the "listens" edge. The optional arguments are used to configure the query builder of the edge.
 func (_q *UserQuery) WithListens(opts ...func(*ListenQuery)) *UserQuery {
@@ -398,6 +509,39 @@ func (_q *UserQuery) WithListens(opts ...func(*ListenQuery)) *UserQuery {
 		opt(query)
 	}
 	_q.withListens = query
+	return _q
+}
+
+// WithSyncEvents tells the query-builder to eager-load the nodes that are connected to
+// the "sync_events" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithSyncEvents(opts ...func(*SyncEventQuery)) *UserQuery {
+	query := (&SyncEventClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withSyncEvents = query
+	return _q
+}
+
+// WithArtists tells the query-builder to eager-load the nodes that are connected to
+// the "artists" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithArtists(opts ...func(*ArtistQuery)) *UserQuery {
+	query := (&ArtistClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withArtists = query
+	return _q
+}
+
+// WithAlbums tells the query-builder to eager-load the nodes that are connected to
+// the "albums" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithAlbums(opts ...func(*AlbumQuery)) *UserQuery {
+	query := (&AlbumClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAlbums = query
 	return _q
 }
 
@@ -479,11 +623,15 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [4]bool{
+		loadedTypes = [8]bool{
 			_q.withSpotifyAuth != nil,
 			_q.withLastfmAuth != nil,
 			_q.withNavidromeAuth != nil,
+			_q.withPlaylists != nil,
 			_q.withListens != nil,
+			_q.withSyncEvents != nil,
+			_q.withArtists != nil,
+			_q.withAlbums != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -522,10 +670,38 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			return nil, err
 		}
 	}
+	if query := _q.withPlaylists; query != nil {
+		if err := _q.loadPlaylists(ctx, query, nodes,
+			func(n *User) { n.Edges.Playlists = []*Playlist{} },
+			func(n *User, e *Playlist) { n.Edges.Playlists = append(n.Edges.Playlists, e) }); err != nil {
+			return nil, err
+		}
+	}
 	if query := _q.withListens; query != nil {
 		if err := _q.loadListens(ctx, query, nodes,
 			func(n *User) { n.Edges.Listens = []*Listen{} },
 			func(n *User, e *Listen) { n.Edges.Listens = append(n.Edges.Listens, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withSyncEvents; query != nil {
+		if err := _q.loadSyncEvents(ctx, query, nodes,
+			func(n *User) { n.Edges.SyncEvents = []*SyncEvent{} },
+			func(n *User, e *SyncEvent) { n.Edges.SyncEvents = append(n.Edges.SyncEvents, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withArtists; query != nil {
+		if err := _q.loadArtists(ctx, query, nodes,
+			func(n *User) { n.Edges.Artists = []*Artist{} },
+			func(n *User, e *Artist) { n.Edges.Artists = append(n.Edges.Artists, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAlbums; query != nil {
+		if err := _q.loadAlbums(ctx, query, nodes,
+			func(n *User) { n.Edges.Albums = []*Album{} },
+			func(n *User, e *Album) { n.Edges.Albums = append(n.Edges.Albums, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -616,6 +792,37 @@ func (_q *UserQuery) loadNavidromeAuth(ctx context.Context, query *NavidromeAuth
 	}
 	return nil
 }
+func (_q *UserQuery) loadPlaylists(ctx context.Context, query *PlaylistQuery, nodes []*User, init func(*User), assign func(*User, *Playlist)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.Playlist(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.PlaylistsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_playlists
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_playlists" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_playlists" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
 func (_q *UserQuery) loadListens(ctx context.Context, query *ListenQuery, nodes []*User, init func(*User), assign func(*User, *Listen)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int]*User)
@@ -642,6 +849,99 @@ func (_q *UserQuery) loadListens(ctx context.Context, query *ListenQuery, nodes 
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "user_listens" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadSyncEvents(ctx context.Context, query *SyncEventQuery, nodes []*User, init func(*User), assign func(*User, *SyncEvent)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.SyncEvent(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.SyncEventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_sync_events
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_sync_events" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_sync_events" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadArtists(ctx context.Context, query *ArtistQuery, nodes []*User, init func(*User), assign func(*User, *Artist)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.Artist(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.ArtistsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_artists
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_artists" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_artists" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadAlbums(ctx context.Context, query *AlbumQuery, nodes []*User, init func(*User), assign func(*User, *Album)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.Album(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.AlbumsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_albums
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_albums" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_albums" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

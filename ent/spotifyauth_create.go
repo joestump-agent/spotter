@@ -21,6 +21,34 @@ type SpotifyAuthCreate struct {
 	hooks    []Hook
 }
 
+// SetDisplayName sets the "display_name" field.
+func (_c *SpotifyAuthCreate) SetDisplayName(v string) *SpotifyAuthCreate {
+	_c.mutation.SetDisplayName(v)
+	return _c
+}
+
+// SetNillableDisplayName sets the "display_name" field if the given value is not nil.
+func (_c *SpotifyAuthCreate) SetNillableDisplayName(v *string) *SpotifyAuthCreate {
+	if v != nil {
+		_c.SetDisplayName(*v)
+	}
+	return _c
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (_c *SpotifyAuthCreate) SetLastSyncedAt(v time.Time) *SpotifyAuthCreate {
+	_c.mutation.SetLastSyncedAt(v)
+	return _c
+}
+
+// SetNillableLastSyncedAt sets the "last_synced_at" field if the given value is not nil.
+func (_c *SpotifyAuthCreate) SetNillableLastSyncedAt(v *time.Time) *SpotifyAuthCreate {
+	if v != nil {
+		_c.SetLastSyncedAt(*v)
+	}
+	return _c
+}
+
 // SetAccessToken sets the "access_token" field.
 func (_c *SpotifyAuthCreate) SetAccessToken(v string) *SpotifyAuthCreate {
 	_c.mutation.SetAccessToken(v)
@@ -122,6 +150,14 @@ func (_c *SpotifyAuthCreate) createSpec() (*SpotifyAuth, *sqlgraph.CreateSpec) {
 		_node = &SpotifyAuth{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(spotifyauth.Table, sqlgraph.NewFieldSpec(spotifyauth.FieldID, field.TypeInt))
 	)
+	if value, ok := _c.mutation.DisplayName(); ok {
+		_spec.SetField(spotifyauth.FieldDisplayName, field.TypeString, value)
+		_node.DisplayName = value
+	}
+	if value, ok := _c.mutation.LastSyncedAt(); ok {
+		_spec.SetField(spotifyauth.FieldLastSyncedAt, field.TypeTime, value)
+		_node.LastSyncedAt = value
+	}
 	if value, ok := _c.mutation.AccessToken(); ok {
 		_spec.SetField(spotifyauth.FieldAccessToken, field.TypeString, value)
 		_node.AccessToken = value

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -18,6 +19,13 @@ type Config struct {
 	Navidrome struct {
 		BaseURL string `mapstructure:"base_url"`
 	} `mapstructure:"navidrome"`
+	Sync struct {
+		Interval string `mapstructure:"interval"`
+	} `mapstructure:"sync"`
+	Theme struct {
+		Available string `mapstructure:"available"` // Comma-separated list of DaisyUI theme names
+		Default   string `mapstructure:"default"`   // Default theme name
+	} `mapstructure:"theme"`
 	Spotify struct {
 		ClientID     string `mapstructure:"client_id"`
 		ClientSecret string `mapstructure:"client_secret"`
@@ -28,6 +36,59 @@ type Config struct {
 		SharedSecret string `mapstructure:"shared_secret"`
 		RedirectURL  string `mapstructure:"redirect_url"`
 	} `mapstructure:"lastfm"`
+	Metadata struct {
+		Enabled  bool   `mapstructure:"enabled"`  // Enable/disable metadata enrichment
+		Interval string `mapstructure:"interval"` // Sync interval (e.g., "1h", "30m")
+		Order    string `mapstructure:"order"`    // Comma-separated enricher order (e.g., "musicbrainz,navidrome,spotify,lastfm,fanart")
+
+		MusicBrainz struct {
+			UserAgent string `mapstructure:"user_agent"` // Required by MusicBrainz API - should include app name and contact
+		} `mapstructure:"musicbrainz"`
+
+		Fanart struct {
+			APIKey string `mapstructure:"api_key"` // Fanart.tv personal API key
+		} `mapstructure:"fanart"`
+
+		Images struct {
+			Download  bool   `mapstructure:"download"`   // Whether to download images locally
+			Directory string `mapstructure:"directory"`  // Directory to store downloaded images
+			MaxWidth  int    `mapstructure:"max_width"`  // Maximum image width (for resizing)
+			MaxHeight int    `mapstructure:"max_height"` // Maximum image height (for resizing)
+		} `mapstructure:"images"`
+	} `mapstructure:"metadata"`
+}
+
+// AvailableThemes returns the list of available themes parsed from the comma-separated config.
+func (c *Config) AvailableThemes() []string {
+	if c.Theme.Available == "" {
+		return []string{"dark"}
+	}
+	themes := strings.Split(c.Theme.Available, ",")
+	result := make([]string, 0, len(themes))
+	for _, t := range themes {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
+// MetadataEnricherOrder returns the list of enrichers in the configured order.
+// Falls back to default order if not configured.
+func (c *Config) MetadataEnricherOrder() []string {
+	if c.Metadata.Order == "" {
+		return []string{"musicbrainz", "navidrome", "spotify", "lastfm", "fanart"}
+	}
+	parts := strings.Split(c.Metadata.Order, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 func Load() (*Config, error) {
@@ -40,6 +101,9 @@ func Load() (*Config, error) {
 	// Defaults
 	v.SetDefault("server.port", "8080")
 	v.SetDefault("server.host", "0.0.0.0")
+	v.SetDefault("sync.interval", "5m")
+	v.SetDefault("theme.available", "light,dark,cupcake")
+	v.SetDefault("theme.default", "dark")
 	v.SetDefault("database.driver", "sqlite3")
 	v.SetDefault("database.source", "file:spotter.db?cache=shared&_fk=1")
 
@@ -47,14 +111,29 @@ func Load() (*Config, error) {
 	v.SetDefault("navidrome.base_url", "")
 	v.SetDefault("spotify.client_id", "")
 	v.SetDefault("spotify.client_secret", "")
-	v.SetDefault("spotify.redirect_url", "http://localhost:8080/auth/spotify/callback")
+	v.SetDefault("spotify.redirect_url", "http://127.0.0.1:8080/auth/spotify/callback")
 	v.SetDefault("lastfm.api_key", "")
 	v.SetDefault("lastfm.shared_secret", "")
 	v.SetDefault("lastfm.redirect_url", "")
 
+	// Metadata enrichment defaults
+	v.SetDefault("metadata.enabled", true)
+	v.SetDefault("metadata.interval", "1h")
+	v.SetDefault("metadata.order", "musicbrainz,navidrome,spotify,lastfm,fanart")
+	v.SetDefault("metadata.musicbrainz.user_agent", "Spotter/1.0.0 (https://github.com/spotter)")
+	v.SetDefault("metadata.fanart.api_key", "")
+	v.SetDefault("metadata.images.download", true)
+	v.SetDefault("metadata.images.directory", "./data/images")
+	v.SetDefault("metadata.images.max_width", 1000)
+	v.SetDefault("metadata.images.max_height", 1000)
+
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
+	}
+
+	if cfg.Navidrome.BaseURL == "" {
+		return nil, fmt.Errorf("navidrome.base_url is required")
 	}
 
 	return &cfg, nil
