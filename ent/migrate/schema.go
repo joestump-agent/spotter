@@ -53,6 +53,33 @@ var (
 				OnDelete:   schema.NoAction,
 			},
 		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "listen_played_at_source_track_name_artist_name_user_listens",
+				Unique:  true,
+				Columns: []*schema.Column{ListensColumns[5], ListensColumns[4], ListensColumns[1], ListensColumns[2], ListensColumns[7]},
+			},
+		},
+	}
+	// NavidromeAuthsColumns holds the columns for the "navidrome_auths" table.
+	NavidromeAuthsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "password", Type: field.TypeString},
+		{Name: "user_navidrome_auth", Type: field.TypeInt, Unique: true},
+	}
+	// NavidromeAuthsTable holds the schema information for the "navidrome_auths" table.
+	NavidromeAuthsTable = &schema.Table{
+		Name:       "navidrome_auths",
+		Columns:    NavidromeAuthsColumns,
+		PrimaryKey: []*schema.Column{NavidromeAuthsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "navidrome_auths_users_navidrome_auth",
+				Columns:    []*schema.Column{NavidromeAuthsColumns[2]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
 	}
 	// SpotifyAuthsColumns holds the columns for the "spotify_auths" table.
 	SpotifyAuthsColumns = []*schema.Column{
@@ -93,6 +120,7 @@ var (
 	Tables = []*schema.Table{
 		LastFmAuthsTable,
 		ListensTable,
+		NavidromeAuthsTable,
 		SpotifyAuthsTable,
 		UsersTable,
 	}
@@ -101,5 +129,6 @@ var (
 func init() {
 	LastFmAuthsTable.ForeignKeys[0].RefTable = UsersTable
 	ListensTable.ForeignKeys[0].RefTable = UsersTable
+	NavidromeAuthsTable.ForeignKeys[0].RefTable = UsersTable
 	SpotifyAuthsTable.ForeignKeys[0].RefTable = UsersTable
 }

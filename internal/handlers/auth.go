@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -43,6 +44,7 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 	// 2. Create or Update User
 	u, err := h.Client.User.Query().
 		Where(user.Username(username)).
+		WithNavidromeAuth().
 		Only(r.Context())
 
 	if err != nil {
@@ -61,6 +63,17 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+
+		// Create Navidrome Auth
+		_, err = h.Client.NavidromeAuth.Create().
+			SetUser(u).
+			SetPassword(password).
+			Save(r.Context())
+		if err != nil {
+			h.Logger.Error("Failed to create navidrome auth", "error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 	} else {
 		// Update
 		u, err = u.Update().
@@ -71,7 +84,31 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+
+		// Update Navidrome Auth
+		if u.Edges.NavidromeAuth != nil {
+			_, err = h.Client.NavidromeAuth.UpdateOne(u.Edges.NavidromeAuth).
+				SetPassword(password).
+				Save(r.Context())
+		} else {
+			_, err = h.Client.NavidromeAuth.Create().
+				SetUser(u).
+				SetPassword(password).
+				Save(r.Context())
+		}
+		if err != nil {
+			h.Logger.Error("Failed to save navidrome auth", "error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 	}
+
+	// Trigger initial sync
+	go func(user *ent.User) {
+		if err := h.Syncer.Sync(context.Background(), user); err != nil {
+			h.Logger.Error("failed to sync user data", "error", err)
+		}
+	}(u)
 
 	// 3. Set Session Cookie (Simple implementation for MVP)
 	http.SetCookie(w, &http.Cookie{

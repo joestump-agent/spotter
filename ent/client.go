@@ -13,6 +13,7 @@ import (
 
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/navidromeauth"
 	"spotter/ent/spotifyauth"
 	"spotter/ent/user"
 
@@ -31,6 +32,8 @@ type Client struct {
 	LastFMAuth *LastFMAuthClient
 	// Listen is the client for interacting with the Listen builders.
 	Listen *ListenClient
+	// NavidromeAuth is the client for interacting with the NavidromeAuth builders.
+	NavidromeAuth *NavidromeAuthClient
 	// SpotifyAuth is the client for interacting with the SpotifyAuth builders.
 	SpotifyAuth *SpotifyAuthClient
 	// User is the client for interacting with the User builders.
@@ -48,6 +51,7 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.LastFMAuth = NewLastFMAuthClient(c.config)
 	c.Listen = NewListenClient(c.config)
+	c.NavidromeAuth = NewNavidromeAuthClient(c.config)
 	c.SpotifyAuth = NewSpotifyAuthClient(c.config)
 	c.User = NewUserClient(c.config)
 }
@@ -140,12 +144,13 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:         ctx,
-		config:      cfg,
-		LastFMAuth:  NewLastFMAuthClient(cfg),
-		Listen:      NewListenClient(cfg),
-		SpotifyAuth: NewSpotifyAuthClient(cfg),
-		User:        NewUserClient(cfg),
+		ctx:           ctx,
+		config:        cfg,
+		LastFMAuth:    NewLastFMAuthClient(cfg),
+		Listen:        NewListenClient(cfg),
+		NavidromeAuth: NewNavidromeAuthClient(cfg),
+		SpotifyAuth:   NewSpotifyAuthClient(cfg),
+		User:          NewUserClient(cfg),
 	}, nil
 }
 
@@ -163,12 +168,13 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:         ctx,
-		config:      cfg,
-		LastFMAuth:  NewLastFMAuthClient(cfg),
-		Listen:      NewListenClient(cfg),
-		SpotifyAuth: NewSpotifyAuthClient(cfg),
-		User:        NewUserClient(cfg),
+		ctx:           ctx,
+		config:        cfg,
+		LastFMAuth:    NewLastFMAuthClient(cfg),
+		Listen:        NewListenClient(cfg),
+		NavidromeAuth: NewNavidromeAuthClient(cfg),
+		SpotifyAuth:   NewSpotifyAuthClient(cfg),
+		User:          NewUserClient(cfg),
 	}, nil
 }
 
@@ -199,6 +205,7 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	c.LastFMAuth.Use(hooks...)
 	c.Listen.Use(hooks...)
+	c.NavidromeAuth.Use(hooks...)
 	c.SpotifyAuth.Use(hooks...)
 	c.User.Use(hooks...)
 }
@@ -208,6 +215,7 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	c.LastFMAuth.Intercept(interceptors...)
 	c.Listen.Intercept(interceptors...)
+	c.NavidromeAuth.Intercept(interceptors...)
 	c.SpotifyAuth.Intercept(interceptors...)
 	c.User.Intercept(interceptors...)
 }
@@ -219,6 +227,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.LastFMAuth.mutate(ctx, m)
 	case *ListenMutation:
 		return c.Listen.mutate(ctx, m)
+	case *NavidromeAuthMutation:
+		return c.NavidromeAuth.mutate(ctx, m)
 	case *SpotifyAuthMutation:
 		return c.SpotifyAuth.mutate(ctx, m)
 	case *UserMutation:
@@ -526,6 +536,155 @@ func (c *ListenClient) mutate(ctx context.Context, m *ListenMutation) (Value, er
 	}
 }
 
+// NavidromeAuthClient is a client for the NavidromeAuth schema.
+type NavidromeAuthClient struct {
+	config
+}
+
+// NewNavidromeAuthClient returns a client for the NavidromeAuth from the given config.
+func NewNavidromeAuthClient(c config) *NavidromeAuthClient {
+	return &NavidromeAuthClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `navidromeauth.Hooks(f(g(h())))`.
+func (c *NavidromeAuthClient) Use(hooks ...Hook) {
+	c.hooks.NavidromeAuth = append(c.hooks.NavidromeAuth, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `navidromeauth.Intercept(f(g(h())))`.
+func (c *NavidromeAuthClient) Intercept(interceptors ...Interceptor) {
+	c.inters.NavidromeAuth = append(c.inters.NavidromeAuth, interceptors...)
+}
+
+// Create returns a builder for creating a NavidromeAuth entity.
+func (c *NavidromeAuthClient) Create() *NavidromeAuthCreate {
+	mutation := newNavidromeAuthMutation(c.config, OpCreate)
+	return &NavidromeAuthCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of NavidromeAuth entities.
+func (c *NavidromeAuthClient) CreateBulk(builders ...*NavidromeAuthCreate) *NavidromeAuthCreateBulk {
+	return &NavidromeAuthCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *NavidromeAuthClient) MapCreateBulk(slice any, setFunc func(*NavidromeAuthCreate, int)) *NavidromeAuthCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &NavidromeAuthCreateBulk{err: fmt.Errorf("calling to NavidromeAuthClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*NavidromeAuthCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &NavidromeAuthCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for NavidromeAuth.
+func (c *NavidromeAuthClient) Update() *NavidromeAuthUpdate {
+	mutation := newNavidromeAuthMutation(c.config, OpUpdate)
+	return &NavidromeAuthUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *NavidromeAuthClient) UpdateOne(_m *NavidromeAuth) *NavidromeAuthUpdateOne {
+	mutation := newNavidromeAuthMutation(c.config, OpUpdateOne, withNavidromeAuth(_m))
+	return &NavidromeAuthUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *NavidromeAuthClient) UpdateOneID(id int) *NavidromeAuthUpdateOne {
+	mutation := newNavidromeAuthMutation(c.config, OpUpdateOne, withNavidromeAuthID(id))
+	return &NavidromeAuthUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for NavidromeAuth.
+func (c *NavidromeAuthClient) Delete() *NavidromeAuthDelete {
+	mutation := newNavidromeAuthMutation(c.config, OpDelete)
+	return &NavidromeAuthDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *NavidromeAuthClient) DeleteOne(_m *NavidromeAuth) *NavidromeAuthDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *NavidromeAuthClient) DeleteOneID(id int) *NavidromeAuthDeleteOne {
+	builder := c.Delete().Where(navidromeauth.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &NavidromeAuthDeleteOne{builder}
+}
+
+// Query returns a query builder for NavidromeAuth.
+func (c *NavidromeAuthClient) Query() *NavidromeAuthQuery {
+	return &NavidromeAuthQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeNavidromeAuth},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a NavidromeAuth entity by its id.
+func (c *NavidromeAuthClient) Get(ctx context.Context, id int) (*NavidromeAuth, error) {
+	return c.Query().Where(navidromeauth.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *NavidromeAuthClient) GetX(ctx context.Context, id int) *NavidromeAuth {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a NavidromeAuth.
+func (c *NavidromeAuthClient) QueryUser(_m *NavidromeAuth) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(navidromeauth.Table, navidromeauth.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, navidromeauth.UserTable, navidromeauth.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *NavidromeAuthClient) Hooks() []Hook {
+	return c.hooks.NavidromeAuth
+}
+
+// Interceptors returns the client interceptors.
+func (c *NavidromeAuthClient) Interceptors() []Interceptor {
+	return c.inters.NavidromeAuth
+}
+
+func (c *NavidromeAuthClient) mutate(ctx context.Context, m *NavidromeAuthMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&NavidromeAuthCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&NavidromeAuthUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&NavidromeAuthUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&NavidromeAuthDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown NavidromeAuth mutation op: %q", m.Op())
+	}
+}
+
 // SpotifyAuthClient is a client for the SpotifyAuth schema.
 type SpotifyAuthClient struct {
 	config
@@ -815,6 +974,22 @@ func (c *UserClient) QueryLastfmAuth(_m *User) *LastFMAuthQuery {
 	return query
 }
 
+// QueryNavidromeAuth queries the navidrome_auth edge of a User.
+func (c *UserClient) QueryNavidromeAuth(_m *User) *NavidromeAuthQuery {
+	query := (&NavidromeAuthClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(navidromeauth.Table, navidromeauth.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, user.NavidromeAuthTable, user.NavidromeAuthColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryListens queries the listens edge of a User.
 func (c *UserClient) QueryListens(_m *User) *ListenQuery {
 	query := (&ListenClient{config: c.config}).Query()
@@ -859,9 +1034,9 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		LastFMAuth, Listen, SpotifyAuth, User []ent.Hook
+		LastFMAuth, Listen, NavidromeAuth, SpotifyAuth, User []ent.Hook
 	}
 	inters struct {
-		LastFMAuth, Listen, SpotifyAuth, User []ent.Interceptor
+		LastFMAuth, Listen, NavidromeAuth, SpotifyAuth, User []ent.Interceptor
 	}
 )

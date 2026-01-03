@@ -16,6 +16,8 @@ type Tx struct {
 	LastFMAuth *LastFMAuthClient
 	// Listen is the client for interacting with the Listen builders.
 	Listen *ListenClient
+	// NavidromeAuth is the client for interacting with the NavidromeAuth builders.
+	NavidromeAuth *NavidromeAuthClient
 	// SpotifyAuth is the client for interacting with the SpotifyAuth builders.
 	SpotifyAuth *SpotifyAuthClient
 	// User is the client for interacting with the User builders.
@@ -153,6 +155,7 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.LastFMAuth = NewLastFMAuthClient(tx.config)
 	tx.Listen = NewListenClient(tx.config)
+	tx.NavidromeAuth = NewNavidromeAuthClient(tx.config)
 	tx.SpotifyAuth = NewSpotifyAuthClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 }

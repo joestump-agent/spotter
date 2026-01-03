@@ -5,6 +5,7 @@ package ent
 import (
 	"fmt"
 	"spotter/ent/lastfmauth"
+	"spotter/ent/navidromeauth"
 	"spotter/ent/spotifyauth"
 	"spotter/ent/user"
 	"strings"
@@ -37,11 +38,13 @@ type UserEdges struct {
 	SpotifyAuth *SpotifyAuth `json:"spotify_auth,omitempty"`
 	// LastfmAuth holds the value of the lastfm_auth edge.
 	LastfmAuth *LastFMAuth `json:"lastfm_auth,omitempty"`
+	// NavidromeAuth holds the value of the navidrome_auth edge.
+	NavidromeAuth *NavidromeAuth `json:"navidrome_auth,omitempty"`
 	// Listens holds the value of the listens edge.
 	Listens []*Listen `json:"listens,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // SpotifyAuthOrErr returns the SpotifyAuth value or an error if the edge
@@ -66,10 +69,21 @@ func (e UserEdges) LastfmAuthOrErr() (*LastFMAuth, error) {
 	return nil, &NotLoadedError{edge: "lastfm_auth"}
 }
 
+// NavidromeAuthOrErr returns the NavidromeAuth value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UserEdges) NavidromeAuthOrErr() (*NavidromeAuth, error) {
+	if e.NavidromeAuth != nil {
+		return e.NavidromeAuth, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: navidromeauth.Label}
+	}
+	return nil, &NotLoadedError{edge: "navidrome_auth"}
+}
+
 // ListensOrErr returns the Listens value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) ListensOrErr() ([]*Listen, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[3] {
 		return e.Listens, nil
 	}
 	return nil, &NotLoadedError{edge: "listens"}
@@ -146,6 +160,11 @@ func (_m *User) QuerySpotifyAuth() *SpotifyAuthQuery {
 // QueryLastfmAuth queries the "lastfm_auth" edge of the User entity.
 func (_m *User) QueryLastfmAuth() *LastFMAuthQuery {
 	return NewUserClient(_m.config).QueryLastfmAuth(_m)
+}
+
+// QueryNavidromeAuth queries the "navidrome_auth" edge of the User entity.
+func (_m *User) QueryNavidromeAuth() *NavidromeAuthQuery {
+	return NewUserClient(_m.config).QueryNavidromeAuth(_m)
 }
 
 // QueryListens queries the "listens" edge of the User entity.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/navidromeauth"
 	"spotter/ent/predicate"
 	"spotter/ent/spotifyauth"
 	"spotter/ent/user"
@@ -27,10 +28,11 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeLastFMAuth  = "LastFMAuth"
-	TypeListen      = "Listen"
-	TypeSpotifyAuth = "SpotifyAuth"
-	TypeUser        = "User"
+	TypeLastFMAuth    = "LastFMAuth"
+	TypeListen        = "Listen"
+	TypeNavidromeAuth = "NavidromeAuth"
+	TypeSpotifyAuth   = "SpotifyAuth"
+	TypeUser          = "User"
 )
 
 // LastFMAuthMutation represents an operation that mutates the LastFMAuth nodes in the graph.
@@ -1165,6 +1167,399 @@ func (m *ListenMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Listen edge %s", name)
 }
 
+// NavidromeAuthMutation represents an operation that mutates the NavidromeAuth nodes in the graph.
+type NavidromeAuthMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int
+	password      *string
+	clearedFields map[string]struct{}
+	user          *int
+	cleareduser   bool
+	done          bool
+	oldValue      func(context.Context) (*NavidromeAuth, error)
+	predicates    []predicate.NavidromeAuth
+}
+
+var _ ent.Mutation = (*NavidromeAuthMutation)(nil)
+
+// navidromeauthOption allows management of the mutation configuration using functional options.
+type navidromeauthOption func(*NavidromeAuthMutation)
+
+// newNavidromeAuthMutation creates new mutation for the NavidromeAuth entity.
+func newNavidromeAuthMutation(c config, op Op, opts ...navidromeauthOption) *NavidromeAuthMutation {
+	m := &NavidromeAuthMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeNavidromeAuth,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withNavidromeAuthID sets the ID field of the mutation.
+func withNavidromeAuthID(id int) navidromeauthOption {
+	return func(m *NavidromeAuthMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *NavidromeAuth
+		)
+		m.oldValue = func(ctx context.Context) (*NavidromeAuth, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().NavidromeAuth.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withNavidromeAuth sets the old NavidromeAuth of the mutation.
+func withNavidromeAuth(node *NavidromeAuth) navidromeauthOption {
+	return func(m *NavidromeAuthMutation) {
+		m.oldValue = func(context.Context) (*NavidromeAuth, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m NavidromeAuthMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m NavidromeAuthMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *NavidromeAuthMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *NavidromeAuthMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().NavidromeAuth.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetPassword sets the "password" field.
+func (m *NavidromeAuthMutation) SetPassword(s string) {
+	m.password = &s
+}
+
+// Password returns the value of the "password" field in the mutation.
+func (m *NavidromeAuthMutation) Password() (r string, exists bool) {
+	v := m.password
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPassword returns the old "password" field's value of the NavidromeAuth entity.
+// If the NavidromeAuth object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NavidromeAuthMutation) OldPassword(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPassword is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPassword requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPassword: %w", err)
+	}
+	return oldValue.Password, nil
+}
+
+// ResetPassword resets all changes to the "password" field.
+func (m *NavidromeAuthMutation) ResetPassword() {
+	m.password = nil
+}
+
+// SetUserID sets the "user" edge to the User entity by id.
+func (m *NavidromeAuthMutation) SetUserID(id int) {
+	m.user = &id
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *NavidromeAuthMutation) ClearUser() {
+	m.cleareduser = true
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *NavidromeAuthMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserID returns the "user" edge ID in the mutation.
+func (m *NavidromeAuthMutation) UserID() (id int, exists bool) {
+	if m.user != nil {
+		return *m.user, true
+	}
+	return
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *NavidromeAuthMutation) UserIDs() (ids []int) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *NavidromeAuthMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// Where appends a list predicates to the NavidromeAuthMutation builder.
+func (m *NavidromeAuthMutation) Where(ps ...predicate.NavidromeAuth) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the NavidromeAuthMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *NavidromeAuthMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.NavidromeAuth, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *NavidromeAuthMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *NavidromeAuthMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (NavidromeAuth).
+func (m *NavidromeAuthMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *NavidromeAuthMutation) Fields() []string {
+	fields := make([]string, 0, 1)
+	if m.password != nil {
+		fields = append(fields, navidromeauth.FieldPassword)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *NavidromeAuthMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case navidromeauth.FieldPassword:
+		return m.Password()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *NavidromeAuthMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case navidromeauth.FieldPassword:
+		return m.OldPassword(ctx)
+	}
+	return nil, fmt.Errorf("unknown NavidromeAuth field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *NavidromeAuthMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case navidromeauth.FieldPassword:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPassword(v)
+		return nil
+	}
+	return fmt.Errorf("unknown NavidromeAuth field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *NavidromeAuthMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *NavidromeAuthMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *NavidromeAuthMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown NavidromeAuth numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *NavidromeAuthMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *NavidromeAuthMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *NavidromeAuthMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown NavidromeAuth nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *NavidromeAuthMutation) ResetField(name string) error {
+	switch name {
+	case navidromeauth.FieldPassword:
+		m.ResetPassword()
+		return nil
+	}
+	return fmt.Errorf("unknown NavidromeAuth field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *NavidromeAuthMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.user != nil {
+		edges = append(edges, navidromeauth.EdgeUser)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *NavidromeAuthMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case navidromeauth.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *NavidromeAuthMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *NavidromeAuthMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *NavidromeAuthMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.cleareduser {
+		edges = append(edges, navidromeauth.EdgeUser)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *NavidromeAuthMutation) EdgeCleared(name string) bool {
+	switch name {
+	case navidromeauth.EdgeUser:
+		return m.cleareduser
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *NavidromeAuthMutation) ClearEdge(name string) error {
+	switch name {
+	case navidromeauth.EdgeUser:
+		m.ClearUser()
+		return nil
+	}
+	return fmt.Errorf("unknown NavidromeAuth unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *NavidromeAuthMutation) ResetEdge(name string) error {
+	switch name {
+	case navidromeauth.EdgeUser:
+		m.ResetUser()
+		return nil
+	}
+	return fmt.Errorf("unknown NavidromeAuth edge %s", name)
+}
+
 // SpotifyAuthMutation represents an operation that mutates the SpotifyAuth nodes in the graph.
 type SpotifyAuthMutation struct {
 	config
@@ -1669,23 +2064,25 @@ func (m *SpotifyAuthMutation) ResetEdge(name string) error {
 // UserMutation represents an operation that mutates the User nodes in the graph.
 type UserMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int
-	username            *string
-	email               *string
-	last_login_at       *time.Time
-	clearedFields       map[string]struct{}
-	spotify_auth        *int
-	clearedspotify_auth bool
-	lastfm_auth         *int
-	clearedlastfm_auth  bool
-	listens             map[int]struct{}
-	removedlistens      map[int]struct{}
-	clearedlistens      bool
-	done                bool
-	oldValue            func(context.Context) (*User, error)
-	predicates          []predicate.User
+	op                    Op
+	typ                   string
+	id                    *int
+	username              *string
+	email                 *string
+	last_login_at         *time.Time
+	clearedFields         map[string]struct{}
+	spotify_auth          *int
+	clearedspotify_auth   bool
+	lastfm_auth           *int
+	clearedlastfm_auth    bool
+	navidrome_auth        *int
+	clearednavidrome_auth bool
+	listens               map[int]struct{}
+	removedlistens        map[int]struct{}
+	clearedlistens        bool
+	done                  bool
+	oldValue              func(context.Context) (*User, error)
+	predicates            []predicate.User
 }
 
 var _ ent.Mutation = (*UserMutation)(nil)
@@ -1985,6 +2382,45 @@ func (m *UserMutation) ResetLastfmAuth() {
 	m.clearedlastfm_auth = false
 }
 
+// SetNavidromeAuthID sets the "navidrome_auth" edge to the NavidromeAuth entity by id.
+func (m *UserMutation) SetNavidromeAuthID(id int) {
+	m.navidrome_auth = &id
+}
+
+// ClearNavidromeAuth clears the "navidrome_auth" edge to the NavidromeAuth entity.
+func (m *UserMutation) ClearNavidromeAuth() {
+	m.clearednavidrome_auth = true
+}
+
+// NavidromeAuthCleared reports if the "navidrome_auth" edge to the NavidromeAuth entity was cleared.
+func (m *UserMutation) NavidromeAuthCleared() bool {
+	return m.clearednavidrome_auth
+}
+
+// NavidromeAuthID returns the "navidrome_auth" edge ID in the mutation.
+func (m *UserMutation) NavidromeAuthID() (id int, exists bool) {
+	if m.navidrome_auth != nil {
+		return *m.navidrome_auth, true
+	}
+	return
+}
+
+// NavidromeAuthIDs returns the "navidrome_auth" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// NavidromeAuthID instead. It exists only for internal usage by the builders.
+func (m *UserMutation) NavidromeAuthIDs() (ids []int) {
+	if id := m.navidrome_auth; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetNavidromeAuth resets all changes to the "navidrome_auth" edge.
+func (m *UserMutation) ResetNavidromeAuth() {
+	m.navidrome_auth = nil
+	m.clearednavidrome_auth = false
+}
+
 // AddListenIDs adds the "listens" edge to the Listen entity by ids.
 func (m *UserMutation) AddListenIDs(ids ...int) {
 	if m.listens == nil {
@@ -2215,12 +2651,15 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.spotify_auth != nil {
 		edges = append(edges, user.EdgeSpotifyAuth)
 	}
 	if m.lastfm_auth != nil {
 		edges = append(edges, user.EdgeLastfmAuth)
+	}
+	if m.navidrome_auth != nil {
+		edges = append(edges, user.EdgeNavidromeAuth)
 	}
 	if m.listens != nil {
 		edges = append(edges, user.EdgeListens)
@@ -2240,6 +2679,10 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 		if id := m.lastfm_auth; id != nil {
 			return []ent.Value{*id}
 		}
+	case user.EdgeNavidromeAuth:
+		if id := m.navidrome_auth; id != nil {
+			return []ent.Value{*id}
+		}
 	case user.EdgeListens:
 		ids := make([]ent.Value, 0, len(m.listens))
 		for id := range m.listens {
@@ -2252,7 +2695,7 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.removedlistens != nil {
 		edges = append(edges, user.EdgeListens)
 	}
@@ -2275,12 +2718,15 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.clearedspotify_auth {
 		edges = append(edges, user.EdgeSpotifyAuth)
 	}
 	if m.clearedlastfm_auth {
 		edges = append(edges, user.EdgeLastfmAuth)
+	}
+	if m.clearednavidrome_auth {
+		edges = append(edges, user.EdgeNavidromeAuth)
 	}
 	if m.clearedlistens {
 		edges = append(edges, user.EdgeListens)
@@ -2296,6 +2742,8 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 		return m.clearedspotify_auth
 	case user.EdgeLastfmAuth:
 		return m.clearedlastfm_auth
+	case user.EdgeNavidromeAuth:
+		return m.clearednavidrome_auth
 	case user.EdgeListens:
 		return m.clearedlistens
 	}
@@ -2312,6 +2760,9 @@ func (m *UserMutation) ClearEdge(name string) error {
 	case user.EdgeLastfmAuth:
 		m.ClearLastfmAuth()
 		return nil
+	case user.EdgeNavidromeAuth:
+		m.ClearNavidromeAuth()
+		return nil
 	}
 	return fmt.Errorf("unknown User unique edge %s", name)
 }
@@ -2325,6 +2776,9 @@ func (m *UserMutation) ResetEdge(name string) error {
 		return nil
 	case user.EdgeLastfmAuth:
 		m.ResetLastfmAuth()
+		return nil
+	case user.EdgeNavidromeAuth:
+		m.ResetNavidromeAuth()
 		return nil
 	case user.EdgeListens:
 		m.ResetListens()

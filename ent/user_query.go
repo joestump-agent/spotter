@@ -9,6 +9,7 @@ import (
 	"math"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/navidromeauth"
 	"spotter/ent/predicate"
 	"spotter/ent/spotifyauth"
 	"spotter/ent/user"
@@ -22,13 +23,14 @@ import (
 // UserQuery is the builder for querying User entities.
 type UserQuery struct {
 	config
-	ctx             *QueryContext
-	order           []user.OrderOption
-	inters          []Interceptor
-	predicates      []predicate.User
-	withSpotifyAuth *SpotifyAuthQuery
-	withLastfmAuth  *LastFMAuthQuery
-	withListens     *ListenQuery
+	ctx               *QueryContext
+	order             []user.OrderOption
+	inters            []Interceptor
+	predicates        []predicate.User
+	withSpotifyAuth   *SpotifyAuthQuery
+	withLastfmAuth    *LastFMAuthQuery
+	withNavidromeAuth *NavidromeAuthQuery
+	withListens       *ListenQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -102,6 +104,28 @@ func (_q *UserQuery) QueryLastfmAuth() *LastFMAuthQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(lastfmauth.Table, lastfmauth.FieldID),
 			sqlgraph.Edge(sqlgraph.O2O, false, user.LastfmAuthTable, user.LastfmAuthColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryNavidromeAuth chains the current query on the "navidrome_auth" edge.
+func (_q *UserQuery) QueryNavidromeAuth() *NavidromeAuthQuery {
+	query := (&NavidromeAuthClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(navidromeauth.Table, navidromeauth.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, user.NavidromeAuthTable, user.NavidromeAuthColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -318,14 +342,15 @@ func (_q *UserQuery) Clone() *UserQuery {
 		return nil
 	}
 	return &UserQuery{
-		config:          _q.config,
-		ctx:             _q.ctx.Clone(),
-		order:           append([]user.OrderOption{}, _q.order...),
-		inters:          append([]Interceptor{}, _q.inters...),
-		predicates:      append([]predicate.User{}, _q.predicates...),
-		withSpotifyAuth: _q.withSpotifyAuth.Clone(),
-		withLastfmAuth:  _q.withLastfmAuth.Clone(),
-		withListens:     _q.withListens.Clone(),
+		config:            _q.config,
+		ctx:               _q.ctx.Clone(),
+		order:             append([]user.OrderOption{}, _q.order...),
+		inters:            append([]Interceptor{}, _q.inters...),
+		predicates:        append([]predicate.User{}, _q.predicates...),
+		withSpotifyAuth:   _q.withSpotifyAuth.Clone(),
+		withLastfmAuth:    _q.withLastfmAuth.Clone(),
+		withNavidromeAuth: _q.withNavidromeAuth.Clone(),
+		withListens:       _q.withListens.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -351,6 +376,17 @@ func (_q *UserQuery) WithLastfmAuth(opts ...func(*LastFMAuthQuery)) *UserQuery {
 		opt(query)
 	}
 	_q.withLastfmAuth = query
+	return _q
+}
+
+// WithNavidromeAuth tells the query-builder to eager-load the nodes that are connected to
+// the "navidrome_auth" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithNavidromeAuth(opts ...func(*NavidromeAuthQuery)) *UserQuery {
+	query := (&NavidromeAuthClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withNavidromeAuth = query
 	return _q
 }
 
@@ -443,9 +479,10 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			_q.withSpotifyAuth != nil,
 			_q.withLastfmAuth != nil,
+			_q.withNavidromeAuth != nil,
 			_q.withListens != nil,
 		}
 	)
@@ -476,6 +513,12 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	if query := _q.withLastfmAuth; query != nil {
 		if err := _q.loadLastfmAuth(ctx, query, nodes, nil,
 			func(n *User, e *LastFMAuth) { n.Edges.LastfmAuth = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withNavidromeAuth; query != nil {
+		if err := _q.loadNavidromeAuth(ctx, query, nodes, nil,
+			func(n *User, e *NavidromeAuth) { n.Edges.NavidromeAuth = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -540,6 +583,34 @@ func (_q *UserQuery) loadLastfmAuth(ctx context.Context, query *LastFMAuthQuery,
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "user_lastfm_auth" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadNavidromeAuth(ctx context.Context, query *NavidromeAuthQuery, nodes []*User, init func(*User), assign func(*User, *NavidromeAuth)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+	}
+	query.withFKs = true
+	query.Where(predicate.NavidromeAuth(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.NavidromeAuthColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_navidrome_auth
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_navidrome_auth" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_navidrome_auth" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

@@ -1,7 +1,7 @@
 BINARY_NAME=spotter-server
 MAIN_PATH=./cmd/server/main.go
 
-.PHONY: all deps generate css build run clean docker-build
+.PHONY: all deps generate css build run clean docker-build test
 
 all: build
 
@@ -22,6 +22,9 @@ build: generate css
 
 run: build
 	./$(BINARY_NAME)
+
+test: generate
+	go test -v ./...
 
 clean:
 	rm -f $(BINARY_NAME)

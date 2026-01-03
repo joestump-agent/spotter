@@ -7,6 +7,8 @@
     "watch:css": "tailwindcss -i ./static/css/input.css -o ./static/css/output.css --watch"
   },
   "devDependencies": {
+    "@iconify-json/heroicons": "*",
+    "@iconify/tailwind": "*",
     "tailwindcss": "^3.4.1"
   }
 }

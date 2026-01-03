@@ -12,6 +12,9 @@ type LastFMAuth func(*sql.Selector)
 // Listen is the predicate function for listen builders.
 type Listen func(*sql.Selector)
 
+// NavidromeAuth is the predicate function for navidromeauth builders.
+type NavidromeAuth func(*sql.Selector)
+
 // SpotifyAuth is the predicate function for spotifyauth builders.
 type SpotifyAuth func(*sql.Selector)
 

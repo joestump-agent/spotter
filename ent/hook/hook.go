@@ -32,6 +32,18 @@ func (f ListenFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, erro
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ListenMutation", m)
 }
 
+// The NavidromeAuthFunc type is an adapter to allow the use of ordinary
+// function as NavidromeAuth mutator.
+type NavidromeAuthFunc func(context.Context, *ent.NavidromeAuthMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f NavidromeAuthFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.NavidromeAuthMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.NavidromeAuthMutation", m)
+}
+
 // The SpotifyAuthFunc type is an adapter to allow the use of ordinary
 // function as SpotifyAuth mutator.
 type SpotifyAuthFunc func(context.Context, *ent.SpotifyAuthMutation) (ent.Value, error)

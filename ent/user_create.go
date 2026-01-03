@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/navidromeauth"
 	"spotter/ent/spotifyauth"
 	"spotter/ent/user"
 	"time"
@@ -93,6 +94,25 @@ func (_c *UserCreate) SetNillableLastfmAuthID(id *int) *UserCreate {
 // SetLastfmAuth sets the "lastfm_auth" edge to the LastFMAuth entity.
 func (_c *UserCreate) SetLastfmAuth(v *LastFMAuth) *UserCreate {
 	return _c.SetLastfmAuthID(v.ID)
+}
+
+// SetNavidromeAuthID sets the "navidrome_auth" edge to the NavidromeAuth entity by ID.
+func (_c *UserCreate) SetNavidromeAuthID(id int) *UserCreate {
+	_c.mutation.SetNavidromeAuthID(id)
+	return _c
+}
+
+// SetNillableNavidromeAuthID sets the "navidrome_auth" edge to the NavidromeAuth entity by ID if the given value is not nil.
+func (_c *UserCreate) SetNillableNavidromeAuthID(id *int) *UserCreate {
+	if id != nil {
+		_c = _c.SetNavidromeAuthID(*id)
+	}
+	return _c
+}
+
+// SetNavidromeAuth sets the "navidrome_auth" edge to the NavidromeAuth entity.
+func (_c *UserCreate) SetNavidromeAuth(v *NavidromeAuth) *UserCreate {
+	return _c.SetNavidromeAuthID(v.ID)
 }
 
 // AddListenIDs adds the "listens" edge to the Listen entity by IDs.
@@ -222,6 +242,22 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(lastfmauth.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.NavidromeAuthIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.NavidromeAuthTable,
+			Columns: []string{user.NavidromeAuthColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(navidromeauth.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

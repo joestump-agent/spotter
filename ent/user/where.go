@@ -296,6 +296,29 @@ func HasLastfmAuthWith(preds ...predicate.LastFMAuth) predicate.User {
 	})
 }
 
+// HasNavidromeAuth applies the HasEdge predicate on the "navidrome_auth" edge.
+func HasNavidromeAuth() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, NavidromeAuthTable, NavidromeAuthColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasNavidromeAuthWith applies the HasEdge predicate on the "navidrome_auth" edge with a given conditions (other predicates).
+func HasNavidromeAuthWith(preds ...predicate.NavidromeAuth) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newNavidromeAuthStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasListens applies the HasEdge predicate on the "listens" edge.
 func HasListens() predicate.User {
 	return predicate.User(func(s *sql.Selector) {

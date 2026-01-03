@@ -24,6 +24,8 @@ const (
 	EdgeSpotifyAuth = "spotify_auth"
 	// EdgeLastfmAuth holds the string denoting the lastfm_auth edge name in mutations.
 	EdgeLastfmAuth = "lastfm_auth"
+	// EdgeNavidromeAuth holds the string denoting the navidrome_auth edge name in mutations.
+	EdgeNavidromeAuth = "navidrome_auth"
 	// EdgeListens holds the string denoting the listens edge name in mutations.
 	EdgeListens = "listens"
 	// Table holds the table name of the user in the database.
@@ -42,6 +44,13 @@ const (
 	LastfmAuthInverseTable = "last_fm_auths"
 	// LastfmAuthColumn is the table column denoting the lastfm_auth relation/edge.
 	LastfmAuthColumn = "user_lastfm_auth"
+	// NavidromeAuthTable is the table that holds the navidrome_auth relation/edge.
+	NavidromeAuthTable = "navidrome_auths"
+	// NavidromeAuthInverseTable is the table name for the NavidromeAuth entity.
+	// It exists in this package in order to avoid circular dependency with the "navidromeauth" package.
+	NavidromeAuthInverseTable = "navidrome_auths"
+	// NavidromeAuthColumn is the table column denoting the navidrome_auth relation/edge.
+	NavidromeAuthColumn = "user_navidrome_auth"
 	// ListensTable is the table that holds the listens relation/edge.
 	ListensTable = "listens"
 	// ListensInverseTable is the table name for the Listen entity.
@@ -111,6 +120,13 @@ func ByLastfmAuthField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
+// ByNavidromeAuthField orders the results by navidrome_auth field.
+func ByNavidromeAuthField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newNavidromeAuthStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByListensCount orders the results by listens count.
 func ByListensCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -136,6 +152,13 @@ func newLastfmAuthStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(LastfmAuthInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2O, false, LastfmAuthTable, LastfmAuthColumn),
+	)
+}
+func newNavidromeAuthStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(NavidromeAuthInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, NavidromeAuthTable, NavidromeAuthColumn),
 	)
 }
 func newListensStep() *sqlgraph.Step {

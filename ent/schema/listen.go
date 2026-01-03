@@ -4,6 +4,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 )
 
 // Listen holds the schema definition for the Listen entity.
@@ -31,5 +32,14 @@ func (Listen) Edges() []ent.Edge {
 			Ref("listens").
 			Unique().
 			Required(),
+	}
+}
+
+// Indexes of the Listen.
+func (Listen) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("played_at", "source", "track_name", "artist_name").
+			Edges("user").
+			Unique(),
 	}
 }

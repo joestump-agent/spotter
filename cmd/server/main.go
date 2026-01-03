@@ -13,6 +13,8 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/database"
 	"spotter/internal/handlers"
+	"spotter/internal/providers/navidrome"
+	"spotter/internal/providers/spotify"
 	"spotter/internal/services"
 
 	"github.com/go-chi/chi/v5"
@@ -39,6 +41,8 @@ func main() {
 
 	// Initialize Services
 	syncer := services.NewSyncer(client, cfg, logger)
+	syncer.Register(navidrome.New(logger, cfg))
+	syncer.Register(spotify.New(logger, cfg))
 
 	// Initialize Handlers
 	h := handlers.New(client, cfg, logger, syncer)

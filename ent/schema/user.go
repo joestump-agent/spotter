@@ -32,6 +32,8 @@ func (User) Edges() []ent.Edge {
 			Unique(),
 		edge.To("lastfm_auth", LastFMAuth.Type).
 			Unique(),
+		edge.To("navidrome_auth", NavidromeAuth.Type).
+			Unique(),
 		edge.To("listens", Listen.Type),
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/navidromeauth"
 	"spotter/ent/spotifyauth"
 	"spotter/ent/user"
 	"sync"
@@ -76,10 +77,11 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			lastfmauth.Table:  lastfmauth.ValidColumn,
-			listen.Table:      listen.ValidColumn,
-			spotifyauth.Table: spotifyauth.ValidColumn,
-			user.Table:        user.ValidColumn,
+			lastfmauth.Table:    lastfmauth.ValidColumn,
+			listen.Table:        listen.ValidColumn,
+			navidromeauth.Table: navidromeauth.ValidColumn,
+			spotifyauth.Table:   spotifyauth.ValidColumn,
+			user.Table:          user.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

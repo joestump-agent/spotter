@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/navidromeauth"
 	"spotter/ent/predicate"
 	"spotter/ent/spotifyauth"
 	"spotter/ent/user"
@@ -117,6 +118,25 @@ func (_u *UserUpdate) SetLastfmAuth(v *LastFMAuth) *UserUpdate {
 	return _u.SetLastfmAuthID(v.ID)
 }
 
+// SetNavidromeAuthID sets the "navidrome_auth" edge to the NavidromeAuth entity by ID.
+func (_u *UserUpdate) SetNavidromeAuthID(id int) *UserUpdate {
+	_u.mutation.SetNavidromeAuthID(id)
+	return _u
+}
+
+// SetNillableNavidromeAuthID sets the "navidrome_auth" edge to the NavidromeAuth entity by ID if the given value is not nil.
+func (_u *UserUpdate) SetNillableNavidromeAuthID(id *int) *UserUpdate {
+	if id != nil {
+		_u = _u.SetNavidromeAuthID(*id)
+	}
+	return _u
+}
+
+// SetNavidromeAuth sets the "navidrome_auth" edge to the NavidromeAuth entity.
+func (_u *UserUpdate) SetNavidromeAuth(v *NavidromeAuth) *UserUpdate {
+	return _u.SetNavidromeAuthID(v.ID)
+}
+
 // AddListenIDs adds the "listens" edge to the Listen entity by IDs.
 func (_u *UserUpdate) AddListenIDs(ids ...int) *UserUpdate {
 	_u.mutation.AddListenIDs(ids...)
@@ -146,6 +166,12 @@ func (_u *UserUpdate) ClearSpotifyAuth() *UserUpdate {
 // ClearLastfmAuth clears the "lastfm_auth" edge to the LastFMAuth entity.
 func (_u *UserUpdate) ClearLastfmAuth() *UserUpdate {
 	_u.mutation.ClearLastfmAuth()
+	return _u
+}
+
+// ClearNavidromeAuth clears the "navidrome_auth" edge to the NavidromeAuth entity.
+func (_u *UserUpdate) ClearNavidromeAuth() *UserUpdate {
+	_u.mutation.ClearNavidromeAuth()
 	return _u
 }
 
@@ -269,6 +295,35 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(lastfmauth.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.NavidromeAuthCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.NavidromeAuthTable,
+			Columns: []string{user.NavidromeAuthColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(navidromeauth.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.NavidromeAuthIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.NavidromeAuthTable,
+			Columns: []string{user.NavidromeAuthColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(navidromeauth.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -427,6 +482,25 @@ func (_u *UserUpdateOne) SetLastfmAuth(v *LastFMAuth) *UserUpdateOne {
 	return _u.SetLastfmAuthID(v.ID)
 }
 
+// SetNavidromeAuthID sets the "navidrome_auth" edge to the NavidromeAuth entity by ID.
+func (_u *UserUpdateOne) SetNavidromeAuthID(id int) *UserUpdateOne {
+	_u.mutation.SetNavidromeAuthID(id)
+	return _u
+}
+
+// SetNillableNavidromeAuthID sets the "navidrome_auth" edge to the NavidromeAuth entity by ID if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableNavidromeAuthID(id *int) *UserUpdateOne {
+	if id != nil {
+		_u = _u.SetNavidromeAuthID(*id)
+	}
+	return _u
+}
+
+// SetNavidromeAuth sets the "navidrome_auth" edge to the NavidromeAuth entity.
+func (_u *UserUpdateOne) SetNavidromeAuth(v *NavidromeAuth) *UserUpdateOne {
+	return _u.SetNavidromeAuthID(v.ID)
+}
+
 // AddListenIDs adds the "listens" edge to the Listen entity by IDs.
 func (_u *UserUpdateOne) AddListenIDs(ids ...int) *UserUpdateOne {
 	_u.mutation.AddListenIDs(ids...)
@@ -456,6 +530,12 @@ func (_u *UserUpdateOne) ClearSpotifyAuth() *UserUpdateOne {
 // ClearLastfmAuth clears the "lastfm_auth" edge to the LastFMAuth entity.
 func (_u *UserUpdateOne) ClearLastfmAuth() *UserUpdateOne {
 	_u.mutation.ClearLastfmAuth()
+	return _u
+}
+
+// ClearNavidromeAuth clears the "navidrome_auth" edge to the NavidromeAuth entity.
+func (_u *UserUpdateOne) ClearNavidromeAuth() *UserUpdateOne {
+	_u.mutation.ClearNavidromeAuth()
 	return _u
 }
 
@@ -609,6 +689,35 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(lastfmauth.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.NavidromeAuthCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.NavidromeAuthTable,
+			Columns: []string{user.NavidromeAuthColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(navidromeauth.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.NavidromeAuthIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.NavidromeAuthTable,
+			Columns: []string{user.NavidromeAuthColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(navidromeauth.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

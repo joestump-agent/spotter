@@ -1,7 +1,5 @@
 package layouts
 
-import "spotter/internal/views/icons"
-
 templ Dashboard(title string) {
 	@Base(title) {
 		<div class="flex h-screen overflow-hidden">
@@ -15,15 +13,15 @@ templ Dashboard(title string) {
 					<!-- Nav -->
 					<nav class="flex-1 px-2 py-4 space-y-2">
 						<a href="/" class="flex items-center px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group">
-							@icons.Home("mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white")
+							<span class="icon-[heroicons--home] mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"></span>
 							Home
 						</a>
 						<a href="/recent" class="flex items-center px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group">
-							@icons.Clock("mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white")
+							<span class="icon-[heroicons--clock] mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"></span>
 							Recent Listens
 						</a>
 						<a href="/preferences" class="flex items-center px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md group">
-							@icons.Cog6Tooth("mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white")
+							<span class="icon-[heroicons--cog-6-tooth] mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white"></span>
 							Preferences
 						</a>
 					</nav>
@@ -42,8 +40,8 @@ templ Dashboard(title string) {
                                 }
                             "
 						>
-							@icons.Sun("mr-3 h-6 w-6 hidden dark:block text-gray-400 group-hover:text-white")
-							@icons.Moon("mr-3 h-6 w-6 block dark:hidden text-gray-500 group-hover:text-gray-900")
+							<span class="icon-[heroicons--sun] mr-3 h-6 w-6 hidden dark:block text-gray-400 group-hover:text-white"></span>
+							<span class="icon-[heroicons--moon] mr-3 h-6 w-6 block dark:hidden text-gray-500 group-hover:text-gray-900"></span>
 							<span class="block dark:hidden">Dark Mode</span>
 							<span class="hidden dark:block">Light Mode</span>
 						</button>
