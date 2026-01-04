@@ -14,6 +14,8 @@ import (
 	"spotter/ent/playlist"
 	"spotter/ent/track"
 	"spotter/ent/user"
+	"spotter/internal/enrichers"
+	"spotter/internal/events"
 	"spotter/internal/views/artists"
 	"spotter/internal/views/components"
 
@@ -53,13 +55,15 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 		timeframe = "30d"
 	}
 
-	// Get albums for this artist
+	// Get albums for this artist (with tracks for tag collection)
 	albums, err := h.Client.Album.Query().
 		Where(
 			album.HasArtistWith(artist.ID(artistID)),
 			album.HasUserWith(user.ID(u.ID)),
 		).
 		WithImages().
+		WithTracks().
+		Unique(true).
 		Order(ent.Desc(album.FieldYear)).
 		All(r.Context())
 	if err != nil {
@@ -294,7 +298,7 @@ func (h *Handler) getPlaylistsWithArtist(ctx context.Context, userID int, artist
 func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName, albumName, trackName string, timeframe string) components.StackedChartData {
 	data := components.StackedChartData{
 		Labels:   []string{},
-		Datasets: []components.StackedChartDataset{},
+		Datasets: []components.ChartDataset{},
 	}
 
 	// Calculate date range
@@ -400,7 +404,7 @@ func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName
 	}
 
 	for provider := range providers {
-		dataset := components.StackedChartDataset{
+		dataset := components.ChartDataset{
 			Label:           capitalizeFirst(provider),
 			Data:            make([]float64, len(labels)),
 			BackgroundColor: providerColors[provider],
@@ -489,4 +493,115 @@ func (h *Handler) ArtistIndex(w http.ResponseWriter, r *http.Request) {
 	totalPages := (total + pageSize - 1) / pageSize
 
 	h.Render(w, r, artists.Index(artistList, page, totalPages, h.Config))
+}
+
+// ArtistRegenerateAI regenerates AI content for a specific artist
+func (h *Handler) ArtistRegenerateAI(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get the artist with all edges needed for AI enrichment
+	a, err := h.Client.Artist.Query().
+		Where(
+			artist.ID(artistID),
+			artist.HasUserWith(user.ID(u.ID)),
+		).
+		WithAlbums().
+		WithTracks(func(q *ent.TrackQuery) {
+			q.WithAlbum()
+		}).
+		WithImages().
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get artist for AI regeneration", "error", err, "id", artistID)
+		http.Error(w, "Artist not found", http.StatusNotFound)
+		return
+	}
+
+	// Get the OpenAI enricher
+	enricherList, err := h.getAIEnricher(r.Context(), u)
+	if err != nil || len(enricherList) == 0 {
+		h.Logger.Error("AI enricher not available", "error", err)
+		http.Error(w, "AI enrichment not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Run AI enrichment
+	for _, e := range enricherList {
+		artistEnricher, ok := e.(enrichers.ArtistEnricher)
+		if !ok {
+			continue
+		}
+
+		data, err := artistEnricher.EnrichArtist(r.Context(), a)
+		if err != nil {
+			h.Logger.Error("AI enrichment failed", "error", err, "artist", a.Name)
+			http.Error(w, "AI enrichment failed", http.StatusInternalServerError)
+			return
+		}
+
+		if data != nil {
+			// Update the artist with AI data
+			update := h.Client.Artist.UpdateOne(a)
+			if data.AISummary != "" {
+				update = update.SetAiSummary(data.AISummary)
+			}
+			if data.AIBiography != "" {
+				update = update.SetAiBiography(data.AIBiography)
+			}
+			if len(data.AITags) > 0 {
+				update = update.SetAiTags(data.AITags)
+			}
+			update = update.SetLastAiEnrichedAt(time.Now())
+
+			if _, err := update.Save(r.Context()); err != nil {
+				h.Logger.Error("failed to save AI enrichment", "error", err, "artist", a.Name)
+				http.Error(w, "Failed to save AI enrichment", http.StatusInternalServerError)
+				return
+			}
+
+			h.Logger.Info("regenerated AI content for artist", "artist", a.Name)
+		}
+	}
+
+	// Send success notification
+	h.Bus.Publish(u.ID, events.Event{
+		Type: events.EventTypeNotification,
+		Payload: events.NotificationPayload{
+			Title:    "AI Regenerated",
+			Message:  "AI insights for " + a.Name + " have been regenerated.",
+			IconType: "success",
+		},
+	})
+
+	// Return HX-Refresh header to reload the page
+	w.Header().Set("HX-Refresh", "true")
+	w.WriteHeader(http.StatusOK)
+}
+
+// getAIEnricher returns the OpenAI enricher if available
+func (h *Handler) getAIEnricher(ctx context.Context, u *ent.User) ([]enrichers.Enricher, error) {
+	factory, ok := h.MetadataSvc.Registry.Get(enrichers.TypeOpenAI)
+	if !ok {
+		return nil, nil
+	}
+
+	enricher, err := factory(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if enricher == nil || !enricher.IsAvailable() {
+		return nil, nil
+	}
+
+	return []enrichers.Enricher{enricher}, nil
 }

@@ -8,8 +8,18 @@ import (
 	"spotter/ent"
 	"spotter/ent/listen"
 	"spotter/ent/user"
+	"spotter/internal/views/components"
 	"spotter/internal/views/recent"
 )
+
+// listenSortFields maps URL sort params to ent field selectors
+var listenSortFields = map[string]string{
+	"played_at": listen.FieldPlayedAt,
+	"track":     listen.FieldTrackName,
+	"artist":    listen.FieldArtistName,
+	"album":     listen.FieldAlbumName,
+	"source":    listen.FieldSource,
+}
 
 func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
@@ -36,15 +46,47 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get artist filter from query
+	artistFilter := r.URL.Query().Get("artist")
+
+	// Get sort parameters
+	sortCol := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("dir")
+	if sortCol == "" {
+		sortCol = "played_at"
+	}
+	if sortDir == "" {
+		sortDir = "desc"
+	}
+
 	pageSize := u.PaginationSize
 	offset := (page - 1) * pageSize
 
-	listens, err := h.Client.Listen.Query().
-		Where(listen.HasUserWith(user.ID(u.ID))).
+	// Build query with optional artist filter
+	query := h.Client.Listen.Query().
+		Where(listen.HasUserWith(user.ID(u.ID)))
+
+	if artistFilter != "" {
+		query = query.Where(listen.ArtistName(artistFilter))
+	}
+
+	// Apply sorting
+	if field, ok := listenSortFields[sortCol]; ok {
+		if sortDir == "asc" {
+			query = query.Order(ent.Asc(field))
+		} else {
+			query = query.Order(ent.Desc(field))
+		}
+	} else {
+		query = query.Order(ent.Desc(listen.FieldPlayedAt))
+	}
+
+	listens, err := query.
 		WithArtist().
-		WithAlbum().
+		WithAlbum(func(q *ent.AlbumQuery) {
+			q.WithImages()
+		}).
 		WithTrack().
-		Order(ent.Desc(listen.FieldPlayedAt)).
 		Limit(pageSize).
 		Offset(offset).
 		All(r.Context())
@@ -54,10 +96,16 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build count query with same filter
+	countQuery := h.Client.Listen.Query().
+		Where(listen.HasUserWith(user.ID(u.ID)))
+
+	if artistFilter != "" {
+		countQuery = countQuery.Where(listen.ArtistName(artistFilter))
+	}
+
 	// Get total count for pagination
-	total, err := h.Client.Listen.Query().
-		Where(listen.HasUserWith(user.ID(u.ID))).
-		Count(r.Context())
+	total, err := countQuery.Count(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to count listens", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -66,7 +114,15 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 
 	totalPages := (total + pageSize - 1) / pageSize
 
-	h.Render(w, r, recent.Index(listens, page, totalPages, h.Config))
+	// Convert listens to rows
+	rows := make([]components.TrackTableRow, len(listens))
+	for i, l := range listens {
+		rows[i] = components.TrackTableRow{
+			Listen: l,
+		}
+	}
+
+	h.Render(w, r, recent.Index(rows, page, totalPages, h.Config, artistFilter, sortCol, sortDir))
 }
 
 func (h *Handler) RefreshRecentListens(w http.ResponseWriter, r *http.Request) {

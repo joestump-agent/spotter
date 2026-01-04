@@ -422,8 +422,8 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 		// Build external URL to Navidrome web UI
 		externalURL := fmt.Sprintf("%s/app/#/playlist/%s", baseURL, pl.ID)
 
-		// Fetch unique artists and albums for this playlist
-		uniqueArtists, uniqueAlbums := p.getPlaylistStats(ctx, pl.ID)
+		// Fetch tracks, unique artists and albums for this playlist
+		tracks, uniqueArtists, uniqueAlbums := p.getPlaylistTracks(ctx, pl.ID)
 
 		playlists = append(playlists, providers.Playlist{
 			ID:            pl.ID,
@@ -434,6 +434,7 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 			TrackCount:    pl.SongCount,
 			UniqueArtists: uniqueArtists,
 			UniqueAlbums:  uniqueAlbums,
+			Tracks:        tracks,
 		})
 	}
 
@@ -442,8 +443,8 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 	return playlists, nil
 }
 
-// getPlaylistStats fetches playlist details to count unique artists and albums
-func (p *Provider) getPlaylistStats(ctx context.Context, playlistID string) (uniqueArtists, uniqueAlbums int) {
+// getPlaylistTracks fetches all tracks in a playlist along with unique artist/album counts
+func (p *Provider) getPlaylistTracks(ctx context.Context, playlistID string) (tracks []providers.Track, uniqueArtists, uniqueAlbums int) {
 	// Generate Auth Parameters
 	salt := generateSalt()
 	token := generateToken(p.auth.Password, salt)
@@ -463,19 +464,19 @@ func (p *Provider) getPlaylistStats(ctx context.Context, playlistID string) (uni
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		p.logger.Debug("failed to create request for playlist details", "error", err)
-		return 0, 0
+		return nil, 0, 0
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		p.logger.Debug("failed to fetch playlist details", "error", err)
-		return 0, 0
+		return nil, 0, 0
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		p.logger.Debug("navidrome API returned non-OK status for playlist details", "status", resp.StatusCode)
-		return 0, 0
+		return nil, 0, 0
 	}
 
 	var result struct {
@@ -483,8 +484,11 @@ func (p *Provider) getPlaylistStats(ctx context.Context, playlistID string) (uni
 			Status   string `json:"status"`
 			Playlist struct {
 				Entry []struct {
-					Artist string `json:"artist"`
-					Album  string `json:"album"`
+					ID       string `json:"id"`
+					Title    string `json:"title"`
+					Artist   string `json:"artist"`
+					Album    string `json:"album"`
+					Duration int    `json:"duration"`
 				} `json:"entry"`
 			} `json:"playlist"`
 		} `json:"subsonic-response"`
@@ -492,26 +496,40 @@ func (p *Provider) getPlaylistStats(ctx context.Context, playlistID string) (uni
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		p.logger.Debug("failed to decode playlist details response", "error", err)
-		return 0, 0
+		return nil, 0, 0
 	}
 
 	if result.SubsonicResponse.Status != "ok" {
-		return 0, 0
+		return nil, 0, 0
 	}
 
 	artists := make(map[string]struct{})
 	albums := make(map[string]struct{})
 
 	for _, entry := range result.SubsonicResponse.Playlist.Entry {
+		// Track unique artists and albums
 		if entry.Artist != "" {
 			artists[entry.Artist] = struct{}{}
 		}
 		if entry.Album != "" {
 			albums[entry.Album] = struct{}{}
 		}
+
+		// Build track URL
+		trackURL := fmt.Sprintf("%s/app/#/album/%s", baseURL, entry.ID)
+
+		// Add track to list (duration from Navidrome is in seconds, convert to ms)
+		tracks = append(tracks, providers.Track{
+			ID:         entry.ID,
+			Name:       entry.Title,
+			Artist:     entry.Artist,
+			Album:      entry.Album,
+			DurationMs: entry.Duration * 1000,
+			URL:        trackURL,
+		})
 	}
 
-	return len(artists), len(albums)
+	return tracks, len(artists), len(albums)
 }
 
 func (p *Provider) CreatePlaylist(ctx context.Context, name, description string, tracks []providers.Track) error {

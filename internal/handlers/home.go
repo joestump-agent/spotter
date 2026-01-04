@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"net/http"
 	"sort"
-	"strconv"
 	"time"
 
 	"spotter/ent"
@@ -15,7 +14,6 @@ import (
 	"spotter/ent/listen"
 	"spotter/ent/track"
 	"spotter/ent/user"
-	"spotter/internal/views/components"
 	"spotter/internal/views/home"
 )
 
@@ -52,29 +50,9 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 	}
 
 	stats := &home.HomeStats{
-		NavidromeURL:       h.Config.Navidrome.BaseURL,
-		LoggedInUser:       u.Username,
-		Providers:          make([]home.ProviderStats, 0, 3),
-		ListensByHour:      make([]components.ChartDataPoint, 24),
-		ListensByDayOfWeek: make([]components.ChartDataPoint, 7),
-		ListensByMonth:     make([]components.ChartDataPoint, 12),
-	}
-
-	// Initialize hour labels
-	for i := 0; i < 24; i++ {
-		stats.ListensByHour[i] = components.ChartDataPoint{Label: strconv.Itoa(i), Value: 0}
-	}
-
-	// Initialize day labels
-	days := []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
-	for i, day := range days {
-		stats.ListensByDayOfWeek[i] = components.ChartDataPoint{Label: day, Value: 0}
-	}
-
-	// Initialize month labels
-	months := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
-	for i, month := range months {
-		stats.ListensByMonth[i] = components.ChartDataPoint{Label: month, Value: 0}
+		NavidromeURL: h.Config.Navidrome.BaseURL,
+		LoggedInUser: u.Username,
+		Providers:    make([]home.ProviderStats, 0, 3),
 	}
 
 	// Get all listens for this user
@@ -93,8 +71,6 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 	albumSet := make(map[string]bool)
 	trackSet := make(map[string]bool)
 	artistCounts := make(map[string]int)
-	albumCounts := make(map[string]int)
-	genreCounts := make(map[string]int)
 	tagCounts := make(map[string]int)
 
 	for _, l := range listens {
@@ -102,19 +78,6 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 		albumSet[l.AlbumName] = true
 		trackSet[l.TrackName+"||"+l.ArtistName] = true
 		artistCounts[l.ArtistName]++
-		albumCounts[l.AlbumName]++
-
-		// Hour stats
-		hour := l.PlayedAt.Local().Hour()
-		stats.ListensByHour[hour].Value++
-
-		// Day of week stats
-		day := int(l.PlayedAt.Local().Weekday())
-		stats.ListensByDayOfWeek[day].Value++
-
-		// Month stats
-		month := int(l.PlayedAt.Local().Month()) - 1
-		stats.ListensByMonth[month].Value++
 	}
 
 	stats.UniqueArtists = len(artistSet)
@@ -134,57 +97,30 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 		Where(track.HasArtistWith(artist.HasUserWith(user.ID(u.ID)))).
 		Count(ctx)
 
-	// Get genre breakdown from enriched tracks
+	// Get tags from enriched tracks
 	tracks, err := h.Client.Track.Query().
 		Where(track.HasArtistWith(artist.HasUserWith(user.ID(u.ID)))).
 		All(ctx)
 	if err == nil {
 		for _, t := range tracks {
-			for _, genre := range t.Genres {
-				// Weight by listen count if available
-				if count, ok := trackSet[t.Name+"||"]; ok && count {
-					genreCounts[genre]++
-				} else {
-					genreCounts[genre]++
-				}
-			}
 			for _, tag := range t.Tags {
 				tagCounts[tag]++
 			}
 		}
 	}
 
-	// Get genres from artists too
+	// Get tags from artists too
 	artists, err := h.Client.Artist.Query().
 		Where(artist.HasUserWith(user.ID(u.ID))).
 		All(ctx)
 	if err == nil {
 		for _, a := range artists {
 			listenCount := artistCounts[a.Name]
-			for _, genre := range a.Genres {
-				genreCounts[genre] += listenCount
-			}
 			for _, tag := range a.Tags {
 				tagCounts[tag] += listenCount
 			}
 		}
 	}
-
-	// Build genre breakdown (top 10)
-	genreList := make([]components.ChartDataPoint, 0, len(genreCounts))
-	for genre, count := range genreCounts {
-		genreList = append(genreList, components.ChartDataPoint{
-			Label: genre,
-			Value: float64(count),
-		})
-	}
-	sort.Slice(genreList, func(i, j int) bool {
-		return genreList[i].Value > genreList[j].Value
-	})
-	if len(genreList) > 10 {
-		genreList = genreList[:10]
-	}
-	stats.GenreBreakdown = genreList
 
 	// Build tag cloud (top 30)
 	tagList := make([]struct {
@@ -207,41 +143,6 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 		}
 		stats.TagCloud = append(stats.TagCloud, t.Tag)
 	}
-
-	// Build top artists (top 10)
-	topArtists := make([]components.ChartDataPoint, 0, len(artistCounts))
-	for artist, count := range artistCounts {
-		topArtists = append(topArtists, components.ChartDataPoint{
-			Label: artist,
-			Value: float64(count),
-		})
-	}
-	sort.Slice(topArtists, func(i, j int) bool {
-		return topArtists[i].Value > topArtists[j].Value
-	})
-	if len(topArtists) > 10 {
-		topArtists = topArtists[:10]
-	}
-	stats.TopArtists = topArtists
-
-	// Build top albums (top 10)
-	topAlbums := make([]components.ChartDataPoint, 0, len(albumCounts))
-	for album, count := range albumCounts {
-		topAlbums = append(topAlbums, components.ChartDataPoint{
-			Label: album,
-			Value: float64(count),
-		})
-	}
-	sort.Slice(topAlbums, func(i, j int) bool {
-		return topAlbums[i].Value > topAlbums[j].Value
-	})
-	if len(topAlbums) > 10 {
-		topAlbums = topAlbums[:10]
-	}
-	stats.TopAlbums = topAlbums
-
-	// Build recent activity chart (last 30 days)
-	stats.RecentActivity = h.getRecentActivityChart(ctx, u.ID)
 
 	// Navidrome provider stats
 	navidromeStats := home.ProviderStats{
@@ -303,100 +204,6 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 	stats.Providers = append(stats.Providers, lastfmStats)
 
 	return stats, nil
-}
-
-func (h *Handler) getRecentActivityChart(ctx context.Context, userID int) components.StackedChartData {
-	data := components.StackedChartData{
-		Labels:   []string{},
-		Datasets: []components.StackedChartDataset{},
-	}
-
-	now := time.Now()
-	startDate := now.AddDate(0, 0, -30)
-
-	// Get listens in the last 30 days
-	listens, err := h.Client.Listen.Query().
-		Where(
-			listen.HasUserWith(user.ID(userID)),
-			listen.PlayedAtGTE(startDate),
-		).
-		All(ctx)
-	if err != nil {
-		h.Logger.Error("failed to get recent listens", "error", err)
-		return data
-	}
-
-	// Group by date and provider
-	providerData := make(map[string]map[string]int) // date -> provider -> count
-	providers := make(map[string]bool)
-
-	for _, l := range listens {
-		dateKey := l.PlayedAt.Local().Format("Jan 2")
-		if providerData[dateKey] == nil {
-			providerData[dateKey] = make(map[string]int)
-		}
-		providerData[dateKey][l.Source]++
-		providers[l.Source] = true
-	}
-
-	// Generate labels (dates)
-	labels := make([]string, 0, 30)
-	current := startDate
-	for current.Before(now) || current.Equal(now) {
-		labels = append(labels, current.Format("Jan 2"))
-		current = current.AddDate(0, 0, 1)
-	}
-	data.Labels = labels
-
-	// Provider colors
-	providerColors := map[string]string{
-		"spotify":   "#1DB954",
-		"navidrome": "#4285F4",
-		"lastfm":    "#D51007",
-	}
-
-	// Create datasets for each provider
-	for provider := range providers {
-		dataset := components.StackedChartDataset{
-			Label:           capitalizeProvider(provider),
-			Data:            make([]float64, len(labels)),
-			BackgroundColor: providerColors[provider],
-			BorderColor:     providerColors[provider],
-		}
-		if dataset.BackgroundColor == "" {
-			dataset.BackgroundColor = "#6B7280"
-			dataset.BorderColor = "#6B7280"
-		}
-
-		for i, label := range labels {
-			if providerData[label] != nil {
-				dataset.Data[i] = float64(providerData[label][provider])
-			}
-		}
-
-		data.Datasets = append(data.Datasets, dataset)
-	}
-
-	return data
-}
-
-func capitalizeProvider(s string) string {
-	if s == "" {
-		return s
-	}
-	switch s {
-	case "spotify":
-		return "Spotify"
-	case "navidrome":
-		return "Navidrome"
-	case "lastfm":
-		return "Last.fm"
-	default:
-		if s[0] >= 'a' && s[0] <= 'z' {
-			return string(s[0]-32) + s[1:]
-		}
-		return s
-	}
 }
 
 func (h *Handler) countUniqueArtists(ctx context.Context, userID int, source string) int {

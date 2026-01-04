@@ -54,6 +54,7 @@ func (Playlist) Edges() []ent.Edge {
 			Ref("playlists").
 			Unique().
 			Required(),
+		edge.To("tracks", PlaylistTrack.Type),
 	}
 }
 

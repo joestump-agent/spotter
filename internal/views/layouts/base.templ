@@ -1,8 +1,18 @@
 package layouts
 
 templ Base(title string) {
+	@BaseWithTheme(title, "")
+}
+
+templ BaseWithTheme(title string, defaultTheme string) {
 	<!DOCTYPE html>
-	<html lang="en" class="h-full">
+	<html
+		lang="en"
+		class="h-full"
+		if defaultTheme != "" {
+			data-theme={ defaultTheme }
+		}
+	>
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>

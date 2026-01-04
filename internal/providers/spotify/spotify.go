@@ -324,14 +324,18 @@ type playlistsResponse struct {
 type playlistTracksResponse struct {
 	Items []struct {
 		Track struct {
-			ID      string `json:"id"`
-			Name    string `json:"name"`
-			Artists []struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			DurationMs int    `json:"duration_ms"`
+			Artists    []struct {
 				Name string `json:"name"`
 			} `json:"artists"`
 			Album struct {
 				Name string `json:"name"`
 			} `json:"album"`
+			ExternalURLs struct {
+				Spotify string `json:"spotify"`
+			} `json:"external_urls"`
 		} `json:"track"`
 	} `json:"items"`
 	Next  string `json:"next"`
@@ -381,8 +385,8 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 				imageURL = item.Images[0].URL
 			}
 
-			// Fetch unique artists and albums for this playlist
-			uniqueArtists, uniqueAlbums := p.getPlaylistStats(ctx, accessToken, item.ID)
+			// Fetch tracks, unique artists and albums for this playlist
+			tracks, uniqueArtists, uniqueAlbums := p.getPlaylistTracks(ctx, accessToken, item.ID)
 
 			allPlaylists = append(allPlaylists, providers.Playlist{
 				ID:            item.ID,
@@ -393,6 +397,7 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 				TrackCount:    item.Tracks.Total,
 				UniqueArtists: uniqueArtists,
 				UniqueAlbums:  uniqueAlbums,
+				Tracks:        tracks,
 			})
 		}
 
@@ -403,12 +408,12 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 	return allPlaylists, nil
 }
 
-// getPlaylistStats fetches track details to count unique artists and albums
-func (p *Provider) getPlaylistStats(ctx context.Context, accessToken, playlistID string) (uniqueArtists, uniqueAlbums int) {
+// getPlaylistTracks fetches all tracks in a playlist along with unique artist/album counts
+func (p *Provider) getPlaylistTracks(ctx context.Context, accessToken, playlistID string) (tracks []providers.Track, uniqueArtists, uniqueAlbums int) {
 	artists := make(map[string]struct{})
 	albums := make(map[string]struct{})
 
-	nextURL := fmt.Sprintf("https://api.spotify.com/v1/playlists/%s/tracks?limit=100&fields=items(track(artists(name),album(name))),next,total", playlistID)
+	nextURL := fmt.Sprintf("https://api.spotify.com/v1/playlists/%s/tracks?limit=100&fields=items(track(id,name,duration_ms,artists(name),album(name),external_urls)),next,total", playlistID)
 
 	for nextURL != "" {
 		req, err := http.NewRequestWithContext(ctx, "GET", nextURL, nil)
@@ -442,6 +447,14 @@ func (p *Provider) getPlaylistStats(ctx context.Context, accessToken, playlistID
 			if item.Track.ID == "" {
 				continue // Skip local files or unavailable tracks
 			}
+
+			// Get artist name (use first artist)
+			artistName := ""
+			if len(item.Track.Artists) > 0 {
+				artistName = item.Track.Artists[0].Name
+			}
+
+			// Track unique artists and albums
 			for _, artist := range item.Track.Artists {
 				if artist.Name != "" {
 					artists[artist.Name] = struct{}{}
@@ -450,12 +463,22 @@ func (p *Provider) getPlaylistStats(ctx context.Context, accessToken, playlistID
 			if item.Track.Album.Name != "" {
 				albums[item.Track.Album.Name] = struct{}{}
 			}
+
+			// Add track to list
+			tracks = append(tracks, providers.Track{
+				ID:         item.Track.ID,
+				Name:       item.Track.Name,
+				Artist:     artistName,
+				Album:      item.Track.Album.Name,
+				DurationMs: item.Track.DurationMs,
+				URL:        item.Track.ExternalURLs.Spotify,
+			})
 		}
 
 		nextURL = result.Next
 	}
 
-	return len(artists), len(albums)
+	return tracks, len(artists), len(albums)
 }
 
 func (p *Provider) CreatePlaylist(ctx context.Context, name, description string, tracks []providers.Track) error {

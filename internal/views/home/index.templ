@@ -2,7 +2,6 @@ package home
 
 import (
 	"encoding/json"
-	"fmt"
 	"spotter/internal/config"
 	"spotter/internal/views/components"
 	"spotter/internal/views/layouts"
@@ -32,13 +31,6 @@ type HomeStats struct {
 	NavidromeURL        string
 	LoggedInUser        string
 	Providers           []ProviderStats
-	ListensByHour       []components.ChartDataPoint
-	ListensByDayOfWeek  []components.ChartDataPoint
-	ListensByMonth      []components.ChartDataPoint
-	GenreBreakdown      []components.ChartDataPoint
-	TopArtists          []components.ChartDataPoint
-	TopAlbums           []components.ChartDataPoint
-	RecentActivity      components.StackedChartData
 	TagCloud            []string
 	EnrichedArtistCount int
 	EnrichedAlbumCount  int
@@ -64,24 +56,8 @@ func toJSON(v interface{}) string {
 	return string(b)
 }
 
-func getGenreRadarColors(count int) []string {
-	colors := []string{
-		"#8b5cf6", "#06b6d4", "#f59e0b", "#ef4444", "#10b981",
-		"#f97316", "#ec4899", "#3b82f6", "#84cc16", "#6366f1",
-	}
-	if count <= len(colors) {
-		return colors[:count]
-	}
-	result := make([]string, count)
-	for i := 0; i < count; i++ {
-		result[i] = colors[i%len(colors)]
-	}
-	return result
-}
-
 templ Index(cfg *config.Config, stats *HomeStats) {
 	@layouts.Dashboard("Home | Spotter", cfg, "/") {
-		@components.ChartJSScript()
 		<div class="max-w-7xl mx-auto">
 			<!-- Welcome Header -->
 			<div class="mb-8">
@@ -94,108 +70,6 @@ templ Index(cfg *config.Config, stats *HomeStats) {
 				@components.StatCardLink("Unique Artists", formatNumber(stats.UniqueArtists), "you've listened to", "icon-[heroicons--user-group]", "text-secondary", "/library/artists")
 				@components.StatCardLink("Unique Albums", formatNumber(stats.UniqueAlbums), "in your history", "icon-[heroicons--square-3-stack-3d]", "text-accent", "/library/albums")
 				@components.StatCardLink("Unique Tracks", formatNumber(stats.UniqueTracks), "played", "icon-[heroicons--musical-note]", "text-info", "/library/tracks")
-			</div>
-			<!-- Recent Activity Chart -->
-			<div class="card bg-base-100 shadow-xl mb-8">
-				<div class="card-body">
-					<div class="flex items-center justify-between mb-4">
-						<h3 class="card-title">
-							<span class="icon-[heroicons--chart-bar] w-5 h-5"></span>
-							Listening Activity (Last 30 Days)
-						</h3>
-					</div>
-					<div class="w-full" style="height: 300px">
-						<canvas id="recent-activity-chart"></canvas>
-					</div>
-				</div>
-			</div>
-			@recentActivityScript(stats.RecentActivity)
-			<!-- Genre & Top Content Row -->
-			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-				<!-- Genre Spider Chart -->
-				if len(stats.GenreBreakdown) > 0 {
-					<div class="card bg-base-100 shadow-xl">
-						<div class="card-body">
-							<h3 class="card-title">
-								<span class="icon-[heroicons--tag] w-5 h-5"></span>
-								Listening by Genre
-							</h3>
-							<div class="w-full" style="height: 350px">
-								<canvas id="genre-radar-chart"></canvas>
-							</div>
-						</div>
-					</div>
-					@genreRadarScript(stats.GenreBreakdown)
-				}
-				<!-- Top Artists -->
-				if len(stats.TopArtists) > 0 {
-					<div class="card bg-base-100 shadow-xl">
-						<div class="card-body">
-							<h3 class="card-title">
-								<span class="icon-[heroicons--fire] w-5 h-5 text-error"></span>
-								Top Artists
-							</h3>
-							@components.HorizontalBarChart(
-								"top-artists-chart",
-								"",
-								stats.TopArtists,
-								"oklch(var(--p))",
-								fmt.Sprintf("%dpx", max(200, len(stats.TopArtists)*35)),
-							)
-						</div>
-					</div>
-				}
-			</div>
-			<!-- Listening Patterns Row -->
-			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-				<!-- By Hour -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--clock] w-5 h-5"></span>
-							Listens by Hour
-						</h3>
-						@components.BarChart(
-							"home-hour-chart",
-							"",
-							stats.ListensByHour,
-							"oklch(var(--p))",
-							"200px",
-						)
-					</div>
-				</div>
-				<!-- By Day of Week -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--calendar-days] w-5 h-5"></span>
-							Listens by Day
-						</h3>
-						@components.BarChart(
-							"home-day-chart",
-							"",
-							stats.ListensByDayOfWeek,
-							"oklch(var(--s))",
-							"200px",
-						)
-					</div>
-				</div>
-				<!-- By Month -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--calendar] w-5 h-5"></span>
-							Listens by Month
-						</h3>
-						@components.BarChart(
-							"home-month-chart",
-							"",
-							stats.ListensByMonth,
-							"oklch(var(--a))",
-							"200px",
-						)
-					</div>
-				</div>
 			</div>
 			<!-- Tags Cloud -->
 			if len(stats.TagCloud) > 0 {
@@ -342,134 +216,6 @@ templ Index(cfg *config.Config, stats *HomeStats) {
 			})();
 		</script>
 	}
-}
-
-templ recentActivityScript(data components.StackedChartData) {
-	<script>
-		(function() {
-			const ctx = document.getElementById('recent-activity-chart');
-			if (!ctx) return;
-
-			const chartData = JSON.parse('{{ toJSON(data) }}');
-
-			new Chart(ctx, {
-				type: 'bar',
-				data: {
-					labels: chartData.labels,
-					datasets: chartData.datasets.map(ds => ({
-						label: ds.label,
-						data: ds.data,
-						backgroundColor: ds.backgroundColor,
-						borderColor: ds.borderColor,
-						borderWidth: 1,
-						borderRadius: 2
-					}))
-				},
-				options: {
-					responsive: true,
-					maintainAspectRatio: false,
-					plugins: {
-						legend: {
-							display: true,
-							position: 'bottom',
-							labels: {
-								color: 'oklch(var(--bc))',
-								usePointStyle: true,
-								padding: 20
-							}
-						}
-					},
-					scales: {
-						y: {
-							stacked: true,
-							beginAtZero: true,
-							ticks: {
-								color: 'oklch(var(--bc) / 0.7)'
-							},
-							grid: {
-								color: 'oklch(var(--bc) / 0.1)'
-							}
-						},
-						x: {
-							stacked: true,
-							ticks: {
-								color: 'oklch(var(--bc) / 0.7)',
-								maxRotation: 45,
-								minRotation: 0
-							},
-							grid: {
-								display: false
-							}
-						}
-					}
-				}
-			});
-		})();
-	</script>
-}
-
-templ genreRadarScript(data []components.ChartDataPoint) {
-	<script>
-		(function() {
-			const ctx = document.getElementById('genre-radar-chart');
-			if (!ctx) return;
-
-			const chartData = JSON.parse('{{ toJSON(data) }}');
-			const labels = chartData.map(d => d.label);
-			const values = chartData.map(d => d.value);
-			const maxValue = Math.max(...values);
-
-			new Chart(ctx, {
-				type: 'radar',
-				data: {
-					labels: labels,
-					datasets: [{
-						label: 'Listens by Genre',
-						data: values,
-						backgroundColor: 'oklch(var(--p) / 0.3)',
-						borderColor: 'oklch(var(--p))',
-						borderWidth: 2,
-						pointBackgroundColor: 'oklch(var(--p))',
-						pointBorderColor: '#fff',
-						pointHoverBackgroundColor: '#fff',
-						pointHoverBorderColor: 'oklch(var(--p))'
-					}]
-				},
-				options: {
-					responsive: true,
-					maintainAspectRatio: false,
-					plugins: {
-						legend: {
-							display: false
-						}
-					},
-					scales: {
-						r: {
-							beginAtZero: true,
-							max: maxValue > 0 ? Math.ceil(maxValue * 1.1) : 100,
-							ticks: {
-								color: 'oklch(var(--bc) / 0.7)',
-								backdropColor: 'transparent',
-								stepSize: Math.ceil(maxValue / 5)
-							},
-							grid: {
-								color: 'oklch(var(--bc) / 0.2)'
-							},
-							pointLabels: {
-								color: 'oklch(var(--bc))',
-								font: {
-									size: 11
-								}
-							},
-							angleLines: {
-								color: 'oklch(var(--bc) / 0.2)'
-							}
-						}
-					}
-				}
-			});
-		})();
-	</script>
 }
 
 func getBadgeClass(index int) string {

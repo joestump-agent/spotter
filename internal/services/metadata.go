@@ -19,6 +19,7 @@ import (
 	"spotter/ent/artistimage"
 	"spotter/ent/listen"
 	"spotter/ent/playlist"
+	"spotter/ent/playlisttrack"
 	"spotter/ent/syncevent"
 	"spotter/ent/track"
 	"spotter/ent/user"
@@ -225,31 +226,64 @@ func (s *MetadataService) BuildCatalog(ctx context.Context, u *ent.User) error {
 		}
 	}
 
-	// Get all playlists for the user (we store track info in listens already, so this is supplementary)
-	playlists, err := s.Client.Playlist.Query().
-		Where(playlist.HasUserWith(user.ID(u.ID))).
+	// Get all playlist tracks for the user
+	playlistTracks, err := s.Client.PlaylistTrack.Query().
+		Where(playlisttrack.HasPlaylistWith(playlist.HasUserWith(user.ID(u.ID)))).
 		All(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to query playlists: %w", err)
+		return fmt.Errorf("failed to query playlist tracks: %w", err)
 	}
 
-	s.Logger.Debug("found playlists", "count", len(playlists))
+	s.Logger.Debug("processing playlist tracks", "count", len(playlistTracks))
+
+	// Process playlist tracks (similar to listens)
+	for _, pt := range playlistTracks {
+		added, err := s.processListenEntry(ctx, u, pt.ArtistName, pt.AlbumName, pt.TrackName)
+		if err != nil {
+			s.Logger.Warn("failed to process playlist track entry",
+				"artist", pt.ArtistName,
+				"album", pt.AlbumName,
+				"track", pt.TrackName,
+				"error", err)
+		}
+		if added != nil {
+			if added["artist"] {
+				artistsAdded++
+			}
+			if added["album"] {
+				albumsAdded++
+			}
+			if added["track"] {
+				tracksAdded++
+			}
+		}
+	}
+
+	// Link playlist tracks to catalog entries
+	linkedCount, err := s.linkPlaylistTracks(ctx, u)
+	if err != nil {
+		s.Logger.Warn("failed to link playlist tracks", "error", err)
+	}
+
+	s.Logger.Debug("linked playlist tracks to catalog", "count", linkedCount)
 
 	// Log catalog build event
 	s.logEvent(ctx, u, syncevent.EventTypeCatalogBuilt, "metadata",
 		fmt.Sprintf("Built catalog: %d artists, %d albums, %d tracks added", artistsAdded, albumsAdded, tracksAdded),
 		map[string]interface{}{
-			"artists_added":     artistsAdded,
-			"albums_added":      albumsAdded,
-			"tracks_added":      tracksAdded,
-			"listens_processed": len(listens),
-			"playlists_found":   len(playlists),
+			"artists_added":             artistsAdded,
+			"albums_added":              albumsAdded,
+			"tracks_added":              tracksAdded,
+			"listens_processed":         len(listens),
+			"playlist_tracks_processed": len(playlistTracks),
+			"playlist_tracks_linked":    linkedCount,
 		})
 
 	s.Logger.Info("catalog building completed",
 		"username", u.Username,
 		"listens_processed", len(listens),
-		"playlists_found", len(playlists),
+		"playlist_tracks_processed", len(playlistTracks),
+		"playlist_tracks_linked", linkedCount,
 		"artists_added", artistsAdded,
 		"albums_added", albumsAdded,
 		"tracks_added", tracksAdded)
@@ -293,6 +327,57 @@ func (s *MetadataService) processListenEntry(ctx context.Context, u *ent.User, a
 	}
 
 	return added, nil
+}
+
+// linkPlaylistTracks links playlist tracks to their corresponding catalog entries.
+func (s *MetadataService) linkPlaylistTracks(ctx context.Context, u *ent.User) (int, error) {
+	// Get all unlinked playlist tracks for user's playlists
+	playlistTracks, err := s.Client.PlaylistTrack.Query().
+		Where(
+			playlisttrack.HasPlaylistWith(playlist.HasUserWith(user.ID(u.ID))),
+			playlisttrack.Not(playlisttrack.HasTrack()),
+		).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query unlinked playlist tracks: %w", err)
+	}
+
+	linkedCount := 0
+	for _, pt := range playlistTracks {
+		// Try to find matching track in catalog
+		t, err := s.Client.Track.Query().
+			Where(
+				track.Name(pt.TrackName),
+				track.HasArtistWith(
+					artist.HasUserWith(user.ID(u.ID)),
+					artist.Name(pt.ArtistName),
+				),
+			).
+			WithArtist().
+			WithAlbum().
+			First(ctx)
+		if err != nil {
+			continue // Track not in catalog yet
+		}
+
+		// Link the playlist track to the catalog track
+		update := s.Client.PlaylistTrack.UpdateOne(pt).SetTrack(t)
+
+		if t.Edges.Artist != nil {
+			update.SetArtist(t.Edges.Artist)
+		}
+		if t.Edges.Album != nil {
+			update.SetAlbum(t.Edges.Album)
+		}
+
+		if err := update.Exec(ctx); err != nil {
+			s.Logger.Debug("failed to link playlist track", "track", pt.TrackName, "error", err)
+			continue
+		}
+		linkedCount++
+	}
+
+	return linkedCount, nil
 }
 
 // getOrCreateArtist finds or creates an artist in the catalog.
@@ -421,7 +506,15 @@ func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) (
 		}
 
 		active = append(active, enricher)
+		s.Logger.Info("enricher activated", "type", t, "name", enricher.Name())
 	}
+
+	// Log summary of active enrichers
+	enricherNames := make([]string, len(active))
+	for i, e := range active {
+		enricherNames[i] = e.Name()
+	}
+	s.Logger.Info("active enrichers for user", "count", len(active), "enrichers", enricherNames)
 
 	return active, nil
 }
@@ -436,22 +529,45 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 	}
 
 	// Get artists that need enrichment (not enriched in the last 24 hours)
+	// OR that need AI enrichment (never AI enriched or AI enriched more than 7 days ago)
 	cutoff := time.Now().Add(-24 * time.Hour)
+	aiCutoff := time.Now().Add(-7 * 24 * time.Hour)
 	artists, err := s.Client.Artist.Query().
 		Where(
 			artist.HasUserWith(user.ID(u.ID)),
 			artist.Or(
 				artist.LastEnrichedAtIsNil(),
 				artist.LastEnrichedAtLT(cutoff),
+				artist.LastAiEnrichedAtIsNil(),
+				artist.LastAiEnrichedAtLT(aiCutoff),
+				artist.LidarrIDIsNil(),
 			),
 		).
+		WithAlbums().
+		WithTracks(func(q *ent.TrackQuery) {
+			q.WithAlbum()
+		}).
+		WithImages().
 		Limit(100). // Process in batches
 		All(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query artists: %w", err)
 	}
 
-	s.Logger.Debug("found artists to enrich", "count", len(artists))
+	s.Logger.Info("found artists to enrich", "count", len(artists))
+	for _, art := range artists {
+		needsRegular := art.LastEnrichedAt == nil || art.LastEnrichedAt.Before(cutoff)
+		needsAI := art.LastAiEnrichedAt == nil || art.LastAiEnrichedAt.Before(aiCutoff)
+		s.Logger.Debug("artist enrichment status",
+			"artist", art.Name,
+			"needs_regular", needsRegular,
+			"needs_ai", needsAI,
+			"last_enriched", art.LastEnrichedAt,
+			"last_ai_enriched", art.LastAiEnrichedAt,
+			"has_albums", len(art.Edges.Albums),
+			"has_tracks", len(art.Edges.Tracks),
+			"has_images", len(art.Edges.Images))
+	}
 
 	enrichedCount := 0
 	for _, art := range artists {
@@ -504,6 +620,9 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 		if data.NavidromeID != "" && art.NavidromeID == "" {
 			update = update.SetNavidromeID(data.NavidromeID)
 		}
+		if data.LidarrID != "" && art.LidarrID == "" {
+			update = update.SetLidarrID(data.LidarrID)
+		}
 		if data.LastFMURL != "" && art.LastfmURL == "" {
 			update = update.SetLastfmURL(data.LastFMURL)
 		}
@@ -523,6 +642,18 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 		// Merge tags and genres
 		allTags = append(allTags, data.Tags...)
 		allGenres = append(allGenres, data.Genres...)
+
+		// Handle AI-specific fields
+		if data.AISummary != "" {
+			update = update.SetAiSummary(data.AISummary)
+		}
+		if data.AIBiography != "" {
+			update = update.SetAiBiography(data.AIBiography)
+		}
+		if len(data.AITags) > 0 {
+			update = update.SetAiTags(data.AITags)
+			update = update.SetLastAiEnrichedAt(time.Now())
+		}
 
 		// Get images
 		images, err := artistEnricher.GetArtistImages(ctx, art)
@@ -634,23 +765,43 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 		return 0, err
 	}
 
+	// Get albums that need enrichment
+	// OR that need AI enrichment (never AI enriched or AI enriched more than 7 days ago)
 	cutoff := time.Now().Add(-24 * time.Hour)
+	aiCutoff := time.Now().Add(-7 * 24 * time.Hour)
 	albums, err := s.Client.Album.Query().
 		Where(
 			album.HasUserWith(user.ID(u.ID)),
 			album.Or(
 				album.LastEnrichedAtIsNil(),
 				album.LastEnrichedAtLT(cutoff),
+				album.LastAiEnrichedAtIsNil(),
+				album.LastAiEnrichedAtLT(aiCutoff),
+				album.LidarrIDIsNil(),
 			),
 		).
 		WithArtist().
+		WithTracks().
+		WithImages().
 		Limit(100).
 		All(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query albums: %w", err)
 	}
 
-	s.Logger.Debug("found albums to enrich", "count", len(albums))
+	s.Logger.Info("found albums to enrich", "count", len(albums))
+	for _, alb := range albums {
+		needsRegular := alb.LastEnrichedAt.IsZero() || alb.LastEnrichedAt.Before(cutoff)
+		needsAI := alb.LastAiEnrichedAt == nil || alb.LastAiEnrichedAt.Before(aiCutoff)
+		s.Logger.Debug("album enrichment status",
+			"album", alb.Name,
+			"needs_regular", needsRegular,
+			"needs_ai", needsAI,
+			"last_enriched", alb.LastEnrichedAt,
+			"last_ai_enriched", alb.LastAiEnrichedAt,
+			"has_tracks", len(alb.Edges.Tracks),
+			"has_images", len(alb.Edges.Images))
+	}
 
 	enrichedCount := 0
 	for _, alb := range albums {
@@ -815,6 +966,9 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 		if data.SpotifyID != "" && alb.SpotifyID == "" {
 			update = update.SetSpotifyID(data.SpotifyID)
 		}
+		if data.LidarrID != "" && alb.LidarrID == "" {
+			update = update.SetLidarrID(data.LidarrID)
+		}
 		if data.ReleaseDate != "" && alb.ReleaseDate == "" {
 			update = update.SetReleaseDate(data.ReleaseDate)
 		}
@@ -838,6 +992,24 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 		}
 
 		allTags = append(allTags, data.Tags...)
+
+		// Handle AI-specific fields
+		if data.AISummary != "" {
+			update = update.SetAiSummary(data.AISummary)
+		}
+		if len(data.AITags) > 0 {
+			update = update.SetAiTags(data.AITags)
+		}
+		if len(data.DominantColors) > 0 {
+			update = update.SetDominantColors(data.DominantColors)
+		}
+		if data.CoverArtCommentary != "" {
+			update = update.SetCoverArtCommentary(data.CoverArtCommentary)
+		}
+		// If any AI fields were set, update the timestamp
+		if data.AISummary != "" || len(data.AITags) > 0 || len(data.DominantColors) > 0 || data.CoverArtCommentary != "" {
+			update = update.SetLastAiEnrichedAt(time.Now())
+		}
 
 		// Get images
 		images, err := albumEnricher.GetAlbumImages(ctx, alb)
@@ -947,13 +1119,21 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 		return 0, err
 	}
 
+	// Get tracks that need enrichment
+	// OR that need AI enrichment (never AI enriched or AI enriched more than 7 days ago)
 	cutoff := time.Now().Add(-24 * time.Hour)
+	aiCutoff := time.Now().Add(-7 * 24 * time.Hour)
 	// Get tracks via their artists (which belong to users)
 	tracks, err := s.Client.Track.Query().
 		Where(
+			track.HasArtistWith(artist.HasUserWith(user.ID(u.ID))),
 			track.Or(
 				track.LastEnrichedAtIsNil(),
 				track.LastEnrichedAtLT(cutoff),
+				track.LastAiEnrichedAtIsNil(),
+				track.LastAiEnrichedAtLT(aiCutoff),
+				track.LidarrIDIsNil(),
+				track.LidarrStatusIn("pending", "monitored", "grabbed"),
 			),
 		).
 		WithArtist(func(q *ent.ArtistQuery) {
@@ -974,7 +1154,7 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 		}
 	}
 
-	s.Logger.Debug("found tracks to enrich", "count", len(userTracks))
+	s.Logger.Info("found tracks to enrich", "count", len(userTracks))
 
 	enrichedCount := 0
 	for _, t := range userTracks {
@@ -1027,6 +1207,12 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 		if data.NavidromeID != "" && (t.NavidromeID == nil || *t.NavidromeID == "") {
 			update = update.SetNavidromeID(data.NavidromeID)
 		}
+		if data.LidarrID != "" && (t.LidarrID == nil || *t.LidarrID == "") {
+			update = update.SetLidarrID(data.LidarrID)
+		}
+		if data.LidarrStatus != "" {
+			update = update.SetLidarrStatus(data.LidarrStatus)
+		}
 		if data.ISRC != "" && (t.Isrc == nil || *t.Isrc == "") {
 			update = update.SetIsrc(data.ISRC)
 		}
@@ -1072,6 +1258,15 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 
 		allTags = append(allTags, data.Tags...)
 		allGenres = append(allGenres, data.Genres...)
+
+		// Handle AI-specific fields
+		if data.AISummary != "" {
+			update = update.SetAiSummary(data.AISummary)
+		}
+		if len(data.AITags) > 0 {
+			update = update.SetAiTags(data.AITags)
+			update = update.SetLastAiEnrichedAt(time.Now())
+		}
 	}
 
 	if len(allTags) > 0 {

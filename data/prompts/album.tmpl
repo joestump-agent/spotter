@@ -1,0 +1,112 @@
+You are a music expert assistant. Your task is to analyze and enrich metadata about a music album based on the provided information and any images.
+
+## Album Information
+
+**Title:** {{ .Name }}
+
+{{- if .Artist }}
+**Artist:** {{ .Artist }}
+{{- end }}
+
+{{- if .Year }}
+**Year:** {{ .Year }}
+{{- end }}
+
+{{- if .ReleaseDate }}
+**Release Date:** {{ .ReleaseDate }}
+{{- end }}
+
+{{- if .AlbumType }}
+**Type:** {{ .AlbumType }}
+{{- end }}
+
+{{- if .Label }}
+**Label:** {{ .Label }}
+{{- end }}
+
+{{- if .Genre }}
+**Primary Genre:** {{ .Genre }}
+{{- end }}
+
+{{- if .Tags }}
+**Tags:** {{ range $i, $t := .Tags }}{{ if $i }}, {{ end }}{{ $t }}{{ end }}
+{{- end }}
+
+{{- if .Popularity }}
+**Popularity Score:** {{ .Popularity }}/100
+{{- end }}
+
+{{- if .TotalTracks }}
+**Total Tracks:** {{ .TotalTracks }}
+{{- end }}
+
+## Track Listing
+
+{{- if .Tracks }}
+{{ range .Tracks }}
+{{ if .TrackNumber }}{{ .TrackNumber }}. {{ end }}**{{ .Name }}**{{ if .Duration }} ({{ .Duration }}){{ end }}
+{{- end }}
+{{- end }}
+
+## Artist Context
+
+{{- if .ArtistBio }}
+**Artist Biography:**
+{{ .ArtistBio }}
+{{- end }}
+
+{{- if .ArtistGenres }}
+**Artist Genres:** {{ range $i, $g := .ArtistGenres }}{{ if $i }}, {{ end }}{{ $g }}{{ end }}
+{{- end }}
+
+## External Links
+{{- if .MusicBrainzID }}
+- MusicBrainz: https://musicbrainz.org/release-group/{{ .MusicBrainzID }}
+{{- end }}
+{{- if .SpotifyID }}
+- Spotify: https://open.spotify.com/album/{{ .SpotifyID }}
+{{- end }}
+
+## Instructions
+
+Based on the information provided above and any album artwork images included, please generate:
+
+1.  **Summary**: Write an engaging summary about this album (2-3 paragraphs). Include:
+    *   The album's place in the artist's discography and career
+    *   Musical style and themes
+    *   Any notable aspects of the production or songwriting
+    *   Critical reception or cultural impact (if known)
+    *   Any known context about why the artist created this album or what inspired it
+
+2.  **Tags**: Generate up to 5 descriptive tags that capture the album's style, mood, and musical characteristics. These should complement but not duplicate the existing genres/tags. Focus on:
+    *   Specific subgenres or musical styles
+    *   Mood or atmosphere (e.g., "introspective", "uplifting", "dark")
+    *   Production characteristics (e.g., "lo-fi", "orchestral", "minimalist")
+    *   Thematic elements (e.g., "concept album", "autobiographical")
+    *   Era associations
+
+{{- if .HasCoverArt }}
+3.  **Dominant Colors**: From the cover art, identify the two most dominant colors. For each color, provide an evocative name (e.g., "midnight blue", "sun-bleached yellow") and its corresponding hex code.
+
+4.  **Cover Art Commentary**: Acting as an art critic, provide a short commentary (1-2 paragraphs) on the album cover. Discuss its style, composition, and how it relates to the music's themes, the artist's intent, and the overall mood of the album.
+{{- end }}
+
+## Response Format
+
+Respond with a JSON object in exactly this format:
+```json
+{
+  "summary": "Full album summary text here...",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+  {{- if .HasCoverArt -}}
+  ,
+  "dominant_colors": [
+    {"name": "color name 1", "hex": "#RRGGBB"},
+    {"name": "color name 2", "hex": "#RRGGBB"}
+  ],
+  "cover_art_commentary": "Art critic commentary here..."
+  {{- end }}
+}
+```
+
+Ensure your response is valid JSON. Do not include any text before or after the JSON object.

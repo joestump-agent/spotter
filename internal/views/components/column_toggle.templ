@@ -1,0 +1,127 @@
+package components
+
+// ColumnOption defines a single toggleable column for the menu.
+type ColumnOption struct {
+	Value          string // The CSS class of the column (e.g., "col-artist")
+	Label          string // The display name for the checkbox (e.g., "Artist")
+	DefaultVisible bool   // Whether the column is visible by default
+}
+
+// ColumnToggleMenu creates a dropdown for showing/hiding table columns.
+// It targets a table by its ID and persists preferences to localStorage.
+templ ColumnToggleMenu(targetTableID string, options []ColumnOption) {
+	<div class="column-toggle-wrapper" data-target-table={ targetTableID }>
+		<details class="dropdown dropdown-end">
+			<summary class="btn btn-sm btn-outline gap-2 m-1">
+				<span class="icon-[heroicons--view-columns] w-4 h-4"></span>
+				Columns
+				<span class="icon-[heroicons--chevron-down] w-3 h-3"></span>
+			</summary>
+			<ul class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+				for _, opt := range options {
+					<li>
+						<label class="label cursor-pointer">
+							<span class="label-text">{ opt.Label }</span>
+							<input type="checkbox" class="checkbox checkbox-sm column-toggle-checkbox" data-col-class={ opt.Value } checked?={ opt.DefaultVisible }/>
+						</label>
+					</li>
+				}
+			</ul>
+		</details>
+		<script>
+			(function() {
+				// Get reference to this specific wrapper before DOM changes
+				const wrapper = document.currentScript.parentElement;
+				const targetTableID = wrapper.dataset.targetTable;
+				const storageKey = 'spotter-columns-' + targetTableID;
+
+				// Defer initialization until DOM is fully loaded
+				function init() {
+					const targetTable = document.getElementById(targetTableID);
+					const checkboxes = wrapper.querySelectorAll('.column-toggle-checkbox');
+
+					if (!targetTable) {
+						console.error("ColumnToggleMenu: Couldn't find table with ID:", targetTableID);
+						return;
+					}
+
+					// Load saved preferences from localStorage
+					let savedPrefs = {};
+					try {
+						const saved = localStorage.getItem(storageKey);
+						if (saved) {
+							savedPrefs = JSON.parse(saved);
+						}
+					} catch (e) {
+						console.error("ColumnToggleMenu: Error loading preferences:", e);
+					}
+
+					// Apply saved preferences to checkboxes and columns
+					checkboxes.forEach(function(checkbox) {
+						const columnClass = checkbox.dataset.colClass;
+						if (!columnClass) return;
+
+						// If we have a saved preference, use it; otherwise keep the default
+						if (savedPrefs.hasOwnProperty(columnClass)) {
+							checkbox.checked = savedPrefs[columnClass];
+						}
+
+						// Apply current checkbox state to columns
+						applyColumnVisibility(targetTable, columnClass, checkbox.checked);
+					});
+
+					// --- Column Visibility Logic ---
+					checkboxes.forEach(function(checkbox) {
+						checkbox.addEventListener('change', function() {
+							const columnClass = checkbox.dataset.colClass;
+							if (!columnClass) return;
+
+							// Apply visibility change
+							applyColumnVisibility(targetTable, columnClass, checkbox.checked);
+
+							// Save preferences to localStorage
+							savePreferences();
+						});
+					});
+
+					function applyColumnVisibility(table, columnClass, visible) {
+						const cells = table.querySelectorAll('.' + columnClass);
+						cells.forEach(function(cell) {
+							if (visible) {
+								cell.classList.remove('hidden');
+							} else {
+								cell.classList.add('hidden');
+							}
+						});
+					}
+
+					function savePreferences() {
+						const prefs = {};
+						checkboxes.forEach(function(checkbox) {
+							const columnClass = checkbox.dataset.colClass;
+							if (columnClass) {
+								prefs[columnClass] = checkbox.checked;
+							}
+						});
+						try {
+							localStorage.setItem(storageKey, JSON.stringify(prefs));
+						} catch (e) {
+							console.error("ColumnToggleMenu: Error saving preferences:", e);
+						}
+					}
+				}
+
+				// Run init after DOM is ready
+				if (document.readyState === 'loading') {
+					document.addEventListener('DOMContentLoaded', init);
+				} else {
+					// DOM is already ready, but table might be rendered after this script
+					// Use requestAnimationFrame to defer to next paint cycle
+					requestAnimationFrame(function() {
+						requestAnimationFrame(init);
+					});
+				}
+			})();
+		</script>
+	</div>
+}

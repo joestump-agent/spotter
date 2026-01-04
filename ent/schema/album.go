@@ -28,6 +28,9 @@ func (Album) Fields() []ent.Field {
 		field.String("spotify_id").
 			Optional().
 			Comment("Spotify album ID"),
+		field.String("lidarr_id").
+			Optional().
+			Comment("Lidarr album ID"),
 		field.String("release_date").
 			Optional().
 			Comment("Release date in ISO format (YYYY, YYYY-MM, or YYYY-MM-DD)"),
@@ -61,6 +64,23 @@ func (Album) Fields() []ent.Field {
 		field.Time("last_enriched_at").
 			Optional().
 			Comment("When metadata was last enriched"),
+		// AI-generated fields
+		field.Text("ai_summary").
+			Optional().
+			Comment("AI-generated summary of the album including artist thoughts and context"),
+		field.JSON("ai_tags", []string{}).
+			Optional().
+			Comment("AI-generated tags for the album (max 5)"),
+		field.JSON("dominant_colors", []string{}).
+			Optional().
+			Comment("AI-generated dominant colors from the cover art"),
+		field.Text("cover_art_commentary").
+			Optional().
+			Comment("AI-generated art critic commentary on the cover art"),
+		field.Time("last_ai_enriched_at").
+			Optional().
+			Nillable().
+			Comment("Last time AI enrichment was performed"),
 	}
 }
 
@@ -77,6 +97,7 @@ func (Album) Edges() []ent.Edge {
 		edge.To("tracks", Track.Type),
 		edge.To("images", AlbumImage.Type),
 		edge.To("listens", Listen.Type),
+		edge.To("playlist_tracks", PlaylistTrack.Type),
 	}
 }
 
@@ -90,6 +111,7 @@ func (Album) Indexes() []ent.Index {
 		// Fast lookup by external IDs
 		index.Fields("musicbrainz_id"),
 		index.Fields("spotify_id"),
+		index.Fields("lidarr_id"),
 		// Search by year
 		index.Fields("year"),
 	}

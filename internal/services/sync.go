@@ -10,6 +10,7 @@ import (
 	"spotter/ent"
 	"spotter/ent/listen"
 	"spotter/ent/playlist"
+	"spotter/ent/playlisttrack"
 	"spotter/ent/syncevent"
 	"spotter/ent/user"
 	"spotter/internal/config"
@@ -475,27 +476,23 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 		}
 
 		// Check if playlist exists
-		exists, err := s.Client.Playlist.Query().
+		existingPlaylist, err := s.Client.Playlist.Query().
 			Where(
 				playlist.HasUserWith(user.ID(u.ID)),
 				playlist.Source(string(source)),
 				playlist.RemoteID(pl.ID),
 			).
-			Exist(ctx)
+			Only(ctx)
 
-		if err != nil {
+		if err != nil && !ent.IsNotFound(err) {
 			s.Logger.Warn("failed to check playlist existence", "error", err)
 			continue
 		}
 
-		if exists {
+		var playlistID int
+		if existingPlaylist != nil {
 			// Update existing playlist
-			_, err := s.Client.Playlist.Update().
-				Where(
-					playlist.HasUserWith(user.ID(u.ID)),
-					playlist.Source(string(source)),
-					playlist.RemoteID(pl.ID),
-				).
+			_, err := s.Client.Playlist.UpdateOne(existingPlaylist).
 				SetName(pl.Name).
 				SetDescription(pl.Description).
 				SetImageURL(pl.ImageURL).
@@ -506,13 +503,14 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 				Save(ctx)
 			if err != nil {
 				s.Logger.Warn("failed to update playlist", "name", pl.Name, "error", err)
-			} else {
-				s.Logger.Debug("updated playlist", "name", pl.Name, "source", source)
-				updatedCount++
+				continue
 			}
+			s.Logger.Debug("updated playlist", "name", pl.Name, "source", source)
+			playlistID = existingPlaylist.ID
+			updatedCount++
 		} else {
 			// Create new playlist
-			err := s.Client.Playlist.Create().
+			newPlaylist, err := s.Client.Playlist.Create().
 				SetUser(u).
 				SetRemoteID(pl.ID).
 				SetName(pl.Name).
@@ -523,19 +521,100 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 				SetUniqueArtists(pl.UniqueArtists).
 				SetUniqueAlbums(pl.UniqueAlbums).
 				SetSource(string(source)).
-				Exec(ctx)
+				Save(ctx)
 			if err != nil {
 				s.Logger.Warn("failed to create playlist", "name", pl.Name, "error", err)
-			} else {
-				s.Logger.Debug("created playlist", "name", pl.Name, "source", source)
-				addedCount++
+				continue
+			}
+			s.Logger.Debug("created playlist", "name", pl.Name, "source", source)
+			playlistID = newPlaylist.ID
+			addedCount++
 
-				// Log playlist added event
-				s.logEvent(ctx, u, syncevent.EventTypePlaylistAdded, providerName,
-					fmt.Sprintf("Added playlist: %s", pl.Name),
-					map[string]interface{}{"playlist_name": pl.Name, "playlist_id": pl.ID})
+			// Log playlist added event
+			s.logEvent(ctx, u, syncevent.EventTypePlaylistAdded, providerName,
+				fmt.Sprintf("Added playlist: %s", pl.Name),
+				map[string]interface{}{"playlist_name": pl.Name, "playlist_id": pl.ID})
+		}
+
+		// Persist playlist tracks
+		if len(pl.Tracks) > 0 {
+			if err := s.persistPlaylistTracks(ctx, playlistID, pl.Tracks); err != nil {
+				s.Logger.Warn("failed to persist playlist tracks", "playlist", pl.Name, "error", err)
 			}
 		}
 	}
 	return addedCount, updatedCount, nil
+}
+
+// persistPlaylistTracks saves tracks for a playlist, replacing existing tracks
+func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, tracks []providers.Track) error {
+	// Get the playlist to access user and provider info
+	pl, err := s.Client.Playlist.Query().
+		WithUser().
+		Where(playlist.ID(playlistID)).
+		Only(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get playlist: %w", err)
+	}
+	providerName := pl.Source
+	userID := pl.Edges.User.ID
+
+	// Delete existing playlist tracks
+	_, err = s.Client.PlaylistTrack.Delete().
+		Where(playlisttrack.HasPlaylistWith(playlist.ID(playlistID))).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to delete existing playlist tracks: %w", err)
+	}
+
+	// Create new playlist tracks in bulk
+	builders := make([]*ent.PlaylistTrackCreate, 0, len(tracks))
+	for i, track := range tracks {
+		if track.Name == "" || track.Artist == "" {
+			continue
+		}
+
+		builder := s.Client.PlaylistTrack.Create().
+			SetPlaylistID(playlistID).
+			SetTrackName(track.Name).
+			SetArtistName(track.Artist).
+			SetPosition(i).
+			SetRemoteID(track.ID)
+
+		if track.Album != "" {
+			builder.SetAlbumName(track.Album)
+		}
+		if track.DurationMs > 0 {
+			builder.SetDurationMs(track.DurationMs)
+		}
+		if track.URL != "" {
+			builder.SetURL(track.URL)
+		}
+
+		builders = append(builders, builder)
+	}
+
+	if len(builders) > 0 {
+		_, err = s.Client.PlaylistTrack.CreateBulk(builders...).Save(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create playlist tracks: %w", err)
+		}
+		s.Logger.Debug("saved playlist tracks", "playlist_id", playlistID, "count", len(builders))
+
+		// Log event and send notification
+		message := fmt.Sprintf("Imported %d tracks for playlist: %s", len(builders), pl.Name)
+		s.logEvent(ctx, pl.Edges.User, syncevent.EventTypeTrackAdded, providerName, message,
+			map[string]interface{}{"playlist_name": pl.Name, "track_count": len(builders)})
+
+		s.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Playlist Tracks Synced",
+				Message:  message,
+				IconType: "success",
+			},
+		})
+	}
+
+	return nil
 }

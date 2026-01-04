@@ -8,7 +8,6 @@ import (
 	"spotter/ent"
 	"spotter/internal/events"
 	"spotter/internal/views/components"
-	"spotter/internal/views/recent"
 )
 
 func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +43,10 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 			switch event.Type {
 			case events.EventTypeRecentListen:
 				if listen, ok := event.Payload.(*ent.Listen); ok {
-					if err := recent.ListenRow(listen).Render(ctx, &buf); err != nil {
+					row := components.TrackTableRow{
+						Listen: listen,
+					}
+					if err := components.TrackTableRowRender(row, []string{"source", "played_at", "track", "artist", "album"}, 0).Render(ctx, &buf); err != nil {
 						h.Logger.Error("failed to render recent listen", "error", err)
 						continue
 					}

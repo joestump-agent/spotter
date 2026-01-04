@@ -37,6 +37,9 @@ func (Artist) Fields() []ent.Field {
 		field.String("navidrome_id").
 			Optional().
 			Comment("Navidrome artist ID"),
+		field.String("lidarr_id").
+			Optional().
+			Comment("Lidarr artist ID"),
 		field.Text("bio").
 			Optional().
 			Comment("Artist biography from Last.fm or other sources"),
@@ -64,6 +67,20 @@ func (Artist) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Last time metadata was enriched from providers"),
+		// AI-generated fields
+		field.Text("ai_summary").
+			Optional().
+			Comment("AI-generated summary of the artist"),
+		field.Text("ai_biography").
+			Optional().
+			Comment("AI-generated biography for the artist"),
+		field.JSON("ai_tags", []string{}).
+			Optional().
+			Comment("AI-generated tags for the artist (max 5)"),
+		field.Time("last_ai_enriched_at").
+			Optional().
+			Nillable().
+			Comment("Last time AI enrichment was performed"),
 	}
 }
 
@@ -78,6 +95,7 @@ func (Artist) Edges() []ent.Edge {
 		edge.To("tracks", Track.Type),
 		edge.To("images", ArtistImage.Type),
 		edge.To("listens", Listen.Type),
+		edge.To("playlist_tracks", PlaylistTrack.Type),
 	}
 }
 
@@ -92,5 +110,6 @@ func (Artist) Indexes() []ent.Index {
 		index.Fields("musicbrainz_id"),
 		// Index for Spotify lookups
 		index.Fields("spotify_id"),
+		index.Fields("lidarr_id"),
 	}
 }

@@ -3,6 +3,7 @@ package artists
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/views/components"
@@ -37,8 +38,23 @@ type PlaylistWithArtist struct {
 	TrackCount int
 }
 
+func toTrackRowsFromStats(tracks []TrackListenCount) []components.TrackTableRow {
+	rows := make([]components.TrackTableRow, len(tracks))
+	for i, t := range tracks {
+		rows[i] = components.TrackTableRow{
+			Track:     t.Track,
+			PlayCount: t.ListenCount,
+		}
+	}
+	return rows
+}
+
 func showFormatNumber(n int) string {
 	return fmt.Sprintf("%d", n)
+}
+
+func getArtistListensURL(artistName string) string {
+	return fmt.Sprintf("/recent?artist=%s", url.QueryEscape(artistName))
 }
 
 func showFormatDate(t time.Time) string {
@@ -63,9 +79,103 @@ func getBackgroundImage(artist *ent.Artist) string {
 	return getArtistImage(artist)
 }
 
+func hasBothBios(artist *ent.Artist) bool {
+	return artist.Bio != "" && artist.AiBiography != "" && artist.Bio != artist.AiBiography
+}
+
+// collectTrackTags collects all unique tags from tracks
+func collectTrackTags(albums []*ent.Album) []string {
+	tagMap := make(map[string]bool)
+	for _, album := range albums {
+		if album.Edges.Tracks != nil {
+			for _, track := range album.Edges.Tracks {
+				for _, tag := range track.Tags {
+					tagMap[tag] = true
+				}
+			}
+		}
+	}
+	tags := make([]string, 0, len(tagMap))
+	for tag := range tagMap {
+		tags = append(tags, tag)
+	}
+	return tags
+}
+
+// collectTrackGenres collects all unique genres from tracks
+func collectTrackGenres(albums []*ent.Album) []string {
+	genreMap := make(map[string]bool)
+	for _, album := range albums {
+		if album.Edges.Tracks != nil {
+			for _, track := range album.Edges.Tracks {
+				for _, genre := range track.Genres {
+					genreMap[genre] = true
+				}
+			}
+		}
+	}
+	genres := make([]string, 0, len(genreMap))
+	for genre := range genreMap {
+		genres = append(genres, genre)
+	}
+	return genres
+}
+
+// collectTrackAITags collects all unique AI tags from tracks
+func collectTrackAITags(albums []*ent.Album) []string {
+	tagMap := make(map[string]bool)
+	for _, album := range albums {
+		if album.Edges.Tracks != nil {
+			for _, track := range album.Edges.Tracks {
+				for _, tag := range track.AiTags {
+					tagMap[tag] = true
+				}
+			}
+		}
+	}
+	tags := make([]string, 0, len(tagMap))
+	for tag := range tagMap {
+		tags = append(tags, tag)
+	}
+	return tags
+}
+
 templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArtist, stats *ArtistStats, cfg *config.Config, currentTimeframe string) {
 	@layouts.Dashboard(fmt.Sprintf("%s | Artists | Spotter", artist.Name), cfg, "/library/artist") {
-		@components.ChartJSScript()
+		<!-- AI Regenerate Modal -->
+		<dialog id="ai-regenerate-modal" class="modal">
+			<div class="modal-box">
+				<h3 class="font-bold text-lg flex items-center gap-2">
+					<span class="icon-[heroicons--sparkles] w-5 h-5 text-accent"></span>
+					Regenerate AI Insights
+				</h3>
+				<p class="py-4">
+					This will regenerate all AI-generated content for <strong>{ artist.Name }</strong>, including the summary, biography, and tags.
+				</p>
+				<p class="text-sm text-base-content/60">
+					This may take a few moments and will use your OpenAI API credits.
+				</p>
+				<div class="modal-action">
+					<form method="dialog">
+						<button class="btn btn-ghost">Cancel</button>
+					</form>
+					<button
+						class="btn btn-primary"
+						hx-post={ fmt.Sprintf("/library/artist/%d/regenerate-ai", artist.ID) }
+						hx-swap="none"
+						hx-indicator="#ai-regenerate-indicator"
+						onclick="document.getElementById('ai-regenerate-modal').close()"
+					>
+						<span id="ai-regenerate-indicator" class="htmx-indicator loading loading-spinner loading-sm"></span>
+						<span class="icon-[heroicons--sparkles] w-4 h-4"></span>
+						Regenerate
+					</button>
+				</div>
+			</div>
+			<form method="dialog" class="modal-backdrop">
+				<button>close</button>
+			</form>
+		</dialog>
 		<!-- Hero Section with Background -->
 		<div class="relative -mx-6 lg:-mx-8 -mt-6 lg:-mt-8 mb-8">
 			<!-- Background Image -->
@@ -77,6 +187,31 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 			} else {
 				<div class="absolute inset-0 h-80 bg-gradient-to-b from-primary/20 to-base-200"></div>
 			}
+			<!-- AI Menu (Top Right) -->
+			<div class="absolute top-4 right-4 z-10">
+				<details class="dropdown dropdown-end">
+					<summary class="btn btn-sm btn-ghost bg-base-100/50 hover:bg-base-100/80 gap-1 list-none cursor-pointer">
+						<span class="icon-[heroicons--sparkles] w-4 h-4 text-accent"></span>
+						<span class="hidden sm:inline">AI</span>
+						<span class="icon-[heroicons--chevron-down] w-3 h-3"></span>
+					</summary>
+					<ul class="dropdown-content z-[1] menu p-2 shadow-lg bg-base-100 rounded-box w-56">
+						<li>
+							<button onclick="document.getElementById('ai-regenerate-modal').showModal(); this.closest('details').removeAttribute('open');">
+								<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
+								Regenerate AI Enrichment
+							</button>
+						</li>
+						<li>
+							<button disabled class="opacity-50">
+								<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
+								Generate Mixtape
+								<span class="badge badge-xs">Soon</span>
+							</button>
+						</li>
+					</ul>
+				</details>
+			</div>
 			<!-- Artist Info -->
 			<div class="relative pt-8 px-6 lg:px-8 pb-8">
 				<div class="max-w-7xl mx-auto">
@@ -98,16 +233,22 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 						<!-- Artist Details -->
 						<div class="flex-1 min-w-0">
 							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ artist.Name }</h1>
-							<!-- Genres in Header -->
-							if len(artist.Genres) > 0 {
-								<div class="flex flex-wrap gap-1 mb-3">
+							<!-- Genres and AI Tags -->
+							if len(artist.Genres) > 0 || len(artist.AiTags) > 0 {
+								<div class="flex flex-wrap gap-1.5 mb-3">
 									for i, genre := range artist.Genres {
-										if i < 8 {
-											<span class="badge badge-sm badge-primary">{ genre }</span>
+										if i < 6 {
+											<span class="badge badge-sm badge-primary px-2 py-0.5">{ genre }</span>
 										}
 									}
-									if len(artist.Genres) > 8 {
-										<span class="badge badge-sm badge-ghost">+{ fmt.Sprintf("%d", len(artist.Genres)-8) } more</span>
+									for _, tag := range artist.AiTags {
+										<span class="badge badge-sm badge-accent gap-1 px-2 py-0.5">
+											<span class="icon-[heroicons--sparkles] w-2.5 h-2.5"></span>
+											{ tag }
+										</span>
+									}
+									if len(artist.Genres) > 6 {
+										<span class="badge badge-sm badge-ghost px-2 py-0.5">+{ fmt.Sprintf("%d", len(artist.Genres)-6) } more</span>
 									}
 								</div>
 							}
@@ -159,6 +300,9 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 								if artist.LastfmURL != "" {
 									@components.ExternalLinkBadge("Last.fm", artist.LastfmURL, "icon-[simple-icons--lastdotfm]", "badge-error")
 								}
+								if artist.LidarrID != "" && artist.LidarrID != "0" && artist.MusicbrainzID != "" {
+									@components.ExternalLinkBadge("Lidarr", fmt.Sprintf("%s/artist/%s", cfg.Lidarr.BaseURL, artist.MusicbrainzID), "icon-[heroicons--check-badge]", "badge-success")
+								}
 							</div>
 						</div>
 					</div>
@@ -166,122 +310,166 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 			</div>
 		</div>
 		<div class="max-w-7xl mx-auto">
-			<!-- Main Listens by Provider Chart -->
-			<div class="mb-8">
-				@ProviderHistoryChart(artist.ID, stats.ProviderHistory, currentTimeframe)
-			</div>
 			<!-- Stats Grid -->
 			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-				@components.StatCard("Total Listens", showFormatNumber(stats.TotalListens), "all time", "icon-[heroicons--play-circle]", "text-primary")
-				@components.StatCard("Albums", showFormatNumber(stats.UniqueAlbums), "in your library", "icon-[heroicons--square-3-stack-3d]", "text-secondary")
-				@components.StatCard("Tracks", showFormatNumber(stats.UniqueTracks), "unique songs", "icon-[heroicons--musical-note]", "text-accent")
+				@components.StatCardLink("Total Listens", showFormatNumber(stats.TotalListens), "all time", "icon-[heroicons--play-circle]", "text-primary", getArtistListensURL(artist.Name))
+				@components.StatCardLink("Albums", showFormatNumber(stats.UniqueAlbums), "in your library", "icon-[heroicons--square-3-stack-3d]", "text-secondary", fmt.Sprintf("/library/albums?artist=%s", url.QueryEscape(artist.Name)))
+				@components.StatCardLink("Tracks", showFormatNumber(stats.UniqueTracks), "unique songs", "icon-[heroicons--musical-note]", "text-accent", fmt.Sprintf("/library/tracks?artist=%s", url.QueryEscape(artist.Name)))
 				@components.StatCard("First Listen", showFormatDate(stats.FirstListen), "discovered", "icon-[heroicons--calendar]", "text-info")
 			</div>
-			<!-- Bio Section -->
-			if artist.Bio != "" {
-				<div class="card bg-base-100 shadow-xl mb-8">
+			<!-- AI Summary Card -->
+			@components.AISummaryCard(artist.AiSummary, "AI Insights")
+			<!-- Biography Section with AI Toggle -->
+			if artist.Bio != "" || artist.AiBiography != "" {
+				<div id="bio-card" class={ "card bg-base-100 border-l-4 shadow-xl mb-8", templ.KV("border-accent shadow-accent/10", artist.AiBiography != ""), templ.KV("border-base-content/20", artist.AiBiography == "") }>
 					<div class="card-body">
-						<h3 class="card-title">
-							<span class="icon-[heroicons--document-text] w-5 h-5"></span>
-							Biography
-						</h3>
-						<div class="prose prose-sm max-w-none text-base-content/80">
-							{ artist.Bio }
+						<div class="flex items-center justify-between">
+							<h3 class="card-title">
+								<span class="icon-[heroicons--document-text] w-5 h-5"></span>
+								Biography
+							</h3>
+							<!-- AI Toggle Button (only if both bios exist and are different) -->
+							if hasBothBios(artist) {
+								<button
+									id="bio-toggle-btn"
+									class="btn btn-sm btn-square btn-accent"
+									onclick="toggleBio()"
+									title="Toggle between AI and original biography"
+								>
+									<span id="bio-toggle-icon-ai" class="icon-[heroicons--sparkles] w-4 h-4"></span>
+									<span id="bio-toggle-icon-web" class="icon-[heroicons--globe-alt] w-4 h-4 hidden"></span>
+								</button>
+							}
 						</div>
+						<!-- AI Biography (shown by default if available) -->
+						if artist.AiBiography != "" {
+							<div id="ai-bio" class="prose prose-sm max-w-none text-base-content/80 mt-4">
+								{ artist.AiBiography }
+								<p class="text-xs text-base-content/40 mt-4 flex items-center gap-1 not-prose">
+									<span class="icon-[heroicons--sparkles] w-3 h-3 text-accent"></span>
+									AI-generated biography
+									if artist.LastAiEnrichedAt != nil {
+										• Generated { showFormatEnrichedTime(artist.LastAiEnrichedAt) }
+									}
+								</p>
+							</div>
+						}
+						<!-- Original Biography (hidden by default if AI bio exists) -->
+						if artist.Bio != "" {
+							<div id="original-bio" class={ "prose prose-sm max-w-none text-base-content/80 mt-4", templ.KV("hidden", artist.AiBiography != "") }>
+								{ artist.Bio }
+								<p class="text-xs text-base-content/40 mt-4 not-prose">
+									Original biography from Last.fm
+								</p>
+							</div>
+						}
 					</div>
 				</div>
+				if hasBothBios(artist) {
+					<script>
+						function toggleBio() {
+							const aiBio = document.getElementById('ai-bio');
+							const originalBio = document.getElementById('original-bio');
+							const toggleBtn = document.getElementById('bio-toggle-btn');
+							const bioCard = document.getElementById('bio-card');
+							const iconAi = document.getElementById('bio-toggle-icon-ai');
+							const iconWeb = document.getElementById('bio-toggle-icon-web');
+
+							if (aiBio.classList.contains('hidden')) {
+								// Show AI bio
+								aiBio.classList.remove('hidden');
+								originalBio.classList.add('hidden');
+								toggleBtn.classList.add('btn-accent');
+								toggleBtn.classList.remove('btn-ghost');
+								bioCard.classList.add('border-accent', 'shadow-accent/10');
+								bioCard.classList.remove('border-base-content/20');
+								iconAi.classList.remove('hidden');
+								iconWeb.classList.add('hidden');
+							} else {
+								// Show original bio
+								aiBio.classList.add('hidden');
+								originalBio.classList.remove('hidden');
+								toggleBtn.classList.remove('btn-accent');
+								toggleBtn.classList.add('btn-ghost');
+								bioCard.classList.remove('border-accent', 'shadow-accent/10');
+								bioCard.classList.add('border-base-content/20');
+								iconAi.classList.add('hidden');
+								iconWeb.classList.remove('hidden');
+							}
+						}
+					</script>
+				}
 			}
-			<!-- Listening Pattern Charts -->
-			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-				<!-- By Hour -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--clock] w-5 h-5"></span>
-							Listens by Hour
-						</h3>
-						@components.BarChart(
-							fmt.Sprintf("artist-%d-hour", artist.ID),
-							"",
-							stats.ListensByHour,
-							"oklch(var(--p))",
-							"200px",
-						)
-					</div>
-				</div>
-				<!-- By Day of Week -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--calendar-days] w-5 h-5"></span>
-							Listens by Day
-						</h3>
-						@components.BarChart(
-							fmt.Sprintf("artist-%d-day", artist.ID),
-							"",
-							stats.ListensByDayOfWeek,
-							"oklch(var(--s))",
-							"200px",
-						)
-					</div>
-				</div>
-				<!-- By Month -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--calendar] w-5 h-5"></span>
-							Listens by Month
-						</h3>
-						@components.BarChart(
-							fmt.Sprintf("artist-%d-month", artist.ID),
-							"",
-							stats.ListensByMonth,
-							"oklch(var(--a))",
-							"200px",
-						)
-					</div>
-				</div>
-			</div>
 			<!-- Top Tracks -->
 			if len(stats.TopTracks) > 0 {
 				<div class="card bg-base-100 shadow-xl mb-8">
 					<div class="card-body">
-						<h3 class="card-title">
-							<span class="icon-[heroicons--fire] w-5 h-5 text-error"></span>
-							Top Tracks
-						</h3>
-						<div class="overflow-x-auto">
-							<table class="table table-zebra">
-								<thead>
-									<tr>
-										<th class="w-12">#</th>
-										<th>Track</th>
-										<th>Album</th>
-										<th class="text-right">Plays</th>
-									</tr>
-								</thead>
-								<tbody>
-									for i, tc := range stats.TopTracks {
-										<tr>
-											<td class="text-base-content/50">{ fmt.Sprintf("%d", i+1) }</td>
-											<td>
-												<a href={ templ.URL(fmt.Sprintf("/library/track/%d", tc.Track.ID)) } class="font-medium hover:text-primary hover:underline">
-													{ tc.Track.Name }
-												</a>
-											</td>
-											<td class="text-base-content/60">
-												if tc.Track.Edges.Album != nil {
-													<a href={ templ.URL(fmt.Sprintf("/library/album/%d", tc.Track.Edges.Album.ID)) } class="hover:text-primary hover:underline">
-														{ tc.Track.Edges.Album.Name }
-													</a>
-												}
-											</td>
-											<td class="text-right font-mono">{ showFormatNumber(tc.ListenCount) }</td>
-										</tr>
-									}
-								</tbody>
-							</table>
+						<div class="flex items-center justify-between">
+							<h3 class="card-title">
+								<span class="icon-[heroicons--fire] w-5 h-5 text-error"></span>
+								Top Tracks
+							</h3>
+							@components.ColumnToggleMenu("top-tracks-table", []components.ColumnOption{
+								{Value: "col-index", Label: "#", DefaultVisible: true},
+								{Value: "col-track", Label: "Track", DefaultVisible: true},
+								{Value: "col-artist", Label: "Artist", DefaultVisible: false},
+								{Value: "col-album", Label: "Album", DefaultVisible: true},
+								{Value: "col-duration", Label: "Duration", DefaultVisible: true},
+								{Value: "col-popularity", Label: "Popularity", DefaultVisible: true},
+								{Value: "col-plays", Label: "Plays", DefaultVisible: true},
+							})
 						</div>
+						@components.TrackTable("top-tracks-table", toTrackRowsFromStats(stats.TopTracks), []string{"#", "track", "album", "duration", "popularity", "plays"}, nil, components.SortConfig{})
+					</div>
+				</div>
+			}
+			<!-- Track Tags & Genres Section -->
+			if trackTags := collectTrackTags(albums); len(trackTags) > 0 || len(collectTrackGenres(albums)) > 0 || len(collectTrackAITags(albums)) > 0 {
+				<div class="card bg-base-100 shadow-xl mb-8">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--tag] w-5 h-5"></span>
+							Tags & Genres from Tracks
+						</h3>
+						<!-- Track Genres -->
+						if trackGenres := collectTrackGenres(albums); len(trackGenres) > 0 {
+							<div class="mb-4">
+								<h4 class="text-sm font-medium text-base-content/60 mb-2">Genres</h4>
+								<div class="flex flex-wrap gap-1.5">
+									for _, genre := range trackGenres {
+										<span class="badge badge-sm badge-primary px-2 py-0.5">{ genre }</span>
+									}
+								</div>
+							</div>
+						}
+						<!-- Track Tags (ID3) -->
+						if len(trackTags) > 0 {
+							<div class="mb-4">
+								<h4 class="text-sm font-medium text-base-content/60 mb-2">ID3 Tags</h4>
+								<div class="flex flex-wrap gap-1.5">
+									for _, tag := range trackTags {
+										<span class="badge badge-sm badge-secondary px-2 py-0.5">{ tag }</span>
+									}
+								</div>
+							</div>
+						}
+						<!-- Track AI Tags -->
+						if trackAITags := collectTrackAITags(albums); len(trackAITags) > 0 {
+							<div>
+								<h4 class="text-sm font-medium text-base-content/60 mb-2 flex items-center gap-1">
+									<span class="icon-[heroicons--sparkles] w-3 h-3 text-accent"></span>
+									AI-Generated Tags
+								</h4>
+								<div class="flex flex-wrap gap-1.5">
+									for _, tag := range trackAITags {
+										<span class="badge badge-sm badge-accent gap-1 px-2 py-0.5">
+											<span class="icon-[heroicons--sparkles] w-2.5 h-2.5"></span>
+											{ tag }
+										</span>
+									}
+								</div>
+							</div>
+						}
 					</div>
 				</div>
 			}
@@ -323,9 +511,10 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 					@components.MetadataTable([]components.MetadataRow{
 						{Label: "Sort Name", Value: showGetOrDefault(artist.SortName, artist.Name)},
 						{Label: "MusicBrainz ID", Value: showGetOrDefault(artist.MusicbrainzID, "N/A"), Link: getMBLink(artist.MusicbrainzID)},
-						{Label: "Spotify ID", Value: showGetOrDefault(artist.SpotifyID, "N/A"), Link: getMBLink(artist.SpotifyID)},
+						{Label: "Spotify ID", Value: showGetOrDefault(artist.SpotifyID, "N/A"), Link: getSpotifyArtistLink(artist.SpotifyID)},
 						{Label: "Navidrome ID", Value: showGetOrDefault(artist.NavidromeID, "N/A")},
 						{Label: "Last Enriched", Value: showFormatEnrichedTime(artist.LastEnrichedAt)},
+						{Label: "AI Enriched", Value: showFormatEnrichedTime(artist.LastAiEnrichedAt)},
 						{Label: "Created", Value: showFormatDate(artist.CreatedAt)},
 						{Label: "Updated", Value: showFormatDate(artist.UpdatedAt)},
 					})
@@ -442,32 +631,29 @@ templ providerHistoryScript(artistID int, data components.StackedChartData) {
 }
 
 templ AlbumTile(album *ent.Album) {
-	<a href={ templ.URL(fmt.Sprintf("/library/album/%d", album.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
-		<figure class="aspect-square bg-base-300">
-			if album.Edges.Images != nil && len(album.Edges.Images) > 0 {
-				if img := getPrimaryAlbumImage(album); img != "" {
-					<img src={ img } alt={ album.Name } class="w-full h-full object-cover"/>
-				} else {
-					<div class="w-full h-full flex items-center justify-center">
-						<span class="icon-[heroicons--square-3-stack-3d] w-12 h-12 text-base-content/20"></span>
-					</div>
-				}
+	<a href={ templ.URL(fmt.Sprintf("/library/album/%d", album.ID)) } class="card bg-base-100 shadow-md hover:shadow-xl transition-all hover:-translate-y-1">
+		<figure class="relative pt-[100%]">
+			if img := getPrimaryAlbumImage(album); img != "" {
+				<img src={ img } alt={ album.Name } class="absolute inset-0 w-full h-full object-cover"/>
 			} else {
-				<div class="w-full h-full flex items-center justify-center">
-					<span class="icon-[heroicons--square-3-stack-3d] w-12 h-12 text-base-content/20"></span>
+				<div class="absolute inset-0 bg-base-300 flex items-center justify-center">
+					<span class="icon-[heroicons--square-3-stack-3d] w-16 h-16 text-base-content/20"></span>
+				</div>
+			}
+			if album.Year > 0 {
+				<div class="absolute bottom-2 right-2 badge badge-neutral badge-sm px-2 py-0.5">
+					<span>{ fmt.Sprintf("%d", album.Year) }</span>
 				</div>
 			}
 		</figure>
 		<div class="card-body p-3">
-			<h4 class="card-title text-sm line-clamp-1">{ album.Name }</h4>
-			<div class="flex items-center justify-between text-xs text-base-content/60">
-				if album.Year > 0 {
-					<span>{ fmt.Sprintf("%d", album.Year) }</span>
-				} else {
-					<span>-</span>
+			<h4 class="font-semibold text-sm line-clamp-1">{ album.Name }</h4>
+			<div class="flex items-center gap-2 text-xs text-base-content/60">
+				if album.TotalTracks > 0 {
+					<span>{ fmt.Sprintf("%d tracks", album.TotalTracks) }</span>
 				}
-				if album.AlbumType != "" {
-					<span class="badge badge-ghost badge-xs">{ album.AlbumType }</span>
+				if album.AlbumType != "" && album.AlbumType != "album" {
+					<span class="badge badge-xs badge-ghost px-1.5 py-0.5">{ album.AlbumType }</span>
 				}
 			</div>
 		</div>
@@ -475,21 +661,20 @@ templ AlbumTile(album *ent.Album) {
 }
 
 templ PlaylistTile(playlist *ent.Playlist, trackCount int) {
-	<a href={ templ.URL(fmt.Sprintf("/playlists/%d", playlist.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
-		<figure class="aspect-square bg-base-300">
+	<a href={ templ.URL(fmt.Sprintf("/playlists/%d", playlist.ID)) } class="card bg-base-100 shadow-md hover:shadow-xl transition-all hover:-translate-y-1">
+		<figure class="relative pt-[100%]">
 			if playlist.ImageURL != "" {
-				<img src={ playlist.ImageURL } alt={ playlist.Name } class="w-full h-full object-cover"/>
+				<img src={ playlist.ImageURL } alt={ playlist.Name } class="absolute inset-0 w-full h-full object-cover"/>
 			} else {
-				<div class="w-full h-full flex items-center justify-center">
-					<span class="icon-[heroicons--queue-list] w-12 h-12 text-base-content/20"></span>
+				<div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center">
+					<span class="icon-[heroicons--queue-list] w-16 h-16 text-base-content/20"></span>
 				</div>
 			}
 		</figure>
 		<div class="card-body p-3">
-			<h4 class="card-title text-sm line-clamp-1">{ playlist.Name }</h4>
-			<div class="flex items-center justify-between text-xs text-base-content/60">
-				<span>{ fmt.Sprintf("%d tracks", trackCount) } from artist</span>
-				<span class={ "badge badge-xs", components.ProviderBadgeClass(playlist.Source) }>{ playlist.Source }</span>
+			<h4 class="font-semibold text-sm line-clamp-1">{ playlist.Name }</h4>
+			<div class="text-xs text-base-content/60">
+				<span>{ fmt.Sprintf("%d tracks", trackCount) } by this artist</span>
 			</div>
 		</div>
 	</a>

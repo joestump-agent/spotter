@@ -641,3 +641,173 @@ collectLoop:
 	}
 	assert.True(t, hasNotification, "Should have received a notification event")
 }
+
+func TestSyncer_PersistsPlaylistTracks(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Spotify auth
+	user := createTestUser(t, client)
+	_, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock Spotify provider with playlists that have tracks
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks:       []providers.Track{},
+		playlists: []providers.Playlist{
+			{
+				ID:            "playlist-1",
+				Name:          "My Test Playlist",
+				Description:   "A playlist for testing",
+				ImageURL:      "https://example.com/image.jpg",
+				ExternalURL:   "https://open.spotify.com/playlist/playlist-1",
+				TrackCount:    3,
+				UniqueArtists: 2,
+				UniqueAlbums:  2,
+				Tracks: []providers.Track{
+					{
+						ID:         "track-1",
+						Name:       "First Track",
+						Artist:     "Artist A",
+						Album:      "Album X",
+						DurationMs: 180000,
+						URL:        "https://open.spotify.com/track/track-1",
+					},
+					{
+						ID:         "track-2",
+						Name:       "Second Track",
+						Artist:     "Artist B",
+						Album:      "Album Y",
+						DurationMs: 240000,
+						URL:        "https://open.spotify.com/track/track-2",
+					},
+					{
+						ID:         "track-3",
+						Name:       "Third Track",
+						Artist:     "Artist A",
+						Album:      "Album X",
+						DurationMs: 200000,
+						URL:        "https://open.spotify.com/track/track-3",
+					},
+				},
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify playlist was persisted
+	playlists, err := client.Playlist.Query().All(ctx)
+	require.NoError(t, err)
+	require.Len(t, playlists, 1, "Should have persisted 1 playlist")
+
+	// Verify playlist tracks were persisted
+	playlistTracks, err := client.PlaylistTrack.Query().All(ctx)
+	require.NoError(t, err)
+	assert.Len(t, playlistTracks, 3, "Should have persisted 3 playlist tracks")
+
+	// Verify track details
+	for i, pt := range playlistTracks {
+		assert.Equal(t, i, pt.Position, "Track position should match index")
+		assert.NotEmpty(t, pt.TrackName, "Track name should not be empty")
+		assert.NotEmpty(t, pt.ArtistName, "Artist name should not be empty")
+	}
+
+	// Verify first track details
+	assert.Equal(t, "First Track", playlistTracks[0].TrackName)
+	assert.Equal(t, "Artist A", playlistTracks[0].ArtistName)
+	assert.Equal(t, "Album X", playlistTracks[0].AlbumName)
+	assert.Equal(t, 180000, *playlistTracks[0].DurationMs)
+	assert.Equal(t, "track-1", playlistTracks[0].RemoteID)
+}
+
+func TestSyncer_UpdatesPlaylistTracks(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with Spotify auth
+	user := createTestUser(t, client)
+	_, err := client.SpotifyAuth.Create().
+		SetUser(user).
+		SetAccessToken("test_access_token").
+		SetRefreshToken("test_refresh_token").
+		SetExpiry(time.Now().Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Create an existing playlist with tracks
+	existingPlaylist, err := client.Playlist.Create().
+		SetUser(user).
+		SetRemoteID("playlist-1").
+		SetName("My Playlist").
+		SetSource("spotify").
+		SetTrackCount(1).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Create an existing track
+	_, err = client.PlaylistTrack.Create().
+		SetPlaylist(existingPlaylist).
+		SetTrackName("Old Track").
+		SetArtistName("Old Artist").
+		SetPosition(0).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock Spotify provider with updated playlist
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks:       []providers.Track{},
+		playlists: []providers.Playlist{
+			{
+				ID:            "playlist-1",
+				Name:          "My Playlist",
+				TrackCount:    2,
+				UniqueArtists: 2,
+				UniqueAlbums:  2,
+				Tracks: []providers.Track{
+					{
+						ID:     "new-track-1",
+						Name:   "New Track 1",
+						Artist: "New Artist 1",
+						Album:  "New Album 1",
+					},
+					{
+						ID:     "new-track-2",
+						Name:   "New Track 2",
+						Artist: "New Artist 2",
+						Album:  "New Album 2",
+					},
+				},
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify playlist tracks were replaced
+	playlistTracks, err := client.PlaylistTrack.Query().All(ctx)
+	require.NoError(t, err)
+	assert.Len(t, playlistTracks, 2, "Should have 2 tracks after update")
+
+	// Verify the old track is gone and new tracks are present
+	trackNames := make([]string, len(playlistTracks))
+	for i, pt := range playlistTracks {
+		trackNames[i] = pt.TrackName
+	}
+	assert.Contains(t, trackNames, "New Track 1")
+	assert.Contains(t, trackNames, "New Track 2")
+	assert.NotContains(t, trackNames, "Old Track")
+}

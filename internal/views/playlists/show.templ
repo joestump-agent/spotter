@@ -1,7 +1,6 @@
 package playlists
 
 import (
-	"encoding/json"
 	"fmt"
 	"spotter/ent"
 	"spotter/internal/config"
@@ -9,34 +8,6 @@ import (
 	"spotter/internal/views/layouts"
 	"time"
 )
-
-// PlaylistStats holds statistics for a playlist
-type PlaylistStats struct {
-	TotalListens       int
-	UniqueArtists      int
-	UniqueTracks       int
-	FirstListen        time.Time
-	LastListen         time.Time
-	ListensByProvider  []components.ChartDataPoint
-	ListensByHour      []components.ChartDataPoint
-	ListensByDayOfWeek []components.ChartDataPoint
-	ListensByMonth     []components.ChartDataPoint
-	TopArtists         []components.ChartDataPoint
-	TopTracks          []components.ChartDataPoint
-	ProviderHistory    components.StackedChartData
-	GenreBreakdown     []components.ChartDataPoint
-}
-
-// PlaylistTrack represents a track in the playlist with listen data
-type PlaylistTrack struct {
-	Name        string
-	ArtistName  string
-	AlbumName   string
-	TrackID     int
-	ArtistID    int
-	AlbumID     int
-	ListenCount int
-}
 
 func showFormatDate(t time.Time) string {
 	if t.IsZero() {
@@ -52,17 +23,8 @@ func showGetOrDefault(value, defaultVal string) string {
 	return value
 }
 
-func showToJSON(v interface{}) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "[]"
-	}
-	return string(b)
-}
-
-templ Show(playlist *ent.Playlist, tracks []PlaylistTrack, stats *PlaylistStats, cfg *config.Config, currentTimeframe string) {
+templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *config.Config) {
 	@layouts.Dashboard(fmt.Sprintf("%s | Playlists | Spotter", playlist.Name), cfg, "/playlists") {
-		@components.ChartJSScript()
 		<!-- Hero Section -->
 		<div class="relative -mx-6 lg:-mx-8 -mt-6 lg:-mt-8 mb-8">
 			<!-- Background Blur -->
@@ -132,59 +94,33 @@ templ Show(playlist *ent.Playlist, tracks []PlaylistTrack, stats *PlaylistStats,
 			</div>
 		</div>
 		<div class="max-w-7xl mx-auto">
-			<!-- Main Listens by Provider Chart -->
-			<div class="mb-8">
-				@ProviderHistoryChart(playlist.ID, stats.ProviderHistory, currentTimeframe)
-			</div>
-			<!-- Listening Pattern Charts -->
-			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-				<!-- By Hour -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--clock] w-5 h-5"></span>
-							Listens by Hour
+			<!-- Tracks -->
+			<div class="card bg-base-100 shadow-xl mb-8">
+				<div class="card-body">
+					<div class="flex items-center justify-between">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--queue-list] w-5 h-5"></span>
+							Tracks
+							<span class="badge badge-ghost badge-sm">{ fmt.Sprintf("%d", len(tracks)) }</span>
 						</h3>
-						@components.BarChart(
-							fmt.Sprintf("playlist-%d-hour", playlist.ID),
-							"",
-							stats.ListensByHour,
-							"oklch(var(--p))",
-							"200px",
-						)
+						@components.ColumnToggleMenu("playlist-tracks-table", []components.ColumnOption{
+							{Value: "col-index", Label: "#", DefaultVisible: true},
+							{Value: "col-track", Label: "Track", DefaultVisible: true},
+							{Value: "col-artist", Label: "Artist", DefaultVisible: true},
+							{Value: "col-album", Label: "Album", DefaultVisible: true},
+							{Value: "col-duration", Label: "Duration", DefaultVisible: true},
+							{Value: "col-popularity", Label: "Popularity", DefaultVisible: false},
+						})
 					</div>
-				</div>
-				<!-- By Day of Week -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--calendar-days] w-5 h-5"></span>
-							Listens by Day
-						</h3>
-						@components.BarChart(
-							fmt.Sprintf("playlist-%d-day", playlist.ID),
-							"",
-							stats.ListensByDayOfWeek,
-							"oklch(var(--s))",
-							"200px",
-						)
-					</div>
-				</div>
-				<!-- By Month -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--calendar] w-5 h-5"></span>
-							Listens by Month
-						</h3>
-						@components.BarChart(
-							fmt.Sprintf("playlist-%d-month", playlist.ID),
-							"",
-							stats.ListensByMonth,
-							"oklch(var(--a))",
-							"200px",
-						)
-					</div>
+					if len(tracks) == 0 {
+						<div class="text-center py-8">
+							<span class="icon-[heroicons--musical-note] w-12 h-12 text-base-content/30 mx-auto mb-4"></span>
+							<p class="text-base-content/60">No tracks in this playlist yet.</p>
+							<p class="text-base-content/40 text-sm mt-1">Sync your playlists to import tracks.</p>
+						</div>
+					} else {
+						@components.TrackTable("playlist-tracks-table", tracks, []string{"#", "track", "artist", "album", "duration"}, nil, components.SortConfig{})
+					}
 				</div>
 			</div>
 			<!-- Metadata Table -->
@@ -209,112 +145,6 @@ templ Show(playlist *ent.Playlist, tracks []PlaylistTrack, stats *PlaylistStats,
 			</div>
 		</div>
 	}
-}
-
-templ ProviderHistoryChart(playlistID int, data components.StackedChartData, currentTimeframe string) {
-	<div class="card bg-base-100 shadow-xl">
-		<div class="card-body">
-			<div class="flex items-center justify-between mb-4">
-				<h3 class="card-title">
-					<span class="icon-[heroicons--chart-bar] w-5 h-5"></span>
-					Listens Over Time
-				</h3>
-				<select
-					class="select select-bordered select-sm w-40"
-					hx-get={ fmt.Sprintf("/playlists/%d/chart", playlistID) }
-					hx-target="#provider-history-chart"
-					hx-swap="innerHTML"
-					name="timeframe"
-				>
-					<option value="30d" selected?={ currentTimeframe == "30d" }>Last 30 days</option>
-					<option value="90d" selected?={ currentTimeframe == "90d" }>Last 90 days</option>
-					<option value="6m" selected?={ currentTimeframe == "6m" }>Last 6 months</option>
-					<option value="1y" selected?={ currentTimeframe == "1y" }>Last year</option>
-					<option value="all" selected?={ currentTimeframe == "all" }>All time</option>
-				</select>
-			</div>
-			<div id="provider-history-chart">
-				@ProviderHistoryChartContent(playlistID, data)
-			</div>
-		</div>
-	</div>
-}
-
-templ ProviderHistoryChartContent(playlistID int, data components.StackedChartData) {
-	<div class="w-full" style="height: 300px">
-		<canvas id={ fmt.Sprintf("playlist-%d-provider-history", playlistID) }></canvas>
-	</div>
-	@providerHistoryScript(playlistID, data)
-}
-
-templ providerHistoryScript(playlistID int, data components.StackedChartData) {
-	<script>
-		(function() {
-			const ctx = document.getElementById('playlist-' + {{ playlistID }} + '-provider-history');
-			if (!ctx) return;
-
-			// Destroy existing chart if any
-			const existingChart = Chart.getChart(ctx);
-			if (existingChart) {
-				existingChart.destroy();
-			}
-
-			const chartData = JSON.parse('{{ showToJSON(data) }}');
-
-			new Chart(ctx, {
-				type: 'bar',
-				data: {
-					labels: chartData.labels,
-					datasets: chartData.datasets.map(ds => ({
-						label: ds.label,
-						data: ds.data,
-						backgroundColor: ds.backgroundColor,
-						borderColor: ds.borderColor,
-						borderWidth: 1,
-						borderRadius: 2
-					}))
-				},
-				options: {
-					responsive: true,
-					maintainAspectRatio: false,
-					plugins: {
-						legend: {
-							display: true,
-							position: 'bottom',
-							labels: {
-								color: 'oklch(var(--bc))',
-								usePointStyle: true,
-								padding: 20
-							}
-						}
-					},
-					scales: {
-						y: {
-							stacked: true,
-							beginAtZero: true,
-							ticks: {
-								color: 'oklch(var(--bc) / 0.7)'
-							},
-							grid: {
-								color: 'oklch(var(--bc) / 0.1)'
-							}
-						},
-						x: {
-							stacked: true,
-							ticks: {
-								color: 'oklch(var(--bc) / 0.7)',
-								maxRotation: 45,
-								minRotation: 0
-							},
-							grid: {
-								display: false
-							}
-						}
-					}
-				}
-			});
-		})();
-	</script>
 }
 
 func capitalizeFirst(s string) string {

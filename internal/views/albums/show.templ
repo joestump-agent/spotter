@@ -3,10 +3,12 @@ package albums
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/views/components"
 	"spotter/internal/views/layouts"
+	"strings"
 	"time"
 )
 
@@ -28,6 +30,22 @@ type AlbumStats struct {
 type TrackWithListens struct {
 	Track       *ent.Track
 	ListenCount int
+}
+
+func toTrackRowsFromAlbumStats(tracks []TrackWithListens) []components.TrackTableRow {
+	rows := make([]components.TrackTableRow, len(tracks))
+	for i, t := range tracks {
+		index := i + 1
+		if t.Track.TrackNumber != nil {
+			index = *t.Track.TrackNumber
+		}
+		rows[i] = components.TrackTableRow{
+			Track:     t.Track,
+			PlayCount: t.ListenCount,
+			Index:     index,
+		}
+	}
+	return rows
 }
 
 func formatNumber(n int) string {
@@ -85,6 +103,13 @@ func formatEnrichedTime(t time.Time) string {
 	return t.Local().Format("Jan 02, 2006 at 3:04 PM")
 }
 
+func formatAiEnrichedTime(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return "Never"
+	}
+	return t.Local().Format("Jan 02, 2006 at 3:04 PM")
+}
+
 func getAllTags(album *ent.Album, tracks []*ent.Track) []string {
 	tagMap := make(map[string]bool)
 	for _, tag := range album.Tags {
@@ -129,9 +154,97 @@ func getTotalDuration(tracks []*ent.Track) int {
 	return total
 }
 
+func extractTracks(tracks []TrackWithListens) []*ent.Track {
+	result := make([]*ent.Track, 0, len(tracks))
+	for _, t := range tracks {
+		result = append(result, t.Track)
+	}
+	return result
+}
+
+func collectAndSortAllTags(album *ent.Album, tracks []TrackWithListens) []string {
+	tagsSet := make(map[string]struct{})
+	for _, genre := range getAllGenres(album, extractTracks(tracks)) {
+		tagsSet[strings.Title(strings.ToLower(genre))] = struct{}{}
+	}
+	for _, tag := range album.AiTags {
+		tagsSet[strings.Title(strings.ToLower(tag))] = struct{}{}
+	}
+	for _, tag := range album.Tags {
+		tagsSet[strings.Title(strings.ToLower(tag))] = struct{}{}
+	}
+	var allTags []string
+	for tag := range tagsSet {
+		allTags = append(allTags, tag)
+	}
+	sort.Strings(allTags)
+	return allTags
+}
+
+func truncateText(text string, maxLen int) string {
+	if len(text) <= maxLen {
+		return text
+	}
+	return text[:maxLen] + "..."
+}
+
+func formatYear(year int) string {
+	if year <= 0 {
+		return "Unknown"
+	}
+	return fmt.Sprintf("%d", year)
+}
+
+func getMBAlbumLink(mbid string) string {
+	if mbid == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://musicbrainz.org/release-group/%s", mbid)
+}
+
+func getSpotifyAlbumLink(spotifyID string) string {
+	if spotifyID == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://open.spotify.com/album/%s", spotifyID)
+}
+
 templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *config.Config, currentTimeframe string) {
 	@layouts.Dashboard(fmt.Sprintf("%s | Albums | Spotter", album.Name), cfg, "/library/album") {
-		@components.ChartJSScript()
+		<!-- AI Regenerate Modal -->
+		<dialog id="ai-regenerate-modal" class="modal">
+			<div class="modal-box">
+				<h3 class="font-bold text-lg flex items-center gap-2">
+					<span class="icon-[heroicons--sparkles] w-5 h-5 text-accent"></span>
+					Regenerate AI Insights
+				</h3>
+				<p class="py-4">
+					This will regenerate all AI-generated content for <strong>{ album.Name }</strong>, including the summary and tags.
+				</p>
+				<p class="text-sm text-base-content/60">
+					This may take a few moments and will use your OpenAI API credits.
+				</p>
+				<div class="modal-action">
+					<form method="dialog">
+						<button class="btn btn-ghost">Cancel</button>
+					</form>
+					<button
+						class="btn btn-primary"
+						hx-post={ fmt.Sprintf("/library/album/%d/regenerate-ai", album.ID) }
+						hx-swap="none"
+						hx-indicator="#ai-regenerate-indicator"
+						onclick="document.getElementById('ai-regenerate-modal').close()"
+					>
+						<span id="ai-regenerate-indicator" class="htmx-indicator loading loading-spinner loading-sm"></span>
+						<span class="icon-[heroicons--sparkles] w-4 h-4"></span>
+						Regenerate
+					</button>
+				</div>
+			</div>
+			<form method="dialog" class="modal-backdrop">
+				<button>close</button>
+			</form>
+		</dialog>
 		<!-- Hero Section -->
 		<div class="relative -mx-6 lg:-mx-8 -mt-6 lg:-mt-8 mb-8">
 			<!-- Background Blur -->
@@ -143,6 +256,31 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 			} else {
 				<div class="absolute inset-0 h-96 bg-gradient-to-b from-secondary/20 to-base-200"></div>
 			}
+			<!-- AI Menu (Top Right) -->
+			<div class="absolute top-4 right-4 z-10">
+				<details class="dropdown dropdown-end">
+					<summary class="btn btn-sm btn-ghost bg-base-100/50 hover:bg-base-100/80 gap-1 list-none cursor-pointer">
+						<span class="icon-[heroicons--sparkles] w-4 h-4 text-accent"></span>
+						<span class="hidden sm:inline">AI</span>
+						<span class="icon-[heroicons--chevron-down] w-3 h-3"></span>
+					</summary>
+					<ul class="dropdown-content z-[1] menu p-2 shadow-lg bg-base-100 rounded-box w-56">
+						<li>
+							<button onclick="document.getElementById('ai-regenerate-modal').showModal(); this.closest('details').removeAttribute('open');">
+								<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
+								Regenerate AI Enrichment
+							</button>
+						</li>
+						<li>
+							<button disabled class="opacity-50">
+								<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
+								Generate Mixtape
+								<span class="badge badge-xs">Soon</span>
+							</button>
+						</li>
+					</ul>
+				</details>
+			</div>
 			<!-- Album Info -->
 			<div class="relative pt-8 px-6 lg:px-8 pb-8">
 				<div class="max-w-7xl mx-auto">
@@ -164,21 +302,16 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ album.Name }</h1>
 							<!-- Artist Link -->
 							if album.Edges.Artist != nil {
-								<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", album.Edges.Artist.ID)) } class="text-xl text-base-content/70 hover:text-primary hover:underline flex items-center gap-2 mb-4">
+								<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", album.Edges.Artist.ID)) } class="text-xl text-base-content/70 hover:text-primary hover:underline flex items-center gap-2 mb-3">
 									<span class="icon-[heroicons--user-circle] w-5 h-5"></span>
 									{ album.Edges.Artist.Name }
 								</a>
 							}
-							<!-- Genres & Tags in Header -->
-							if genres := getAllGenres(album, extractTracks(tracks)); len(genres) > 0 {
-								<div class="flex flex-wrap gap-1 mb-3">
-									for i, genre := range genres {
-										if i < 8 {
-											<span class="badge badge-sm badge-primary">{ genre }</span>
-										}
-									}
-									if len(genres) > 8 {
-										<span class="badge badge-sm badge-ghost">+{ fmt.Sprintf("%d", len(genres)-8) } more</span>
+							<!-- All Tags -->
+							if allTags := collectAndSortAllTags(album, tracks); len(allTags) > 0 {
+								<div class="flex flex-wrap gap-1.5 mb-3">
+									for _, tag := range allTags {
+										<span class="badge badge-sm badge-primary badge-outline px-2 py-0.5">{ tag }</span>
 									}
 								</div>
 							}
@@ -239,6 +372,9 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 								if album.MusicbrainzID != "" {
 									@components.ExternalLinkBadge("MusicBrainz", fmt.Sprintf("https://musicbrainz.org/release-group/%s", album.MusicbrainzID), "icon-[heroicons--globe-alt]", "badge-warning")
 								}
+								if album.Edges.Artist != nil && album.Edges.Artist.LidarrID != "" && album.Edges.Artist.LidarrID != "0" && album.Edges.Artist.MusicbrainzID != "" {
+									@components.ExternalLinkBadge("Lidarr", fmt.Sprintf("%s/artist/%s", cfg.Lidarr.BaseURL, album.Edges.Artist.MusicbrainzID), "icon-[heroicons--check-badge]", "badge-success")
+								}
 							</div>
 						</div>
 					</div>
@@ -246,165 +382,27 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 			</div>
 		</div>
 		<div class="max-w-7xl mx-auto">
-			<!-- Main Listens by Provider Chart -->
-			<div class="mb-8">
-				@ProviderHistoryChart(album.ID, stats.ProviderHistory, currentTimeframe)
-			</div>
-			<!-- Stats Grid -->
-			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-				@components.StatCard("Total Listens", formatNumber(stats.TotalListens), "all time", "icon-[heroicons--play-circle]", "text-primary")
-				@components.StatCard("Tracks", formatNumber(stats.UniqueTracks), fmt.Sprintf("of %d total", album.TotalTracks), "icon-[heroicons--musical-note]", "text-secondary")
-				@components.StatCard("First Listen", formatDate(stats.FirstListen), "discovered", "icon-[heroicons--calendar]", "text-accent")
-				@components.StatCard("Last Listen", formatDate(stats.LastListen), "most recent", "icon-[heroicons--clock]", "text-info")
-			</div>
-			<!-- Artist Info Card -->
-			if album.Edges.Artist != nil {
-				<div class="card bg-base-100 shadow-xl mb-8">
-					<div class="card-body">
-						<h3 class="card-title">
-							<span class="icon-[heroicons--user-circle] w-5 h-5"></span>
-							Artist
-						</h3>
-						<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", album.Edges.Artist.ID)) } class="flex items-center gap-4 p-3 rounded-lg bg-base-200 hover:bg-base-300 transition-colors">
-							<div class="avatar">
-								<div class="w-16 h-16 rounded-lg">
-									if album.Edges.Artist.Edges.Images != nil && len(album.Edges.Artist.Edges.Images) > 0 {
-										<img src={ getArtistImageURL(album.Edges.Artist) } alt={ album.Edges.Artist.Name }/>
-									} else {
-										<div class="bg-base-300 w-full h-full flex items-center justify-center">
-											<span class="icon-[heroicons--user-group] w-8 h-8 text-base-content/30"></span>
-										</div>
-									}
-								</div>
-							</div>
-							<div class="flex-1 min-w-0">
-								<div class="font-bold truncate">{ album.Edges.Artist.Name }</div>
-								if len(album.Edges.Artist.Genres) > 0 {
-									<div class="text-sm text-base-content/60 truncate">{ album.Edges.Artist.Genres[0] }</div>
-								}
-							</div>
-							<span class="icon-[heroicons--chevron-right] w-5 h-5 text-base-content/40"></span>
-						</a>
-					</div>
-				</div>
-			}
-			<!-- Track Listens Bar Chart -->
-			if len(stats.TrackListens) > 0 {
-				<div class="card bg-base-100 shadow-xl mb-8">
-					<div class="card-body">
-						<h3 class="card-title">
-							<span class="icon-[heroicons--chart-bar] w-5 h-5"></span>
-							Listens by Track
-						</h3>
-						@components.HorizontalBarChart(
-							fmt.Sprintf("album-%d-tracks", album.ID),
-							"",
-							stats.TrackListens,
-							"oklch(var(--p))",
-							fmt.Sprintf("%dpx", max(200, len(stats.TrackListens)*35)),
-						)
-					</div>
-				</div>
-			}
-			<!-- Listening Pattern Charts -->
-			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-				<!-- By Hour -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--clock] w-5 h-5"></span>
-							Listens by Hour
-						</h3>
-						@components.BarChart(
-							fmt.Sprintf("album-%d-hour", album.ID),
-							"",
-							stats.ListensByHour,
-							"oklch(var(--p))",
-							"200px",
-						)
-					</div>
-				</div>
-				<!-- By Day of Week -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--calendar-days] w-5 h-5"></span>
-							Listens by Day
-						</h3>
-						@components.BarChart(
-							fmt.Sprintf("album-%d-day", album.ID),
-							"",
-							stats.ListensByDayOfWeek,
-							"oklch(var(--s))",
-							"200px",
-						)
-					</div>
-				</div>
-				<!-- By Month -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title text-base">
-							<span class="icon-[heroicons--calendar] w-5 h-5"></span>
-							Listens by Month
-						</h3>
-						@components.BarChart(
-							fmt.Sprintf("album-%d-month", album.ID),
-							"",
-							stats.ListensByMonth,
-							"oklch(var(--a))",
-							"200px",
-						)
-					</div>
-				</div>
-			</div>
-			<!-- Track List -->
+			<!-- AI Summary Card -->
+			@components.AISummaryCard(album.AiSummary, "AI Insights")
+			<!-- Track Listing -->
 			<div class="card bg-base-100 shadow-xl mb-8">
 				<div class="card-body">
-					<h3 class="card-title">
-						<span class="icon-[heroicons--musical-note] w-5 h-5"></span>
-						Tracks
-					</h3>
-					<div class="overflow-x-auto">
-						<table class="table table-zebra">
-							<thead>
-								<tr>
-									<th class="w-12">#</th>
-									<th>Title</th>
-									<th class="w-24">Duration</th>
-									<th class="w-24 text-right">Plays</th>
-								</tr>
-							</thead>
-							<tbody>
-								for _, tw := range tracks {
-									<tr>
-										<td class="text-base-content/50">
-											if tw.Track.TrackNumber != nil {
-												{ fmt.Sprintf("%d", *tw.Track.TrackNumber) }
-											} else {
-												-
-											}
-										</td>
-										<td>
-											<a href={ templ.URL(fmt.Sprintf("/library/track/%d", tw.Track.ID)) } class="font-medium hover:text-primary hover:underline">
-												{ tw.Track.Name }
-											</a>
-											if tw.Track.Popularity != nil && *tw.Track.Popularity > 70 {
-												<span class="badge badge-warning badge-xs ml-2">Popular</span>
-											}
-										</td>
-										<td class="text-base-content/60 font-mono text-sm">
-											if tw.Track.DurationMs != nil {
-												{ formatDuration(*tw.Track.DurationMs) }
-											} else {
-												-
-											}
-										</td>
-										<td class="text-right font-mono">{ formatNumber(tw.ListenCount) }</td>
-									</tr>
-								}
-							</tbody>
-						</table>
+					<div class="flex items-center justify-between">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--queue-list] w-5 h-5"></span>
+							Tracks
+						</h3>
+						@components.ColumnToggleMenu("album-tracks-table", []components.ColumnOption{
+							{Value: "col-index", Label: "#", DefaultVisible: true},
+							{Value: "col-track", Label: "Track", DefaultVisible: true},
+							{Value: "col-artist", Label: "Artist", DefaultVisible: false},
+							{Value: "col-album", Label: "Album", DefaultVisible: false},
+							{Value: "col-duration", Label: "Duration", DefaultVisible: true},
+							{Value: "col-popularity", Label: "Popularity", DefaultVisible: true},
+							{Value: "col-plays", Label: "Plays", DefaultVisible: true},
+						})
 					</div>
+					@components.TrackTable("album-tracks-table", toTrackRowsFromAlbumStats(tracks), []string{"#", "track", "duration", "popularity", "plays"}, nil, components.SortConfig{})
 				</div>
 			</div>
 			<!-- Metadata Table -->
@@ -422,9 +420,11 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 						{Label: "Label", Value: getOrDefault(album.Label, "Unknown")},
 						{Label: "Total Tracks", Value: formatNumber(album.TotalTracks)},
 						{Label: "Genre", Value: getOrDefault(album.Genre, "N/A")},
+						{Label: "AI Summary", Value: truncateText(getOrDefault(album.AiSummary, "N/A"), 100)},
 						{Label: "MusicBrainz ID", Value: getOrDefault(album.MusicbrainzID, "N/A"), Link: getMBAlbumLink(album.MusicbrainzID)},
 						{Label: "Spotify ID", Value: getOrDefault(album.SpotifyID, "N/A"), Link: getSpotifyAlbumLink(album.SpotifyID)},
 						{Label: "Last Enriched", Value: formatEnrichedTime(album.LastEnrichedAt)},
+						{Label: "AI Enriched", Value: formatAiEnrichedTime(album.LastAiEnrichedAt)},
 						{Label: "Created", Value: formatDate(album.CreatedAt)},
 						{Label: "Updated", Value: formatDate(album.UpdatedAt)},
 					})
@@ -538,47 +538,4 @@ templ providerHistoryScript(albumID int, data components.StackedChartData) {
 			});
 		})();
 	</script>
-}
-
-func extractTracks(tracks []TrackWithListens) []*ent.Track {
-	result := make([]*ent.Track, len(tracks))
-	for i, tw := range tracks {
-		result[i] = tw.Track
-	}
-	return result
-}
-
-func getArtistImageURL(artist *ent.Artist) string {
-	if artist.Edges.Images == nil || len(artist.Edges.Images) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("/library/artist/%d.png", artist.ID)
-}
-
-func formatYear(year int) string {
-	if year <= 0 {
-		return "Unknown"
-	}
-	return fmt.Sprintf("%d", year)
-}
-
-func getMBAlbumLink(mbid string) string {
-	if mbid == "" {
-		return ""
-	}
-	return fmt.Sprintf("https://musicbrainz.org/release-group/%s", mbid)
-}
-
-func getSpotifyAlbumLink(spotifyID string) string {
-	if spotifyID == "" {
-		return ""
-	}
-	return fmt.Sprintf("https://open.spotify.com/album/%s", spotifyID)
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

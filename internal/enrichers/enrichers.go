@@ -15,6 +15,8 @@ const (
 	TypeFanart      Type = "fanart"
 	TypeLastFM      Type = "lastfm"
 	TypeNavidrome   Type = "navidrome"
+	TypeOpenAI      Type = "openai"
+	TypeLidarr      Type = "lidarr"
 )
 
 // Priority defines the order in which enrichers run (lower = earlier).
@@ -26,18 +28,24 @@ type ArtistData struct {
 	SpotifyID     string
 	LastFMURL     string
 	NavidromeID   string
+	LidarrID      string
 	SortName      string
 	Bio           string
 	Tags          []string
 	Genres        []string
 	Popularity    *int
 	FollowerCount *int
+	// AI-generated fields
+	AISummary   string
+	AIBiography string
+	AITags      []string
 }
 
 // AlbumData contains enrichment data for an album.
 type AlbumData struct {
 	MusicBrainzID string
 	SpotifyID     string
+	LidarrID      string
 	ReleaseDate   string
 	Year          int
 	Genre         string
@@ -46,6 +54,11 @@ type AlbumData struct {
 	Label         string
 	TotalTracks   int
 	Popularity    int
+	// AI-generated fields
+	AISummary          string
+	AITags             []string
+	DominantColors     []string
+	CoverArtCommentary string
 }
 
 // TrackData contains enrichment data for a track.
@@ -53,6 +66,8 @@ type TrackData struct {
 	MusicBrainzID    string
 	SpotifyID        string
 	NavidromeID      string
+	LidarrID         string
+	LidarrStatus     string
 	ISRC             string
 	DurationMs       int
 	TrackNumber      int
@@ -69,6 +84,9 @@ type TrackData struct {
 	Genres           []string
 	SpotifyURL       string
 	MusicBrainzURL   string
+	// AI-generated fields
+	AISummary string
+	AITags    []string
 }
 
 // ImageData contains data about an image to download.
@@ -179,7 +197,7 @@ func (r *Registry) Types() []Type {
 // ParseType converts a string to an enricher Type.
 func ParseType(s string) (Type, bool) {
 	switch Type(s) {
-	case TypeMusicBrainz, TypeSpotify, TypeFanart, TypeLastFM, TypeNavidrome:
+	case TypeMusicBrainz, TypeSpotify, TypeFanart, TypeLastFM, TypeNavidrome, TypeOpenAI, TypeLidarr:
 		return Type(s), true
 	default:
 		return "", false
@@ -187,13 +205,15 @@ func ParseType(s string) (Type, bool) {
 }
 
 // DefaultOrder returns the default enricher execution order.
-// MusicBrainz first for ID matching, then others for metadata.
+// MusicBrainz first for ID matching, then others for metadata, OpenAI last for AI enrichment.
 func DefaultOrder() []Type {
 	return []Type{
 		TypeMusicBrainz,
+		TypeLidarr,
 		TypeNavidrome,
 		TypeSpotify,
 		TypeLastFM,
 		TypeFanart,
+		TypeOpenAI,
 	}
 }

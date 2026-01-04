@@ -28,6 +28,13 @@ func (Track) Fields() []ent.Field {
 		field.String("navidrome_id").
 			Optional().
 			Nillable(),
+		field.String("lidarr_id").
+			Optional().
+			Nillable(),
+		field.String("lidarr_status").
+			Optional().
+			Nillable().
+			Comment("Status in Lidarr: pending, grabbed, imported, etc."),
 		field.Int("duration_ms").
 			Optional().
 			Nillable().
@@ -95,6 +102,17 @@ func (Track) Fields() []ent.Field {
 		field.Time("updated_at").
 			Default(time.Now).
 			UpdateDefault(time.Now),
+		// AI-generated fields
+		field.Text("ai_summary").
+			Optional().
+			Comment("AI-generated summary of the track"),
+		field.JSON("ai_tags", []string{}).
+			Optional().
+			Comment("AI-generated tags for the track (max 5)"),
+		field.Time("last_ai_enriched_at").
+			Optional().
+			Nillable().
+			Comment("Last time AI enrichment was performed"),
 	}
 }
 
@@ -108,6 +126,7 @@ func (Track) Edges() []ent.Edge {
 			Ref("tracks").
 			Unique(),
 		edge.To("listens", Listen.Type),
+		edge.To("playlist_tracks", PlaylistTrack.Type),
 	}
 }
 
@@ -121,6 +140,7 @@ func (Track) Indexes() []ent.Index {
 		index.Fields("musicbrainz_id"),
 		index.Fields("spotify_id"),
 		index.Fields("navidrome_id"),
+		index.Fields("lidarr_id"),
 		index.Fields("isrc"),
 	}
 }

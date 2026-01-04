@@ -57,7 +57,28 @@ func formatEventType(et syncevent.EventType) string {
 	case syncevent.EventTypeDataReset:
 		return "Data Reset"
 	default:
+		// Handle dynamic lidarr events
+		if len(string(et)) > 7 && string(et)[:7] == "lidarr_" {
+			return formatLidarrEvent(string(et))
+		}
 		return string(et)
+	}
+}
+
+func formatLidarrEvent(s string) string {
+	switch s {
+	case "lidarr_artist_matched":
+		return "Lidarr Artist Matched"
+	case "lidarr_album_matched":
+		return "Lidarr Album Matched"
+	case "lidarr_track_matched":
+		return "Lidarr Track Matched"
+	case "lidarr_import_grabbed":
+		return "Lidarr Grabbed"
+	case "lidarr_import_imported":
+		return "Lidarr Imported"
+	default:
+		return s
 	}
 }
 
@@ -75,6 +96,9 @@ func eventTypeClass(et syncevent.EventType) string {
 	case syncevent.EventTypeSyncFailed, syncevent.EventTypeMetadataFailed:
 		return "badge-error"
 	default:
+		if len(string(et)) > 7 && string(et)[:7] == "lidarr_" {
+			return "badge-success"
+		}
 		return "badge-ghost"
 	}
 }
@@ -91,6 +115,8 @@ func formatProvider(provider string) string {
 		return "Metadata"
 	case "system":
 		return "System"
+	case "lidarr":
+		return "Lidarr"
 	default:
 		return provider
 	}
@@ -121,6 +147,11 @@ templ providerBadge(provider string) {
 		<div class="badge badge-neutral gap-2">
 			<span class="icon-[heroicons--cog-6-tooth] w-3 h-3"></span>
 			System
+		</div>
+	} else if provider == "lidarr" {
+		<div class="badge badge-info gap-2">
+			<span class="icon-[heroicons--server] w-3 h-3"></span>
+			Lidarr
 		</div>
 	} else {
 		<div class="badge badge-ghost">{ provider }</div>
@@ -256,7 +287,7 @@ templ Tasks(user *ent.User, tasks []types.Task, events []*ent.SyncEvent, selecte
 													@providerBadge(event.Provider)
 												</td>
 												<td>
-													<span class={ "badge badge-sm", eventTypeClass(event.EventType) }>
+													<span class={ "badge badge-sm h-6 px-3", eventTypeClass(event.EventType) }>
 														{ formatEventType(event.EventType) }
 													</span>
 												</td>
@@ -331,76 +362,76 @@ templ Tasks(user *ent.User, tasks []types.Task, events []*ent.SyncEvent, selecte
 templ taskButton(taskID string, taskName string) {
 	if taskID == "reset-data" {
 		<button
-			class="btn btn-error btn-sm"
+			class="btn btn-error btn-sm w-24 gap-2"
 			onclick="document.getElementById('reset-confirm-modal').showModal()"
 		>
 			<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
-			Reset
+			<span>Reset</span>
 		</button>
 	} else if taskID == "sync-listens" {
 		<button
-			class="btn btn-primary btn-sm"
+			class="btn btn-primary btn-sm w-24 gap-2"
 			hx-post="/preferences/tasks/sync-listens"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
+			<span class="htmx-indicator-hide">Run</span>
 			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
-			Run
 		</button>
 	} else if taskID == "sync-playlists" {
 		<button
-			class="btn btn-primary btn-sm"
+			class="btn btn-primary btn-sm w-24 gap-2"
 			hx-post="/preferences/tasks/sync-playlists"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
+			<span class="htmx-indicator-hide">Run</span>
 			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
-			Run
 		</button>
 	} else if taskID == "enrich-metadata" {
 		<button
-			class="btn btn-primary btn-sm"
+			class="btn btn-primary btn-sm w-24 gap-2"
 			hx-post="/preferences/tasks/enrich-metadata"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
+			<span class="htmx-indicator-hide">Run</span>
 			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
-			Run
 		</button>
 	} else if taskID == "sync-artist-images" {
 		<button
-			class="btn btn-primary btn-sm"
+			class="btn btn-primary btn-sm w-24 gap-2"
 			hx-post="/preferences/tasks/sync-artist-images"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
+			<span class="htmx-indicator-hide">Run</span>
 			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
-			Run
 		</button>
 	} else if taskID == "sync-album-images" {
 		<button
-			class="btn btn-primary btn-sm"
+			class="btn btn-primary btn-sm w-24 gap-2"
 			hx-post="/preferences/tasks/sync-album-images"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
+			<span class="htmx-indicator-hide">Run</span>
 			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
-			Run
 		</button>
 	} else if taskID == "cleanup" {
 		<button
-			class="btn btn-primary btn-sm"
+			class="btn btn-primary btn-sm w-24 gap-2"
 			hx-post="/preferences/tasks/cleanup"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
+			<span class="htmx-indicator-hide">Run</span>
 			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
-			Run
 		</button>
 	} else {
-		<button class="btn btn-primary btn-sm" disabled>
+		<button class="btn btn-primary btn-sm w-24 gap-2" disabled>
 			<span class="icon-[heroicons--play] w-4 h-4"></span>
-			Run
+			<span>Run</span>
 		</button>
 	}
 }

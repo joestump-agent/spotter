@@ -1,0 +1,191 @@
+package components
+
+// TrackTableToolbarConfig defines the configuration for the toolbar.
+type TrackTableToolbarConfig struct {
+	TableID           string         // ID of the target table
+	ColumnOptions     []ColumnOption // Available column options
+	ShowArtworkToggle bool           // Whether to show the artwork toggle button
+	ArtworkDefault    bool           // Default state for artwork visibility
+}
+
+// TrackTableToolbar renders a toolbar with column toggle and optional artwork toggle.
+templ TrackTableToolbar(config TrackTableToolbarConfig) {
+	<div class="track-table-toolbar flex items-center gap-2" data-target-table={ config.TableID }>
+		// Artwork Toggle Button (optional)
+		if config.ShowArtworkToggle {
+			<button
+				type="button"
+				class={ "btn btn-sm gap-2 artwork-toggle", templ.KV("btn-active", config.ArtworkDefault), templ.KV("btn-outline", !config.ArtworkDefault) }
+				data-artwork-visible={ boolToString(config.ArtworkDefault) }
+			>
+				<span class="icon-[heroicons--photo] w-4 h-4"></span>
+			</button>
+		}
+		// Column Toggle Dropdown
+		<details class="dropdown dropdown-end">
+			<summary class="btn btn-sm btn-outline gap-2 m-0">
+				<span class="icon-[heroicons--view-columns] w-4 h-4"></span>
+				Columns
+				<span class="icon-[heroicons--chevron-down] w-3 h-3"></span>
+			</summary>
+			<ul class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+				for _, opt := range config.ColumnOptions {
+					<li>
+						<label class="label cursor-pointer">
+							<span class="label-text">{ opt.Label }</span>
+							<input type="checkbox" class="checkbox checkbox-sm column-toggle-checkbox" data-col-class={ opt.Value } checked?={ opt.DefaultVisible }/>
+						</label>
+					</li>
+				}
+			</ul>
+		</details>
+		<script>
+			(function() {
+				const toolbar = document.currentScript.parentElement;
+				const targetTableID = toolbar.dataset.targetTable;
+				const columnStorageKey = 'spotter-columns-' + targetTableID;
+				const artworkStorageKey = 'spotter-artwork-' + targetTableID;
+
+				function init() {
+					const targetTable = document.getElementById(targetTableID);
+					const checkboxes = toolbar.querySelectorAll('.column-toggle-checkbox');
+					const artworkToggle = toolbar.querySelector('.artwork-toggle');
+
+					if (!targetTable) {
+						console.error("TrackTableToolbar: Couldn't find table with ID:", targetTableID);
+						return;
+					}
+
+					// --- Column Visibility ---
+					let savedColumnPrefs = {};
+					try {
+						const saved = localStorage.getItem(columnStorageKey);
+						if (saved) {
+							savedColumnPrefs = JSON.parse(saved);
+						}
+					} catch (e) {
+						console.error("TrackTableToolbar: Error loading column preferences:", e);
+					}
+
+					// Apply saved column preferences
+					checkboxes.forEach(function(checkbox) {
+						const columnClass = checkbox.dataset.colClass;
+						if (!columnClass) return;
+
+						if (savedColumnPrefs.hasOwnProperty(columnClass)) {
+							checkbox.checked = savedColumnPrefs[columnClass];
+						}
+
+						applyColumnVisibility(targetTable, columnClass, checkbox.checked);
+					});
+
+					// Column toggle event listeners
+					checkboxes.forEach(function(checkbox) {
+						checkbox.addEventListener('change', function() {
+							const columnClass = checkbox.dataset.colClass;
+							if (!columnClass) return;
+
+							applyColumnVisibility(targetTable, columnClass, checkbox.checked);
+							saveColumnPreferences();
+						});
+					});
+
+					function applyColumnVisibility(table, columnClass, visible) {
+						const cells = table.querySelectorAll('.' + columnClass);
+						cells.forEach(function(cell) {
+							if (visible) {
+								cell.classList.remove('hidden');
+							} else {
+								cell.classList.add('hidden');
+							}
+						});
+					}
+
+					function saveColumnPreferences() {
+						const prefs = {};
+						checkboxes.forEach(function(checkbox) {
+							const columnClass = checkbox.dataset.colClass;
+							if (columnClass) {
+								prefs[columnClass] = checkbox.checked;
+							}
+						});
+						try {
+							localStorage.setItem(columnStorageKey, JSON.stringify(prefs));
+						} catch (e) {
+							console.error("TrackTableToolbar: Error saving column preferences:", e);
+						}
+					}
+
+					// --- Artwork Visibility ---
+					if (artworkToggle) {
+						let artworkVisible = artworkToggle.dataset.artworkVisible === 'true';
+
+						// Load saved artwork preference
+						try {
+							const saved = localStorage.getItem(artworkStorageKey);
+							if (saved !== null) {
+								artworkVisible = saved === 'true';
+							}
+						} catch (e) {
+							console.error("TrackTableToolbar: Error loading artwork preference:", e);
+						}
+
+						// Apply initial state
+						applyArtworkVisibility(targetTable, artworkVisible);
+						updateArtworkButton(artworkToggle, artworkVisible);
+
+						// Artwork toggle event listener
+						artworkToggle.addEventListener('click', function() {
+							artworkVisible = !artworkVisible;
+							applyArtworkVisibility(targetTable, artworkVisible);
+							updateArtworkButton(artworkToggle, artworkVisible);
+
+							try {
+								localStorage.setItem(artworkStorageKey, artworkVisible.toString());
+							} catch (e) {
+								console.error("TrackTableToolbar: Error saving artwork preference:", e);
+							}
+						});
+					}
+
+					function applyArtworkVisibility(table, visible) {
+						const artworkElements = table.querySelectorAll('.track-artwork');
+						artworkElements.forEach(function(el) {
+							if (visible) {
+								el.classList.remove('hidden');
+							} else {
+								el.classList.add('hidden');
+							}
+						});
+					}
+
+					function updateArtworkButton(button, visible) {
+						if (visible) {
+							button.classList.add('btn-active');
+							button.classList.remove('btn-outline');
+						} else {
+							button.classList.remove('btn-active');
+							button.classList.add('btn-outline');
+						}
+					}
+				}
+
+				// Run init after DOM is ready
+				if (document.readyState === 'loading') {
+					document.addEventListener('DOMContentLoaded', init);
+				} else {
+					requestAnimationFrame(function() {
+						requestAnimationFrame(init);
+					});
+				}
+			})();
+		</script>
+	</div>
+}
+
+func boolToString(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}

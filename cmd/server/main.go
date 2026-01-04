@@ -15,8 +15,10 @@ import (
 	"spotter/internal/enrichers"
 	enricherFanart "spotter/internal/enrichers/fanart"
 	enricherLastfm "spotter/internal/enrichers/lastfm"
+	enricherLidarr "spotter/internal/enrichers/lidarr"
 	enricherMusicbrainz "spotter/internal/enrichers/musicbrainz"
 	enricherNavidrome "spotter/internal/enrichers/navidrome"
+	enricherOpenai "spotter/internal/enrichers/openai"
 	enricherSpotify "spotter/internal/enrichers/spotify"
 	"spotter/internal/events"
 	"spotter/internal/handlers"
@@ -62,11 +64,13 @@ func main() {
 
 	// Initialize Metadata Service (for catalog enrichment)
 	metadataSvc := services.NewMetadataService(client, cfg, logger, bus)
+	metadataSvc.Register(enrichers.TypeLidarr, enricherLidarr.New(logger, cfg, client))
 	metadataSvc.Register(enrichers.TypeMusicBrainz, enricherMusicbrainz.New(logger, cfg))
 	metadataSvc.Register(enrichers.TypeNavidrome, enricherNavidrome.New(logger, cfg))
 	metadataSvc.Register(enrichers.TypeSpotify, enricherSpotify.New(logger, cfg))
 	metadataSvc.Register(enrichers.TypeLastFM, enricherLastfm.New(logger, cfg))
 	metadataSvc.Register(enrichers.TypeFanart, enricherFanart.New(logger, cfg))
+	metadataSvc.Register(enrichers.TypeOpenAI, enricherOpenai.New(logger, cfg))
 
 	// Initialize Handlers
 	h := handlers.New(client, cfg, logger, syncer, metadataSvc, bus)
@@ -192,7 +196,6 @@ func main() {
 		r.Get("/playlists", h.Playlists)
 		r.Get("/playlists/{id}", h.PlaylistShow)
 		r.Get("/playlists/{id}.png", h.PlaylistImage)
-		r.Get("/playlists/{id}/chart", h.PlaylistChart)
 
 		// Vibes routes (DJs and Mixtapes)
 		r.Get("/vibes", h.VibesRedirect)
@@ -222,17 +225,20 @@ func main() {
 			r.Get("/artist/{id}", h.ArtistShow)
 			r.Get("/artist/{id}.png", h.ArtistImage)
 			r.Get("/artist/{id}/chart", h.ArtistChart)
+			r.Post("/artist/{id}/regenerate-ai", h.ArtistRegenerateAI)
 
 			// Album routes
 			r.Get("/albums", h.AlbumIndex)
 			r.Get("/album/{id}", h.AlbumShow)
 			r.Get("/album/{id}.png", h.AlbumImage)
 			r.Get("/album/{id}/chart", h.AlbumChart)
+			r.Post("/album/{id}/regenerate-ai", h.AlbumRegenerateAI)
 
 			// Track routes
 			r.Get("/tracks", h.TrackIndex)
 			r.Get("/track/{id}", h.TrackShow)
 			r.Get("/track/{id}/chart", h.TrackChart)
+			r.Post("/track/{id}/regenerate-ai", h.TrackRegenerateAI)
 		})
 	})
 

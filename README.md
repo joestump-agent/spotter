@@ -1,6 +1,6 @@
 # Spotter
 
-Spotter is an AI-powered playlist generator for Navidrome. It aggregates your listening history from various sources (Navidrome, Spotify, Last.fm) and uses that data to generate personalized playlists.
+Spotter is an AI-powered playlist generator for Navidrome. It aggregates your listening history from various sources (Navidrome, Spotify, Last.fm) and uses that data to generate personalized playlists. AI-powered metadata enrichment generates intelligent summaries, biographies, and tags for your music library.
 
 ## Features
 
@@ -9,6 +9,7 @@ Spotter is an AI-powered playlist generator for Navidrome. It aggregates your li
 *   **Navidrome Integration**: Log in using your existing Navidrome credentials.
 *   **External Service Support**: Connect your Spotify and Last.fm accounts to import history and improve recommendations.
 *   **Metadata Enrichment**: Automatically enriches artist, album, and track metadata from MusicBrainz, Fanart.tv, Spotify, Last.fm, and more.
+*   **AI-Powered Enrichment**: Optional OpenAI integration generates intelligent summaries, biographies, and tags for artists, albums, and tracks. AI-generated content is clearly marked in the UI.
 *   **Real-time Updates**: Server-Sent Events (SSE) push new listens and sync notifications to the UI automatically.
 *   **Retro-Themed UI**: Custom-designed themes featuring a warm 1970s music cabinet aesthetic (light mode) and an 1980s cyberpunk vibe (dark mode).
 *   **AI-Powered**: Customizable AI system prompts for personalized playlist generation.
@@ -87,6 +88,7 @@ Spotter is configured using environment variables. You can set these in your she
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `SPOTTER_NAVIDROME_BASE_URL` | **Required.** The URL of your Navidrome instance. | *None* |
+| `SPOTTER_OPENAI_API_KEY` | **Required.** OpenAI API key for AI-powered metadata enrichment. | *None* |
 | `SPOTTER_SPOTIFY_CLIENT_ID` | Spotify Client ID for API access. | *None* |
 | `SPOTTER_SPOTIFY_CLIENT_SECRET` | Spotify Client Secret. | *None* |
 | `SPOTTER_SPOTIFY_REDIRECT_URL` | OAuth callback URL for Spotify. | `http://127.0.0.1:8080/auth/spotify/callback` |
@@ -100,7 +102,22 @@ Spotter is configured using environment variables. You can set these in your she
 | :--- | :--- | :--- |
 | `SPOTTER_METADATA_ENABLED` | Enable/disable metadata enrichment. | `true` |
 | `SPOTTER_METADATA_INTERVAL` | How often to run metadata enrichment (Go duration format). | `1h` |
-| `SPOTTER_METADATA_ORDER` | Comma-separated enricher priority order. | `musicbrainz,navidrome,spotify,lastfm,fanart` |
+| `SPOTTER_METADATA_ORDER` | Comma-separated enricher priority order. | `lidarr,musicbrainz,navidrome,spotify,lastfm,fanart,openai` |
+
+#### Lidarr Configuration
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SPOTTER_LIDARR_BASE_URL` | Base URL to your Lidarr instance (e.g., `http://localhost:8686`). | *None* |
+| `SPOTTER_LIDARR_API_KEY` | API Key for your Lidarr instance. | *None* |
+
+#### OpenAI Configuration (AI Enrichment)
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SPOTTER_OPENAI_BASE_URL` | Base URL for OpenAI API (use for LiteLLM or compatible proxies). | `https://api.openai.com/v1` |
+| `SPOTTER_OPENAI_MODEL` | Model to use for AI enrichment. | `gpt-4o` |
+| `SPOTTER_METADATA_AI_PROMPTS_DIRECTORY` | Directory containing prompt templates. | `./data/prompts` |
 
 #### MusicBrainz Configuration
 
@@ -197,6 +214,53 @@ SPOTTER_METADATA_FANART_API_KEY=your_api_key_here
 
 > **Note**: Fanart.tv has a free tier with rate limits. For personal use, this is typically sufficient.
 
+### Lidarr (Required)
+
+1. Open Lidarr.
+2. Go to **Settings** -> **General**.
+3. Copy the **API Key** from the Security section.
+
+### OpenAI (Required - AI Enrichment)
+
+OpenAI integration is **required** for Spotter's AI-powered metadata enrichment. It generates summaries, biographies, and intelligent tags for your music library.
+
+1. Go to [OpenAI Platform](https://platform.openai.com/)
+2. Sign up or log in to your account
+3. Navigate to [API Keys](https://platform.openai.com/api-keys)
+4. Click **Create new secret key**
+5. Give it a name (e.g., "Spotter") and click **Create**
+6. Copy the key immediately (it won't be shown again)
+
+```bash
+SPOTTER_OPENAI_API_KEY=sk-your-api-key-here
+SPOTTER_OPENAI_MODEL=gpt-4o
+```
+
+**Using LiteLLM or Compatible Proxies:**
+
+If you're using LiteLLM or another OpenAI-compatible API proxy, you can configure the base URL:
+
+```bash
+SPOTTER_OPENAI_API_KEY=your-proxy-api-key
+SPOTTER_OPENAI_BASE_URL=https://your-litellm-instance.com/v1
+SPOTTER_OPENAI_MODEL=claude-3-opus  # Or any model your proxy supports
+```
+
+**Customizing AI Prompts:**
+
+Spotter uses Go templates for AI prompts. Default prompts are stored in `./data/prompts/`. You can customize these or point to your own directory:
+
+```bash
+SPOTTER_METADATA_AI_PROMPTS_DIRECTORY=/path/to/custom/prompts
+```
+
+Template files:
+- `artist.tmpl` - Prompt for artist enrichment (generates biography, summary, and tags)
+- `album.tmpl` - Prompt for album enrichment (generates summary and tags)
+- `track.tmpl` - Prompt for track enrichment (generates summary and tags)
+
+> **Note**: AI enrichment uses vision capabilities to analyze album/artist artwork when available. The enricher runs last in the pipeline to have access to all metadata from other enrichers.
+
 ### Example `.env` File
 
 Here's a complete example `.env` file with all configuration options:
@@ -206,12 +270,16 @@ Here's a complete example `.env` file with all configuration options:
 # Required
 # ===================
 SPOTTER_NAVIDROME_BASE_URL=https://music.example.com
+SPOTTER_OPENAI_API_KEY=sk-your-openai-api-key
 
 # ===================
 # Server Configuration
 # ===================
 SPOTTER_SERVER_PORT=8080
 SPOTTER_SERVER_HOST=0.0.0.0
+
+SPOTTER_LIDARR_BASE_URL=http://localhost:8686
+SPOTTER_LIDARR_API_KEY=your_lidarr_api_key
 
 # ===================
 # Database Configuration
@@ -249,7 +317,7 @@ SPOTTER_LASTFM_REDIRECT_URL=http://localhost:8080/auth/lastfm/callback
 # ===================
 SPOTTER_METADATA_ENABLED=true
 SPOTTER_METADATA_INTERVAL=1h
-SPOTTER_METADATA_ORDER=musicbrainz,navidrome,spotify,lastfm,fanart
+SPOTTER_METADATA_ORDER=lidarr,musicbrainz,navidrome,spotify,lastfm,fanart,openai
 
 # MusicBrainz (User-Agent required, no API key needed)
 SPOTTER_METADATA_MUSICBRAINZ_USER_AGENT=Spotter/1.0.0 (https://github.com/joestump/spotter)
@@ -262,6 +330,13 @@ SPOTTER_METADATA_IMAGES_DOWNLOAD=true
 SPOTTER_METADATA_IMAGES_DIRECTORY=./data/images
 SPOTTER_METADATA_IMAGES_MAX_WIDTH=1000
 SPOTTER_METADATA_IMAGES_MAX_HEIGHT=1000
+
+# ===================
+# OpenAI / AI Enrichment (Configuration)
+# ===================
+SPOTTER_OPENAI_BASE_URL=https://api.openai.com/v1
+SPOTTER_OPENAI_MODEL=gpt-4o
+SPOTTER_METADATA_AI_PROMPTS_DIRECTORY=./data/prompts
 ```
 
 ## Development

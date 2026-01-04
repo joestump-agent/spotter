@@ -5,12 +5,16 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"time"
 
 	"spotter/ent"
 	"spotter/ent/album"
+	"spotter/ent/artist"
 	"spotter/ent/listen"
 	"spotter/ent/track"
 	"spotter/ent/user"
+	"spotter/internal/enrichers"
+	"spotter/internal/events"
 	"spotter/internal/views/albums"
 	"spotter/internal/views/components"
 
@@ -320,14 +324,25 @@ func (h *Handler) AlbumIndex(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get artist filter from query
+	artistFilter := r.URL.Query().Get("artist")
+
 	pageSize := u.PaginationSize
 	offset := (page - 1) * pageSize
 
+	// Build query with optional artist filter
+	query := h.Client.Album.Query().
+		Where(album.HasUserWith(user.ID(u.ID)))
+
+	if artistFilter != "" {
+		query = query.Where(album.HasArtistWith(artist.Name(artistFilter)))
+	}
+
 	// Query albums with pagination
-	albumList, err := h.Client.Album.Query().
-		Where(album.HasUserWith(user.ID(u.ID))).
+	albumList, err := query.
 		WithArtist().
 		WithImages().
+		Unique(true).
 		Order(ent.Desc(album.FieldUpdatedAt)).
 		Limit(pageSize).
 		Offset(offset).
@@ -338,10 +353,16 @@ func (h *Handler) AlbumIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build count query with same filter
+	countQuery := h.Client.Album.Query().
+		Where(album.HasUserWith(user.ID(u.ID)))
+
+	if artistFilter != "" {
+		countQuery = countQuery.Where(album.HasArtistWith(artist.Name(artistFilter)))
+	}
+
 	// Get total count for pagination
-	total, err := h.Client.Album.Query().
-		Where(album.HasUserWith(user.ID(u.ID))).
-		Count(r.Context())
+	total, err := countQuery.Count(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to count albums", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -350,5 +371,93 @@ func (h *Handler) AlbumIndex(w http.ResponseWriter, r *http.Request) {
 
 	totalPages := (total + pageSize - 1) / pageSize
 
-	h.Render(w, r, albums.Index(albumList, page, totalPages, h.Config))
+	h.Render(w, r, albums.Index(albumList, page, totalPages, h.Config, artistFilter))
+}
+
+// AlbumRegenerateAI regenerates AI content for a specific album
+func (h *Handler) AlbumRegenerateAI(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	albumID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid album ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get the album with all edges needed for AI enrichment
+	a, err := h.Client.Album.Query().
+		Where(
+			album.ID(albumID),
+			album.HasUserWith(user.ID(u.ID)),
+		).
+		WithArtist().
+		WithTracks().
+		WithImages().
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get album for AI regeneration", "error", err, "id", albumID)
+		http.Error(w, "Album not found", http.StatusNotFound)
+		return
+	}
+
+	// Get the OpenAI enricher
+	enricherList, err := h.getAIEnricher(r.Context(), u)
+	if err != nil || len(enricherList) == 0 {
+		h.Logger.Error("AI enricher not available", "error", err)
+		http.Error(w, "AI enrichment not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Run AI enrichment
+	for _, e := range enricherList {
+		albumEnricher, ok := e.(enrichers.AlbumEnricher)
+		if !ok {
+			continue
+		}
+
+		data, err := albumEnricher.EnrichAlbum(r.Context(), a)
+		if err != nil {
+			h.Logger.Error("AI enrichment failed", "error", err, "album", a.Name)
+			http.Error(w, "AI enrichment failed", http.StatusInternalServerError)
+			return
+		}
+
+		if data != nil {
+			// Update the album with AI data
+			update := h.Client.Album.UpdateOne(a)
+			if data.AISummary != "" {
+				update = update.SetAiSummary(data.AISummary)
+			}
+			if len(data.AITags) > 0 {
+				update = update.SetAiTags(data.AITags)
+			}
+			update = update.SetLastAiEnrichedAt(time.Now())
+
+			if _, err := update.Save(r.Context()); err != nil {
+				h.Logger.Error("failed to save AI enrichment", "error", err, "album", a.Name)
+				http.Error(w, "Failed to save AI enrichment", http.StatusInternalServerError)
+				return
+			}
+
+			h.Logger.Info("regenerated AI content for album", "album", a.Name)
+		}
+	}
+
+	// Send success notification
+	h.Bus.Publish(u.ID, events.Event{
+		Type: events.EventTypeNotification,
+		Payload: events.NotificationPayload{
+			Title:    "AI Regenerated",
+			Message:  "AI insights for " + a.Name + " have been regenerated.",
+			IconType: "success",
+		},
+	})
+
+	// Return HX-Refresh header to reload the page
+	w.Header().Set("HX-Refresh", "true")
+	w.WriteHeader(http.StatusOK)
 }

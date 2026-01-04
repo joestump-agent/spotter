@@ -10,6 +10,7 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	// Required config
 	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -31,6 +32,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("SPOTTER_DATABASE_DRIVER", "postgres")
 	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "https://navidrome.example.com")
 	t.Setenv("SPOTTER_SPOTIFY_REDIRECT_URL", "https://example.com/callback")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
 
 	cfg, err := Load()
 	require.NoError(t, err)
@@ -42,16 +44,27 @@ func TestLoadEnvOverrides(t *testing.T) {
 	assert.Equal(t, "https://example.com/callback", cfg.Spotify.RedirectURL)
 }
 
-func TestLoadMissingRequired(t *testing.T) {
+func TestLoadMissingNavidromeURL(t *testing.T) {
 	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
 
 	_, err := Load()
 	require.Error(t, err)
 	assert.EqualError(t, err, "navidrome.base_url is required")
 }
 
+func TestLoadMissingOpenAIKey(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "")
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.EqualError(t, err, "openai.api_key is required for AI enrichment")
+}
+
 func TestSyncIntervalConfig(t *testing.T) {
 	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
 	t.Setenv("SPOTTER_SYNC_INTERVAL", "10m")
 
 	cfg, err := Load()
@@ -62,6 +75,7 @@ func TestSyncIntervalConfig(t *testing.T) {
 
 func TestThemeConfig(t *testing.T) {
 	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
 	t.Setenv("SPOTTER_THEME_AVAILABLE", "dark,light,cyberpunk,retro")
 	t.Setenv("SPOTTER_THEME_DEFAULT", "cyberpunk")
 
@@ -75,6 +89,7 @@ func TestThemeConfig(t *testing.T) {
 
 func TestAvailableThemesDefaultsWhenNotSet(t *testing.T) {
 	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
 	// Don't set SPOTTER_THEME_AVAILABLE - should use defaults
 
 	cfg, err := Load()
@@ -86,10 +101,95 @@ func TestAvailableThemesDefaultsWhenNotSet(t *testing.T) {
 
 func TestAvailableThemesTrimsWhitespace(t *testing.T) {
 	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
 	t.Setenv("SPOTTER_THEME_AVAILABLE", " dark , light , cupcake ")
 
 	cfg, err := Load()
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"dark", "light", "cupcake"}, cfg.AvailableThemes())
+}
+
+func TestOpenAIDefaults(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, "sk-test-key", cfg.OpenAI.APIKey)
+	assert.Equal(t, "https://api.openai.com/v1", cfg.OpenAI.BaseURL)
+	assert.Equal(t, "gpt-4o", cfg.OpenAI.Model)
+	assert.True(t, cfg.IsOpenAIEnabled())
+}
+
+func TestOpenAIConfig(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key-12345")
+	t.Setenv("SPOTTER_OPENAI_BASE_URL", "https://api.litellm.example.com/v1")
+	t.Setenv("SPOTTER_OPENAI_MODEL", "gpt-4-turbo")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, "sk-test-key-12345", cfg.OpenAI.APIKey)
+	assert.Equal(t, "https://api.litellm.example.com/v1", cfg.OpenAI.BaseURL)
+	assert.Equal(t, "gpt-4-turbo", cfg.OpenAI.Model)
+	assert.True(t, cfg.IsOpenAIEnabled())
+}
+
+func TestIsOpenAIEnabled(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-valid-key")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.IsOpenAIEnabled())
+}
+
+func TestMetadataEnricherOrderIncludesOpenAI(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	order := cfg.MetadataEnricherOrder()
+	assert.Contains(t, order, "openai")
+	// OpenAI should be last in the default order
+	assert.Equal(t, "openai", order[len(order)-1])
+}
+
+func TestMetadataEnricherOrderCustom(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
+	t.Setenv("SPOTTER_METADATA_ORDER", "musicbrainz,spotify,openai")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	order := cfg.MetadataEnricherOrder()
+	assert.Equal(t, []string{"musicbrainz", "spotify", "openai"}, order)
+}
+
+func TestAIPromptsDirectoryDefault(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, "./data/prompts", cfg.Metadata.AI.PromptsDirectory)
+}
+
+func TestAIPromptsDirectoryCustom(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
+	t.Setenv("SPOTTER_METADATA_AI_PROMPTS_DIRECTORY", "/custom/prompts")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, "/custom/prompts", cfg.Metadata.AI.PromptsDirectory)
 }

@@ -2,188 +2,105 @@ package tracks
 
 import (
 	"fmt"
+	"net/url"
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/views/components"
 	"spotter/internal/views/layouts"
-	"time"
 )
 
-func formatTime(t time.Time) string {
-	return t.Local().Format("Jan 02, 2006")
-}
-
-func formatTimeISO(t time.Time) string {
-	if t.IsZero() {
-		return ""
+func buildTrackPaginationURL(page int, artistFilter, sortCol, sortDir string) string {
+	u := fmt.Sprintf("/library/tracks?page=%d", page)
+	if artistFilter != "" {
+		u += "&artist=" + url.QueryEscape(artistFilter)
 	}
-	return t.UTC().Format(time.RFC3339)
-}
-
-func getTrackAlbumCover(track *ent.Track) string {
-	if track.Edges.Album == nil || track.Edges.Album.Edges.Images == nil || len(track.Edges.Album.Edges.Images) == 0 {
-		return ""
+	if sortCol != "" {
+		u += "&sort=" + sortCol + "&dir=" + sortDir
 	}
-	return fmt.Sprintf("/library/album/%d.png", track.Edges.Album.ID)
+	return u
 }
 
-func formatTrackDuration(ms *int) string {
-	if ms == nil || *ms <= 0 {
-		return "-"
+func buildTrackSortBaseURL(currentPage int, artistFilter string) string {
+	u := fmt.Sprintf("/library/tracks?page=%d", currentPage)
+	if artistFilter != "" {
+		u += "&artist=" + url.QueryEscape(artistFilter)
 	}
-	seconds := *ms / 1000
-	minutes := seconds / 60
-	secs := seconds % 60
-	return fmt.Sprintf("%d:%02d", minutes, secs)
+	return u
 }
 
-templ Index(tracks []*ent.Track, currentPage int, totalPages int, cfg *config.Config) {
+func toTrackRows(tracks []*ent.Track) []components.TrackTableRow {
+	rows := make([]components.TrackTableRow, len(tracks))
+	for i, t := range tracks {
+		rows[i] = components.TrackTableRow{
+			Track: t,
+		}
+	}
+	return rows
+}
+
+templ Index(tracks []*ent.Track, currentPage int, totalPages int, cfg *config.Config, artistFilter, sortCol, sortDir string) {
 	@layouts.Dashboard("Tracks | Spotter", cfg, "/library/tracks") {
 		<div class="max-w-7xl mx-auto">
-			<div class="flex items-center justify-between mb-8">
-				<div>
-					<h2 class="text-3xl font-bold">Tracks</h2>
-					<p class="text-base-content/60 mt-2">All tracks from your enriched music catalog</p>
-				</div>
-				<!-- View Toggle -->
-				<div class="join">
-					<button
-						id="table-view-btn"
-						class="join-item btn btn-sm btn-square btn-active"
-						onclick="setView('table')"
-						title="Table view"
-					>
-						<span class="icon-[heroicons--table-cells] w-4 h-4"></span>
-					</button>
-					<button
-						id="tile-view-btn"
-						class="join-item btn btn-sm btn-square"
-						onclick="setView('tile')"
-						title="Tile view"
-					>
-						<span class="icon-[heroicons--squares-2x2] w-4 h-4"></span>
-					</button>
-				</div>
-			</div>
 			if len(tracks) == 0 {
 				<div class="card bg-base-200">
 					<div class="card-body items-center text-center">
 						<span class="icon-[heroicons--musical-note] w-16 h-16 text-base-content/30"></span>
-						<h3 class="card-title">No tracks found</h3>
-						<p class="text-base-content/60">Tracks will appear here once your music catalog is enriched.</p>
+						if artistFilter != "" {
+							<h3 class="card-title">No tracks found for this artist</h3>
+							<p class="text-base-content/60">Try clearing the filter to see all tracks.</p>
+							<a href="/library/tracks" class="btn btn-primary btn-sm mt-4">Clear Filter</a>
+						} else {
+							<h3 class="card-title">No tracks found</h3>
+							<p class="text-base-content/60">Tracks will appear here once your music catalog is enriched.</p>
+						}
 					</div>
 				</div>
 			} else {
-				<!-- Table View -->
-				<div id="table-view" class="card bg-base-100 shadow-xl">
-					<div class="card-body p-0">
-						<div class="overflow-x-auto">
-							<table class="table table-zebra">
-								<thead>
-									<tr>
-										<th class="w-12"></th>
-										<th>Track</th>
-										<th>Artist</th>
-										<th>Album</th>
-										<th>Duration</th>
-										<th>Popularity</th>
-									</tr>
-								</thead>
-								<tbody>
-									for _, track := range tracks {
-										<tr class="hover">
-											<td>
-												<div class="avatar">
-													<div class="w-10 h-10 rounded">
-														if img := getTrackAlbumCover(track); img != "" {
-															<img src={ img } alt={ track.Name }/>
-														} else {
-															<div class="bg-base-300 w-full h-full flex items-center justify-center">
-																<span class="icon-[heroicons--musical-note] w-5 h-5 text-base-content/40"></span>
-															</div>
-														}
-													</div>
-												</div>
-											</td>
-											<td>
-												<a href={ templ.URL(fmt.Sprintf("/library/track/%d", track.ID)) } class="font-medium hover:text-primary hover:underline">
-													{ track.Name }
-												</a>
-											</td>
-											<td>
-												if track.Edges.Artist != nil {
-													<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", track.Edges.Artist.ID)) } class="text-base-content/70 hover:text-primary hover:underline">
-														{ track.Edges.Artist.Name }
-													</a>
-												} else {
-													<span class="text-base-content/50">Unknown Artist</span>
-												}
-											</td>
-											<td>
-												if track.Edges.Album != nil {
-													<a href={ templ.URL(fmt.Sprintf("/library/album/%d", track.Edges.Album.ID)) } class="text-base-content/60 hover:text-secondary hover:underline">
-														{ track.Edges.Album.Name }
-													</a>
-												} else {
-													<span class="text-base-content/50">-</span>
-												}
-											</td>
-											<td class="font-mono text-sm">
-												{ formatTrackDuration(track.DurationMs) }
-											</td>
-											<td>
-												if track.Popularity != nil && *track.Popularity > 0 {
-													<div class="flex items-center gap-2">
-														<progress class="progress progress-primary w-16" value={ fmt.Sprintf("%d", *track.Popularity) } max="100"></progress>
-														<span class="text-xs text-base-content/60">{ fmt.Sprintf("%d", *track.Popularity) }</span>
-													</div>
-												} else {
-													<span class="text-base-content/50">-</span>
-												}
-											</td>
-										</tr>
-									}
-								</tbody>
-							</table>
-						</div>
-					</div>
-				</div>
-				<!-- Tile View -->
-				<div id="tile-view" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-					for _, track := range tracks {
-						<a href={ templ.URL(fmt.Sprintf("/library/track/%d", track.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
-							<figure class="aspect-square bg-base-300">
-								if img := getTrackAlbumCover(track); img != "" {
-									<img src={ img } alt={ track.Name } class="w-full h-full object-cover"/>
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<div class="flex items-center justify-between mb-4">
+							<div>
+								<h3 class="card-title">
+									<span class="icon-[heroicons--musical-note] w-5 h-5"></span>
+									Tracks
+								</h3>
+								if artistFilter != "" {
+									<p class="text-base-content/60 text-sm mt-1">
+										Filtered by artist: <span class="font-medium text-primary">{ artistFilter }</span>
+										<a href="/library/tracks" class="ml-2 link link-primary text-xs">Clear</a>
+									</p>
 								} else {
-									<div class="w-full h-full flex items-center justify-center">
-										<span class="icon-[heroicons--musical-note] w-16 h-16 text-base-content/20"></span>
-									</div>
+									<p class="text-base-content/60 text-sm mt-1">All tracks from your enriched music catalog</p>
 								}
-							</figure>
-							<div class="card-body p-4">
-								<h3 class="card-title text-sm line-clamp-1">{ track.Name }</h3>
-								<p class="text-xs text-base-content/60 line-clamp-1">
-									if track.Edges.Artist != nil {
-										{ track.Edges.Artist.Name }
-									} else {
-										Unknown Artist
-									}
-								</p>
-								<div class="flex items-center justify-between mt-2">
-									<span class="text-xs text-base-content/50">{ formatTrackDuration(track.DurationMs) }</span>
-									if track.Popularity != nil && *track.Popularity > 70 {
-										<span class="badge badge-warning badge-xs">Popular</span>
-									}
-								</div>
 							</div>
-						</a>
-					}
+							<div class="flex items-center gap-2">
+								@components.TrackTableToolbar(components.TrackTableToolbarConfig{
+									TableID:           "tracks-table",
+									ShowArtworkToggle: true,
+									ArtworkDefault:    true,
+									ColumnOptions: []components.ColumnOption{
+										{Value: "col-track", Label: "Track", DefaultVisible: true},
+										{Value: "col-artist", Label: "Artist", DefaultVisible: true},
+										{Value: "col-album", Label: "Album", DefaultVisible: true},
+										{Value: "col-duration", Label: "Duration", DefaultVisible: true},
+										{Value: "col-popularity", Label: "Popularity", DefaultVisible: true},
+										{Value: "col-plays", Label: "Plays", DefaultVisible: false},
+									},
+								})
+							</div>
+						</div>
+						@components.TrackTable("tracks-table", toTrackRows(tracks), []string{"track", "artist", "album", "duration", "popularity"}, nil, components.SortConfig{
+							Column:    sortCol,
+							Direction: sortDir,
+							BaseURL:   buildTrackSortBaseURL(currentPage, artistFilter),
+						})
+					</div>
 				</div>
 				if totalPages > 1 {
 					<div class="flex justify-center mt-8">
 						<div class="join">
 							if currentPage > 1 {
-								<a href={ templ.URL(fmt.Sprintf("/library/tracks?page=%d", currentPage-1)) } class="join-item btn btn-sm">«</a>
+								<a href={ templ.URL(buildTrackPaginationURL(currentPage-1, artistFilter, sortCol, sortDir)) } class="join-item btn btn-sm">«</a>
 							} else {
 								<button class="join-item btn btn-sm btn-disabled">«</button>
 							}
@@ -191,13 +108,13 @@ templ Index(tracks []*ent.Track, currentPage int, totalPages int, cfg *config.Co
 								if i == currentPage {
 									<button class="join-item btn btn-sm btn-active">{ fmt.Sprintf("%d", i) }</button>
 								} else if i == 1 || i == totalPages || (i >= currentPage-2 && i <= currentPage+2) {
-									<a href={ templ.URL(fmt.Sprintf("/library/tracks?page=%d", i)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", i) }</a>
+									<a href={ templ.URL(buildTrackPaginationURL(i, artistFilter, sortCol, sortDir)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", i) }</a>
 								} else if i == currentPage-3 || i == currentPage+3 {
 									<button class="join-item btn btn-sm btn-disabled">...</button>
 								}
 							}
 							if currentPage < totalPages {
-								<a href={ templ.URL(fmt.Sprintf("/library/tracks?page=%d", currentPage+1)) } class="join-item btn btn-sm">»</a>
+								<a href={ templ.URL(buildTrackPaginationURL(currentPage+1, artistFilter, sortCol, sortDir)) } class="join-item btn btn-sm">»</a>
 							} else {
 								<button class="join-item btn btn-sm btn-disabled">»</button>
 							}
@@ -206,47 +123,5 @@ templ Index(tracks []*ent.Track, currentPage int, totalPages int, cfg *config.Co
 				}
 			}
 		</div>
-		<script>
-			// View toggle functionality
-			function setView(view) {
-				const tableView = document.getElementById('table-view');
-				const tileView = document.getElementById('tile-view');
-				const tableBtn = document.getElementById('table-view-btn');
-				const tileBtn = document.getElementById('tile-view-btn');
-
-				if (view === 'table') {
-					tableView.classList.remove('hidden');
-					tileView.classList.add('hidden');
-					tableBtn.classList.add('btn-active');
-					tileBtn.classList.remove('btn-active');
-				} else {
-					tableView.classList.add('hidden');
-					tileView.classList.remove('hidden');
-					tableBtn.classList.remove('btn-active');
-					tileBtn.classList.add('btn-active');
-				}
-
-				// Save preference
-				localStorage.setItem('spotter-tracks-view', view);
-			}
-
-			// Restore saved preference (default is table)
-			(function() {
-				const savedView = localStorage.getItem('spotter-tracks-view');
-				if (savedView === 'tile') {
-					setView('tile');
-				}
-			})();
-
-			// Initialize timeago
-			(function() {
-				if (typeof timeago !== 'undefined') {
-					const nodes = document.querySelectorAll('.timeago');
-					if (nodes.length > 0) {
-						timeago.render(nodes);
-					}
-				}
-			})();
-		</script>
 	}
 }
