@@ -56,9 +56,13 @@ type UserEdges struct {
 	Artists []*Artist `json:"artists,omitempty"`
 	// Albums holds the value of the albums edge.
 	Albums []*Album `json:"albums,omitempty"`
+	// Djs holds the value of the djs edge.
+	Djs []*DJ `json:"djs,omitempty"`
+	// Mixtapes holds the value of the mixtapes edge.
+	Mixtapes []*Mixtape `json:"mixtapes,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [8]bool
+	loadedTypes [10]bool
 }
 
 // SpotifyAuthOrErr returns the SpotifyAuth value or an error if the edge
@@ -137,6 +141,24 @@ func (e UserEdges) AlbumsOrErr() ([]*Album, error) {
 		return e.Albums, nil
 	}
 	return nil, &NotLoadedError{edge: "albums"}
+}
+
+// DjsOrErr returns the Djs value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) DjsOrErr() ([]*DJ, error) {
+	if e.loadedTypes[8] {
+		return e.Djs, nil
+	}
+	return nil, &NotLoadedError{edge: "djs"}
+}
+
+// MixtapesOrErr returns the Mixtapes value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) MixtapesOrErr() ([]*Mixtape, error) {
+	if e.loadedTypes[9] {
+		return e.Mixtapes, nil
+	}
+	return nil, &NotLoadedError{edge: "mixtapes"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -258,6 +280,16 @@ func (_m *User) QueryArtists() *ArtistQuery {
 // QueryAlbums queries the "albums" edge of the User entity.
 func (_m *User) QueryAlbums() *AlbumQuery {
 	return NewUserClient(_m.config).QueryAlbums(_m)
+}
+
+// QueryDjs queries the "djs" edge of the User entity.
+func (_m *User) QueryDjs() *DJQuery {
+	return NewUserClient(_m.config).QueryDjs(_m)
+}
+
+// QueryMixtapes queries the "mixtapes" edge of the User entity.
+func (_m *User) QueryMixtapes() *MixtapeQuery {
+	return NewUserClient(_m.config).QueryMixtapes(_m)
 }
 
 // Update returns a builder for updating this User.

@@ -26,6 +26,12 @@ const (
 	FieldURL = "url"
 	// EdgeUser holds the string denoting the user edge name in mutations.
 	EdgeUser = "user"
+	// EdgeArtist holds the string denoting the artist edge name in mutations.
+	EdgeArtist = "artist"
+	// EdgeAlbum holds the string denoting the album edge name in mutations.
+	EdgeAlbum = "album"
+	// EdgeTrack holds the string denoting the track edge name in mutations.
+	EdgeTrack = "track"
 	// Table holds the table name of the listen in the database.
 	Table = "listens"
 	// UserTable is the table that holds the user relation/edge.
@@ -35,6 +41,27 @@ const (
 	UserInverseTable = "users"
 	// UserColumn is the table column denoting the user relation/edge.
 	UserColumn = "user_listens"
+	// ArtistTable is the table that holds the artist relation/edge.
+	ArtistTable = "listens"
+	// ArtistInverseTable is the table name for the Artist entity.
+	// It exists in this package in order to avoid circular dependency with the "artist" package.
+	ArtistInverseTable = "artists"
+	// ArtistColumn is the table column denoting the artist relation/edge.
+	ArtistColumn = "artist_listens"
+	// AlbumTable is the table that holds the album relation/edge.
+	AlbumTable = "listens"
+	// AlbumInverseTable is the table name for the Album entity.
+	// It exists in this package in order to avoid circular dependency with the "album" package.
+	AlbumInverseTable = "albums"
+	// AlbumColumn is the table column denoting the album relation/edge.
+	AlbumColumn = "album_listens"
+	// TrackTable is the table that holds the track relation/edge.
+	TrackTable = "listens"
+	// TrackInverseTable is the table name for the Track entity.
+	// It exists in this package in order to avoid circular dependency with the "track" package.
+	TrackInverseTable = "tracks"
+	// TrackColumn is the table column denoting the track relation/edge.
+	TrackColumn = "track_listens"
 )
 
 // Columns holds all SQL columns for listen fields.
@@ -51,6 +78,9 @@ var Columns = []string{
 // ForeignKeys holds the SQL foreign-keys that are owned by the "listens"
 // table and are not defined as standalone fields in the schema.
 var ForeignKeys = []string{
+	"album_listens",
+	"artist_listens",
+	"track_listens",
 	"user_listens",
 }
 
@@ -113,10 +143,52 @@ func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByArtistField orders the results by artist field.
+func ByArtistField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newArtistStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByAlbumField orders the results by album field.
+func ByAlbumField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAlbumStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// ByTrackField orders the results by track field.
+func ByTrackField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTrackStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UserInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+	)
+}
+func newArtistStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ArtistInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, ArtistTable, ArtistColumn),
+	)
+}
+func newAlbumStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AlbumInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, AlbumTable, AlbumColumn),
+	)
+}
+func newTrackStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TrackInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, TrackTable, TrackColumn),
 	)
 }

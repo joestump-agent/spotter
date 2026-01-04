@@ -9,8 +9,10 @@ import (
 	"math"
 	"spotter/ent/album"
 	"spotter/ent/artist"
+	"spotter/ent/dj"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/mixtape"
 	"spotter/ent/navidromeauth"
 	"spotter/ent/playlist"
 	"spotter/ent/predicate"
@@ -39,6 +41,8 @@ type UserQuery struct {
 	withSyncEvents    *SyncEventQuery
 	withArtists       *ArtistQuery
 	withAlbums        *AlbumQuery
+	withDjs           *DJQuery
+	withMixtapes      *MixtapeQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -251,6 +255,50 @@ func (_q *UserQuery) QueryAlbums() *AlbumQuery {
 	return query
 }
 
+// QueryDjs chains the current query on the "djs" edge.
+func (_q *UserQuery) QueryDjs() *DJQuery {
+	query := (&DJClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(dj.Table, dj.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.DjsTable, user.DjsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryMixtapes chains the current query on the "mixtapes" edge.
+func (_q *UserQuery) QueryMixtapes() *MixtapeQuery {
+	query := (&MixtapeClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(mixtape.Table, mixtape.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.MixtapesTable, user.MixtapesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // First returns the first User entity from the query.
 // Returns a *NotFoundError when no User was found.
 func (_q *UserQuery) First(ctx context.Context) (*User, error) {
@@ -451,6 +499,8 @@ func (_q *UserQuery) Clone() *UserQuery {
 		withSyncEvents:    _q.withSyncEvents.Clone(),
 		withArtists:       _q.withArtists.Clone(),
 		withAlbums:        _q.withAlbums.Clone(),
+		withDjs:           _q.withDjs.Clone(),
+		withMixtapes:      _q.withMixtapes.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -545,6 +595,28 @@ func (_q *UserQuery) WithAlbums(opts ...func(*AlbumQuery)) *UserQuery {
 	return _q
 }
 
+// WithDjs tells the query-builder to eager-load the nodes that are connected to
+// the "djs" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithDjs(opts ...func(*DJQuery)) *UserQuery {
+	query := (&DJClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withDjs = query
+	return _q
+}
+
+// WithMixtapes tells the query-builder to eager-load the nodes that are connected to
+// the "mixtapes" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithMixtapes(opts ...func(*MixtapeQuery)) *UserQuery {
+	query := (&MixtapeClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withMixtapes = query
+	return _q
+}
+
 // GroupBy is used to group vertices by one or more fields/columns.
 // It is often used with aggregate functions, like: count, max, mean, min, sum.
 //
@@ -623,7 +695,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [8]bool{
+		loadedTypes = [10]bool{
 			_q.withSpotifyAuth != nil,
 			_q.withLastfmAuth != nil,
 			_q.withNavidromeAuth != nil,
@@ -632,6 +704,8 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			_q.withSyncEvents != nil,
 			_q.withArtists != nil,
 			_q.withAlbums != nil,
+			_q.withDjs != nil,
+			_q.withMixtapes != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -702,6 +776,20 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := _q.loadAlbums(ctx, query, nodes,
 			func(n *User) { n.Edges.Albums = []*Album{} },
 			func(n *User, e *Album) { n.Edges.Albums = append(n.Edges.Albums, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withDjs; query != nil {
+		if err := _q.loadDjs(ctx, query, nodes,
+			func(n *User) { n.Edges.Djs = []*DJ{} },
+			func(n *User, e *DJ) { n.Edges.Djs = append(n.Edges.Djs, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withMixtapes; query != nil {
+		if err := _q.loadMixtapes(ctx, query, nodes,
+			func(n *User) { n.Edges.Mixtapes = []*Mixtape{} },
+			func(n *User, e *Mixtape) { n.Edges.Mixtapes = append(n.Edges.Mixtapes, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -942,6 +1030,68 @@ func (_q *UserQuery) loadAlbums(ctx context.Context, query *AlbumQuery, nodes []
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "user_albums" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadDjs(ctx context.Context, query *DJQuery, nodes []*User, init func(*User), assign func(*User, *DJ)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.DJ(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.DjsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_djs
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_djs" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_djs" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadMixtapes(ctx context.Context, query *MixtapeQuery, nodes []*User, init func(*User), assign func(*User, *Mixtape)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.Mixtape(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.MixtapesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.user_mixtapes
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "user_mixtapes" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_mixtapes" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

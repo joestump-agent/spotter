@@ -80,9 +80,11 @@ type TrackEdges struct {
 	Artist *Artist `json:"artist,omitempty"`
 	// Album holds the value of the album edge.
 	Album *Album `json:"album,omitempty"`
+	// Listens holds the value of the listens edge.
+	Listens []*Listen `json:"listens,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // ArtistOrErr returns the Artist value or an error if the edge
@@ -105,6 +107,15 @@ func (e TrackEdges) AlbumOrErr() (*Album, error) {
 		return nil, &NotFoundError{label: album.Label}
 	}
 	return nil, &NotLoadedError{edge: "album"}
+}
+
+// ListensOrErr returns the Listens value or an error if the edge
+// was not loaded in eager-loading.
+func (e TrackEdges) ListensOrErr() ([]*Listen, error) {
+	if e.loadedTypes[2] {
+		return e.Listens, nil
+	}
+	return nil, &NotLoadedError{edge: "listens"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -342,6 +353,11 @@ func (_m *Track) QueryArtist() *ArtistQuery {
 // QueryAlbum queries the "album" edge of the Track entity.
 func (_m *Track) QueryAlbum() *AlbumQuery {
 	return NewTrackClient(_m.config).QueryAlbum(_m)
+}
+
+// QueryListens queries the "listens" edge of the Track entity.
+func (_m *Track) QueryListens() *ListenQuery {
+	return NewTrackClient(_m.config).QueryListens(_m)
 }
 
 // Update returns a builder for updating this Track.

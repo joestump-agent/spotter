@@ -1,0 +1,229 @@
+package components
+
+type TagInputConfig struct {
+	// ID is the unique identifier for this input (used for form submission and JS targeting)
+	ID string
+	// Name is the form field name
+	Name string
+	// Label is the display label
+	Label string
+	// LabelIcon is the optional icon class (e.g., "icon-[heroicons--plus-circle]")
+	LabelIcon string
+	// LabelIconClass is additional classes for the icon (e.g., "text-success")
+	LabelIconClass string
+	// Placeholder is the input placeholder text
+	Placeholder string
+	// HelpText is the helper text shown below the input
+	HelpText string
+	// SuggestionsURL is the URL to fetch suggestions from (with ?q= query param)
+	SuggestionsURL string
+	// InitialTags are the pre-selected tags
+	InitialTags []string
+}
+
+templ TagInput(cfg TagInputConfig) {
+	<div class="form-control" x-data={ tagInputData(cfg) }>
+		<label class="label">
+			<span class="label-text font-medium">
+				if cfg.LabelIcon != "" {
+					<span class={ cfg.LabelIcon, "w-4 h-4 inline-block", cfg.LabelIconClass }></span>
+				}
+				{ cfg.Label }
+			</span>
+		</label>
+		<!-- Hidden input for form submission -->
+		<input
+			type="hidden"
+			name={ cfg.Name }
+			id={ cfg.ID }
+			x-model="tagsString"
+		/>
+		<!-- Tag display and input area -->
+		<div class="input input-bordered flex flex-wrap items-center gap-1 h-auto min-h-12 py-2 px-3 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary">
+			<!-- Selected tags -->
+			<template x-for="(tag, index) in tags" :key="index">
+				<span class="badge badge-primary gap-1">
+					<span x-text="tag"></span>
+					<button type="button" class="hover:text-primary-content/70" @click="removeTag(index)">
+						<span class="icon-[heroicons--x-mark] w-3 h-3"></span>
+					</button>
+				</span>
+			</template>
+			<!-- Input field -->
+			<div class="relative flex-1 min-w-32">
+				<input
+					type="text"
+					class="w-full bg-transparent border-none outline-none text-sm p-0 focus:ring-0"
+					x-bind:placeholder="tags.length === 0 ? placeholderText : ''"
+					x-model="query"
+					@input.debounce.200ms="fetchSuggestions"
+					@keydown.enter.prevent="addTagFromQuery"
+					@keydown.tab="addTagFromQuery"
+					@keydown.backspace="handleBackspace"
+					@keydown.down.prevent="navigateSuggestions(1)"
+					@keydown.up.prevent="navigateSuggestions(-1)"
+					@keydown.escape="closeSuggestions"
+					@focus="showSuggestions = suggestions.length > 0"
+					@blur="closeSuggestionsDelayed"
+					x-ref="input"
+				/>
+				<!-- Suggestions dropdown -->
+				<div
+					x-show="showSuggestions && suggestions.length > 0"
+					x-cloak
+					class="absolute left-0 top-full mt-1 w-64 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg z-50"
+				>
+					<ul class="menu menu-sm p-1">
+						<template x-for="(suggestion, index) in suggestions" :key="suggestion">
+							<li>
+								<button
+									type="button"
+									class="text-left"
+									:class="{ 'active': index === selectedIndex }"
+									@mousedown.prevent="addTag(suggestion)"
+									@mouseenter="selectedIndex = index"
+									x-text="suggestion"
+								></button>
+							</li>
+						</template>
+					</ul>
+				</div>
+			</div>
+		</div>
+		if cfg.HelpText != "" {
+			<label class="label">
+				<span class="label-text-alt text-base-content/60">{ cfg.HelpText }</span>
+			</label>
+		}
+	</div>
+}
+
+func tagInputData(cfg TagInputConfig) string {
+	// Build initial tags JSON
+	tagsJSON := "[]"
+	if len(cfg.InitialTags) > 0 {
+		tagsJSON = "["
+		for i, tag := range cfg.InitialTags {
+			if i > 0 {
+				tagsJSON += ","
+			}
+			// Escape single quotes in tag names
+			escapedTag := ""
+			for _, c := range tag {
+				if c == '\'' {
+					escapedTag += "\\'"
+				} else if c == '\\' {
+					escapedTag += "\\\\"
+				} else {
+					escapedTag += string(c)
+				}
+			}
+			tagsJSON += "'" + escapedTag + "'"
+		}
+		tagsJSON += "]"
+	}
+
+	return `{
+		tags: ` + tagsJSON + `,
+		query: '',
+		suggestions: [],
+		showSuggestions: false,
+		selectedIndex: -1,
+		suggestionsURL: '` + cfg.SuggestionsURL + `',
+		placeholderText: '` + cfg.Placeholder + `',
+
+		get tagsString() {
+			return this.tags.join(', ');
+		},
+
+		addTag(tag) {
+			tag = tag.trim();
+			if (tag && !this.tags.includes(tag)) {
+				this.tags.push(tag);
+			}
+			this.query = '';
+			this.suggestions = [];
+			this.showSuggestions = false;
+			this.selectedIndex = -1;
+			this.$refs.input.focus();
+		},
+
+		addTagFromQuery() {
+			if (this.selectedIndex >= 0 && this.suggestions[this.selectedIndex]) {
+				this.addTag(this.suggestions[this.selectedIndex]);
+			} else if (this.query.trim()) {
+				this.addTag(this.query);
+			}
+		},
+
+		removeTag(index) {
+			this.tags.splice(index, 1);
+		},
+
+		handleBackspace() {
+			if (!this.query && this.tags.length > 0) {
+				this.tags.pop();
+			}
+		},
+
+		async fetchSuggestions() {
+			if (!this.suggestionsURL) {
+				this.suggestions = [];
+				return;
+			}
+
+			if (!this.query.trim()) {
+				// Fetch all suggestions when input is empty but focused
+				try {
+					const response = await fetch(this.suggestionsURL);
+					if (response.ok) {
+						const allSuggestions = await response.json() || [];
+						this.suggestions = allSuggestions.filter(s => !this.tags.includes(s)).slice(0, 10);
+						this.showSuggestions = this.suggestions.length > 0;
+						this.selectedIndex = -1;
+					}
+				} catch (e) {
+					console.error('Failed to fetch suggestions:', e);
+				}
+				return;
+			}
+
+			try {
+				const response = await fetch(this.suggestionsURL + '?q=' + encodeURIComponent(this.query));
+				if (response.ok) {
+					const allSuggestions = await response.json() || [];
+					// Filter out already selected tags
+					this.suggestions = allSuggestions.filter(s => !this.tags.includes(s)).slice(0, 10);
+					this.showSuggestions = this.suggestions.length > 0;
+					this.selectedIndex = -1;
+				}
+			} catch (e) {
+				console.error('Failed to fetch suggestions:', e);
+				this.suggestions = [];
+			}
+		},
+
+		navigateSuggestions(direction) {
+			if (!this.showSuggestions || this.suggestions.length === 0) return;
+
+			this.selectedIndex += direction;
+			if (this.selectedIndex < 0) {
+				this.selectedIndex = this.suggestions.length - 1;
+			} else if (this.selectedIndex >= this.suggestions.length) {
+				this.selectedIndex = 0;
+			}
+		},
+
+		closeSuggestions() {
+			this.showSuggestions = false;
+			this.selectedIndex = -1;
+		},
+
+		closeSuggestionsDelayed() {
+			setTimeout(() => {
+				this.showSuggestions = false;
+				this.selectedIndex = -1;
+			}, 150);
+		}
+	}`
+}

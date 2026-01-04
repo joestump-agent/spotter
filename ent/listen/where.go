@@ -483,6 +483,75 @@ func HasUserWith(preds ...predicate.User) predicate.Listen {
 	})
 }
 
+// HasArtist applies the HasEdge predicate on the "artist" edge.
+func HasArtist() predicate.Listen {
+	return predicate.Listen(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, ArtistTable, ArtistColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasArtistWith applies the HasEdge predicate on the "artist" edge with a given conditions (other predicates).
+func HasArtistWith(preds ...predicate.Artist) predicate.Listen {
+	return predicate.Listen(func(s *sql.Selector) {
+		step := newArtistStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasAlbum applies the HasEdge predicate on the "album" edge.
+func HasAlbum() predicate.Listen {
+	return predicate.Listen(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, AlbumTable, AlbumColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAlbumWith applies the HasEdge predicate on the "album" edge with a given conditions (other predicates).
+func HasAlbumWith(preds ...predicate.Album) predicate.Listen {
+	return predicate.Listen(func(s *sql.Selector) {
+		step := newAlbumStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasTrack applies the HasEdge predicate on the "track" edge.
+func HasTrack() predicate.Listen {
+	return predicate.Listen(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, TrackTable, TrackColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasTrackWith applies the HasEdge predicate on the "track" edge with a given conditions (other predicates).
+func HasTrackWith(preds ...predicate.Track) predicate.Listen {
+	return predicate.Listen(func(s *sql.Selector) {
+		step := newTrackStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Listen) predicate.Listen {
 	return predicate.Listen(sql.AndPredicates(predicates...))

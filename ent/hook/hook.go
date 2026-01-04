@@ -56,6 +56,18 @@ func (f ArtistImageFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ArtistImageMutation", m)
 }
 
+// The DJFunc type is an adapter to allow the use of ordinary
+// function as DJ mutator.
+type DJFunc func(context.Context, *ent.DJMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DJFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DJMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DJMutation", m)
+}
+
 // The LastFMAuthFunc type is an adapter to allow the use of ordinary
 // function as LastFMAuth mutator.
 type LastFMAuthFunc func(context.Context, *ent.LastFMAuthMutation) (ent.Value, error)
@@ -78,6 +90,18 @@ func (f ListenFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, erro
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ListenMutation", m)
+}
+
+// The MixtapeFunc type is an adapter to allow the use of ordinary
+// function as Mixtape mutator.
+type MixtapeFunc func(context.Context, *ent.MixtapeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MixtapeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MixtapeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MixtapeMutation", m)
 }
 
 // The NavidromeAuthFunc type is an adapter to allow the use of ordinary

@@ -1,0 +1,255 @@
+package artists
+
+import (
+	"fmt"
+	"spotter/ent"
+	"spotter/internal/config"
+	"spotter/internal/views/layouts"
+	"time"
+)
+
+func formatTime(t time.Time) string {
+	return t.Local().Format("Jan 02, 2006")
+}
+
+func formatTimeISO(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func getArtistThumbnail(artist *ent.Artist) string {
+	if artist.Edges.Images == nil || len(artist.Edges.Images) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/library/artist/%d.png", artist.ID)
+}
+
+func formatFollowers(count *int) string {
+	if count == nil || *count == 0 {
+		return "-"
+	}
+	if *count >= 1000000 {
+		return fmt.Sprintf("%.1fM", float64(*count)/1000000)
+	}
+	if *count >= 1000 {
+		return fmt.Sprintf("%.1fK", float64(*count)/1000)
+	}
+	return fmt.Sprintf("%d", *count)
+}
+
+templ Index(artists []*ent.Artist, currentPage int, totalPages int, cfg *config.Config) {
+	@layouts.Dashboard("Artists | Spotter", cfg, "/library/artists") {
+		<div class="max-w-7xl mx-auto">
+			<div class="flex items-center justify-between mb-8">
+				<div>
+					<h2 class="text-3xl font-bold">Artists</h2>
+					<p class="text-base-content/60 mt-2">All artists from your enriched music catalog</p>
+				</div>
+				<!-- View Toggle -->
+				<div class="join">
+					<button
+						id="table-view-btn"
+						class="join-item btn btn-sm btn-square"
+						onclick="setView('table')"
+						title="Table view"
+					>
+						<span class="icon-[heroicons--table-cells] w-4 h-4"></span>
+					</button>
+					<button
+						id="tile-view-btn"
+						class="join-item btn btn-sm btn-square btn-active"
+						onclick="setView('tile')"
+						title="Tile view"
+					>
+						<span class="icon-[heroicons--squares-2x2] w-4 h-4"></span>
+					</button>
+				</div>
+			</div>
+			if len(artists) == 0 {
+				<div class="card bg-base-200">
+					<div class="card-body items-center text-center">
+						<span class="icon-[heroicons--user-group] w-16 h-16 text-base-content/30"></span>
+						<h3 class="card-title">No artists found</h3>
+						<p class="text-base-content/60">Artists will appear here once your music catalog is enriched.</p>
+					</div>
+				</div>
+			} else {
+				<!-- Table View -->
+				<div id="table-view" class="hidden card bg-base-100 shadow-xl">
+					<div class="card-body p-0">
+						<div class="overflow-x-auto">
+							<table class="table table-zebra">
+								<thead>
+									<tr>
+										<th class="w-12"></th>
+										<th>Artist</th>
+										<th>Genres</th>
+										<th>Popularity</th>
+										<th>Followers</th>
+									</tr>
+								</thead>
+								<tbody>
+									for _, artist := range artists {
+										<tr class="hover">
+											<td>
+												<div class="avatar">
+													<div class="w-10 h-10 rounded-full">
+														if img := getArtistThumbnail(artist); img != "" {
+															<img src={ img } alt={ artist.Name }/>
+														} else {
+															<div class="bg-base-300 w-full h-full flex items-center justify-center">
+																<span class="icon-[heroicons--user-group] w-5 h-5 text-base-content/40"></span>
+															</div>
+														}
+													</div>
+												</div>
+											</td>
+											<td>
+												<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", artist.ID)) } class="font-medium hover:text-primary hover:underline">
+													{ artist.Name }
+												</a>
+											</td>
+											<td>
+												<div class="flex flex-wrap gap-1">
+													for i, genre := range artist.Genres {
+														if i < 3 {
+															<span class="badge badge-outline badge-sm">{ genre }</span>
+														}
+													}
+													if len(artist.Genres) > 3 {
+														<span class="badge badge-ghost badge-sm">+{ fmt.Sprintf("%d", len(artist.Genres)-3) }</span>
+													}
+													if len(artist.Genres) == 0 {
+														<span class="text-base-content/50">-</span>
+													}
+												</div>
+											</td>
+											<td>
+												if artist.Popularity != nil && *artist.Popularity > 0 {
+													<div class="flex items-center gap-2">
+														<progress class="progress progress-primary w-16" value={ fmt.Sprintf("%d", *artist.Popularity) } max="100"></progress>
+														<span class="text-xs text-base-content/60">{ fmt.Sprintf("%d", *artist.Popularity) }</span>
+													</div>
+												} else {
+													<span class="text-base-content/50">-</span>
+												}
+											</td>
+											<td>
+												{ formatFollowers(artist.FollowerCount) }
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+				<!-- Tile View -->
+				<div id="tile-view" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+					for _, artist := range artists {
+						<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", artist.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
+							<figure class="aspect-square bg-base-300">
+								if img := getArtistThumbnail(artist); img != "" {
+									<img src={ img } alt={ artist.Name } class="w-full h-full object-cover"/>
+								} else {
+									<div class="w-full h-full flex items-center justify-center">
+										<span class="icon-[heroicons--user-group] w-16 h-16 text-base-content/20"></span>
+									</div>
+								}
+							</figure>
+							<div class="card-body p-4">
+								<h3 class="card-title text-sm line-clamp-1">{ artist.Name }</h3>
+								<p class="text-xs text-base-content/60 line-clamp-1">
+									if len(artist.Genres) > 0 {
+										{ artist.Genres[0] }
+									} else {
+										Artist
+									}
+								</p>
+								<div class="flex items-center justify-between mt-2">
+									if artist.FollowerCount != nil && *artist.FollowerCount > 0 {
+										<span class="text-xs text-base-content/50">{ formatFollowers(artist.FollowerCount) } followers</span>
+									} else {
+										<span></span>
+									}
+									if artist.Popularity != nil && *artist.Popularity > 70 {
+										<span class="badge badge-warning badge-xs">Popular</span>
+									}
+								</div>
+							</div>
+						</a>
+					}
+				</div>
+				if totalPages > 1 {
+					<div class="flex justify-center mt-8">
+						<div class="join">
+							if currentPage > 1 {
+								<a href={ templ.URL(fmt.Sprintf("/library/artists?page=%d", currentPage-1)) } class="join-item btn btn-sm">«</a>
+							} else {
+								<button class="join-item btn btn-sm btn-disabled">«</button>
+							}
+							for i := 1; i <= totalPages; i++ {
+								if i == currentPage {
+									<button class="join-item btn btn-sm btn-active">{ fmt.Sprintf("%d", i) }</button>
+								} else if i == 1 || i == totalPages || (i >= currentPage-2 && i <= currentPage+2) {
+									<a href={ templ.URL(fmt.Sprintf("/library/artists?page=%d", i)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", i) }</a>
+								} else if i == currentPage-3 || i == currentPage+3 {
+									<button class="join-item btn btn-sm btn-disabled">...</button>
+								}
+							}
+							if currentPage < totalPages {
+								<a href={ templ.URL(fmt.Sprintf("/library/artists?page=%d", currentPage+1)) } class="join-item btn btn-sm">»</a>
+							} else {
+								<button class="join-item btn btn-sm btn-disabled">»</button>
+							}
+						</div>
+					</div>
+				}
+			}
+		</div>
+		<script>
+			// View toggle functionality
+			function setView(view) {
+				const tableView = document.getElementById('table-view');
+				const tileView = document.getElementById('tile-view');
+				const tableBtn = document.getElementById('table-view-btn');
+				const tileBtn = document.getElementById('tile-view-btn');
+
+				if (view === 'table') {
+					tableView.classList.remove('hidden');
+					tileView.classList.add('hidden');
+					tableBtn.classList.add('btn-active');
+					tileBtn.classList.remove('btn-active');
+				} else {
+					tableView.classList.add('hidden');
+					tileView.classList.remove('hidden');
+					tableBtn.classList.remove('btn-active');
+					tileBtn.classList.add('btn-active');
+				}
+
+				// Save preference
+				localStorage.setItem('spotter-artists-view', view);
+			}
+
+			// Restore saved preference (default is tile)
+			(function() {
+				const savedView = localStorage.getItem('spotter-artists-view');
+				if (savedView === 'table') {
+					setView('table');
+				}
+			})();
+
+			// Initialize timeago
+			(function() {
+				if (typeof timeago !== 'undefined') {
+					const nodes = document.querySelectorAll('.timeago');
+					if (nodes.length > 0) {
+						timeago.render(nodes);
+					}
+				}
+			})();
+		</script>
+	}
+}

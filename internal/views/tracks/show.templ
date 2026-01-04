@@ -1,0 +1,667 @@
+package tracks
+
+import (
+	"encoding/json"
+	"fmt"
+	"spotter/ent"
+	"spotter/internal/config"
+	"spotter/internal/views/components"
+	"spotter/internal/views/layouts"
+	"time"
+)
+
+// TrackStats holds statistics for a track
+type TrackStats struct {
+	TotalListens       int
+	FirstListen        time.Time
+	LastListen         time.Time
+	ListensByProvider  []components.ChartDataPoint
+	ListensByHour      []components.ChartDataPoint
+	ListensByDayOfWeek []components.ChartDataPoint
+	ListensByMonth     []components.ChartDataPoint
+	ProviderHistory    components.StackedChartData
+}
+
+func formatNumber(n int) string {
+	return fmt.Sprintf("%d", n)
+}
+
+func formatDate(t time.Time) string {
+	if t.IsZero() {
+		return "N/A"
+	}
+	return t.Local().Format("Jan 2 '06")
+}
+
+func formatDuration(ms int) string {
+	if ms <= 0 {
+		return "N/A"
+	}
+	seconds := ms / 1000
+	minutes := seconds / 60
+	secs := seconds % 60
+	if minutes >= 60 {
+		hours := minutes / 60
+		mins := minutes % 60
+		return fmt.Sprintf("%d:%02d:%02d", hours, mins, secs)
+	}
+	return fmt.Sprintf("%d:%02d", minutes, secs)
+}
+
+func getOrDefault(value, defaultVal string) string {
+	if value == "" {
+		return defaultVal
+	}
+	return value
+}
+
+func getStringPtrOrDefault(value *string, defaultVal string) string {
+	if value == nil || *value == "" {
+		return defaultVal
+	}
+	return *value
+}
+
+func toJSON(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+func formatEnrichedTime(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return "Never"
+	}
+	return t.Local().Format("Jan 02, 2006 at 3:04 PM")
+}
+
+func getAlbumImage(track *ent.Track) string {
+	if track.Edges.Album == nil || track.Edges.Album.Edges.Images == nil || len(track.Edges.Album.Edges.Images) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/library/album/%d.png", track.Edges.Album.ID)
+}
+
+func hasAudioFeatures(track *ent.Track) bool {
+	return (track.Energy != nil && *track.Energy > 0) ||
+		(track.Danceability != nil && *track.Danceability > 0) ||
+		(track.Valence != nil && *track.Valence > 0) ||
+		(track.Acousticness != nil && *track.Acousticness > 0) ||
+		(track.Instrumentalness != nil && *track.Instrumentalness > 0)
+}
+
+func getFloatValue(f *float64) float64 {
+	if f == nil {
+		return 0
+	}
+	return *f
+}
+
+func getIntValue(i *int) int {
+	if i == nil {
+		return 0
+	}
+	return *i
+}
+
+func formatBPM(bpm *float64) string {
+	if bpm == nil || *bpm <= 0 {
+		return "N/A"
+	}
+	return fmt.Sprintf("%.0f BPM", *bpm)
+}
+
+func formatPercent(f *float64) string {
+	if f == nil {
+		return "N/A"
+	}
+	return fmt.Sprintf("%.0f%%", *f*100)
+}
+
+templ Show(track *ent.Track, stats *TrackStats, cfg *config.Config, currentTimeframe string) {
+	@layouts.Dashboard(fmt.Sprintf("%s | Tracks | Spotter", track.Name), cfg, "/library/track") {
+		@components.ChartJSScript()
+		<!-- Hero Section -->
+		<div class="relative -mx-6 lg:-mx-8 -mt-6 lg:-mt-8 mb-8">
+			<!-- Background Blur -->
+			if img := getAlbumImage(track); img != "" {
+				<div class="absolute inset-0 h-80 overflow-hidden">
+					<img src={ img } alt="" class="w-full h-full object-cover opacity-20 blur-2xl scale-110"/>
+					<div class="absolute inset-0 bg-gradient-to-b from-transparent via-base-200/80 to-base-200"></div>
+				</div>
+			} else {
+				<div class="absolute inset-0 h-80 bg-gradient-to-b from-accent/20 to-base-200"></div>
+			}
+			<!-- Track Info -->
+			<div class="relative pt-8 px-6 lg:px-8 pb-8">
+				<div class="max-w-7xl mx-auto">
+					<div class="flex flex-col md:flex-row items-start gap-8">
+						<!-- Album Cover -->
+						<div class="flex-shrink-0">
+							<div class="w-48 h-48 md:w-56 md:h-56 rounded-xl shadow-2xl ring ring-base-100 ring-offset-base-200 ring-offset-2 overflow-hidden">
+								if img := getAlbumImage(track); img != "" {
+									<img src={ img } alt={ track.Name } class="w-full h-full object-cover"/>
+								} else {
+									<div class="bg-base-300 w-full h-full flex items-center justify-center">
+										<span class="icon-[heroicons--musical-note] w-24 h-24 text-base-content/30"></span>
+									</div>
+								}
+							</div>
+						</div>
+						<!-- Track Details -->
+						<div class="flex-1 min-w-0">
+							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ track.Name }</h1>
+							<!-- Artist & Album Links -->
+							<div class="flex flex-wrap items-center gap-4 mb-3">
+								if track.Edges.Artist != nil {
+									<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", track.Edges.Artist.ID)) } class="text-xl text-base-content/70 hover:text-primary hover:underline flex items-center gap-2">
+										<span class="icon-[heroicons--user-circle] w-5 h-5"></span>
+										{ track.Edges.Artist.Name }
+									</a>
+								}
+								if track.Edges.Album != nil {
+									<a href={ templ.URL(fmt.Sprintf("/library/album/%d", track.Edges.Album.ID)) } class="text-lg text-base-content/60 hover:text-secondary hover:underline flex items-center gap-2">
+										<span class="icon-[heroicons--square-3-stack-3d] w-5 h-5"></span>
+										{ track.Edges.Album.Name }
+									</a>
+								}
+							</div>
+							<!-- Genres in Header -->
+							if len(track.Genres) > 0 {
+								<div class="flex flex-wrap gap-1 mb-3">
+									for i, genre := range track.Genres {
+										if i < 8 {
+											<span class="badge badge-sm badge-primary">{ genre }</span>
+										}
+									}
+									if len(track.Genres) > 8 {
+										<span class="badge badge-sm badge-ghost">+{ fmt.Sprintf("%d", len(track.Genres)-8) } more</span>
+									}
+								</div>
+							}
+							<!-- Metadata Table -->
+							<div class="bg-base-100/50 rounded-lg p-3 mb-4">
+								<table class="text-sm">
+									<tbody>
+										<tr>
+											<td class="pr-6 py-1 text-base-content/60">Listens</td>
+											<td class="py-1 font-medium">{ formatNumber(stats.TotalListens) }</td>
+											<td class="pr-6 py-1 text-base-content/60 pl-6">Duration</td>
+											<td class="py-1 font-medium">
+												if track.DurationMs != nil && *track.DurationMs > 0 {
+													{ formatDuration(*track.DurationMs) }
+												} else {
+													—
+												}
+											</td>
+										</tr>
+										<tr>
+											<td class="pr-6 py-1 text-base-content/60">Track #</td>
+											<td class="py-1 font-medium">
+												if track.TrackNumber != nil {
+													{ fmt.Sprintf("%d", *track.TrackNumber) }
+												} else {
+													—
+												}
+											</td>
+											<td class="pr-6 py-1 text-base-content/60 pl-6">BPM</td>
+											<td class="py-1 font-medium">
+												if track.Bpm != nil && *track.Bpm > 0 {
+													{ formatBPM(track.Bpm) }
+												} else {
+													—
+												}
+											</td>
+										</tr>
+										<tr>
+											<td class="pr-6 py-1 text-base-content/60">Key</td>
+											<td class="py-1 font-medium">
+												if track.MusicalKey != nil && *track.MusicalKey != "" {
+													{ *track.MusicalKey }
+												} else {
+													—
+												}
+											</td>
+											<td class="pr-6 py-1 text-base-content/60 pl-6">Popularity</td>
+											<td class="py-1 font-medium">
+												if track.Popularity != nil && *track.Popularity > 0 {
+													{ fmt.Sprintf("%d%%", *track.Popularity) }
+												} else {
+													—
+												}
+											</td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+							<!-- External Links -->
+							<div class="flex flex-wrap gap-2">
+								if track.SpotifyID != nil && *track.SpotifyID != "" {
+									@components.ExternalLinkBadge("Spotify", fmt.Sprintf("https://open.spotify.com/track/%s", *track.SpotifyID), "icon-[simple-icons--spotify]", "badge-success")
+								}
+								if track.MusicbrainzID != nil && *track.MusicbrainzID != "" {
+									@components.ExternalLinkBadge("MusicBrainz", fmt.Sprintf("https://musicbrainz.org/recording/%s", *track.MusicbrainzID), "icon-[heroicons--globe-alt]", "badge-warning")
+								}
+								if track.SpotifyURL != nil && *track.SpotifyURL != "" {
+									@components.ExternalLinkBadge("Open in Spotify", *track.SpotifyURL, "icon-[heroicons--play]", "badge-success badge-outline")
+								}
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="max-w-7xl mx-auto">
+			<!-- Main Listens by Provider Chart -->
+			<div class="mb-8">
+				@ProviderHistoryChart(track.ID, stats.ProviderHistory, currentTimeframe)
+			</div>
+			<!-- Stats Grid -->
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+				@components.StatCard("Total Listens", formatNumber(stats.TotalListens), "all time", "icon-[heroicons--play-circle]", "text-primary")
+				@components.StatCard("First Listen", formatDate(stats.FirstListen), "discovered", "icon-[heroicons--calendar]", "text-secondary")
+				@components.StatCard("Last Listen", formatDate(stats.LastListen), "most recent", "icon-[heroicons--clock]", "text-accent")
+				if track.DurationMs != nil {
+					@components.StatCard("Duration", formatDuration(*track.DurationMs), "", "icon-[heroicons--clock]", "text-info")
+				} else {
+					@components.StatCard("Duration", "N/A", "", "icon-[heroicons--clock]", "text-info")
+				}
+			</div>
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+				<!-- Audio Features Radar -->
+				if hasAudioFeatures(track) {
+					<div class="card bg-base-100 shadow-xl">
+						<div class="card-body">
+							<h3 class="card-title">
+								<span class="icon-[heroicons--chart-pie] w-5 h-5"></span>
+								Audio Features
+							</h3>
+							@components.AudioFeaturesRadar(
+								fmt.Sprintf("track-%d-features", track.ID),
+								getFloatValue(track.Energy),
+								getFloatValue(track.Danceability),
+								getFloatValue(track.Valence),
+								getFloatValue(track.Acousticness),
+								getFloatValue(track.Instrumentalness),
+								"300px",
+							)
+							<!-- Feature Details -->
+							<div class="grid grid-cols-2 gap-4 mt-4">
+								<div class="flex justify-between items-center">
+									<span class="text-base-content/60">Energy</span>
+									<span class="font-mono">{ formatPercent(track.Energy) }</span>
+								</div>
+								<div class="flex justify-between items-center">
+									<span class="text-base-content/60">Danceability</span>
+									<span class="font-mono">{ formatPercent(track.Danceability) }</span>
+								</div>
+								<div class="flex justify-between items-center">
+									<span class="text-base-content/60">Valence</span>
+									<span class="font-mono">{ formatPercent(track.Valence) }</span>
+								</div>
+								<div class="flex justify-between items-center">
+									<span class="text-base-content/60">Acousticness</span>
+									<span class="font-mono">{ formatPercent(track.Acousticness) }</span>
+								</div>
+								<div class="flex justify-between items-center">
+									<span class="text-base-content/60">Instrumentalness</span>
+									<span class="font-mono">{ formatPercent(track.Instrumentalness) }</span>
+								</div>
+								if track.Bpm != nil && *track.Bpm > 0 {
+									<div class="flex justify-between items-center">
+										<span class="text-base-content/60">BPM</span>
+										<span class="font-mono">{ formatBPM(track.Bpm) }</span>
+									</div>
+								}
+							</div>
+						</div>
+					</div>
+				}
+				<!-- Genres & Tags -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--tag] w-5 h-5"></span>
+							Genres & Tags
+						</h3>
+						if len(track.Genres) > 0 {
+							<div class="mb-4">
+								<h4 class="text-sm font-medium text-base-content/60 mb-2">Genres</h4>
+								@components.TagBadges(track.Genres, "badge-primary")
+							</div>
+						}
+						if len(track.Tags) > 0 {
+							<div>
+								<h4 class="text-sm font-medium text-base-content/60 mb-2">Tags</h4>
+								@components.TagBadges(track.Tags, "badge-secondary badge-outline")
+							</div>
+						}
+						if len(track.Genres) == 0 && len(track.Tags) == 0 {
+							<p class="text-base-content/50 italic">No genres or tags available</p>
+						}
+						<!-- Additional Audio Info -->
+						if track.MusicalKey != nil || track.Bpm != nil {
+							<div class="divider"></div>
+							<h4 class="text-sm font-medium text-base-content/60 mb-2">Audio Info</h4>
+							<div class="flex flex-wrap gap-2">
+								if track.MusicalKey != nil && *track.MusicalKey != "" {
+									<span class="badge badge-info gap-1">
+										<span class="icon-[heroicons--musical-note] w-3 h-3"></span>
+										Key: { *track.MusicalKey }
+									</span>
+								}
+								if track.Bpm != nil && *track.Bpm > 0 {
+									<span class="badge badge-info gap-1">
+										<span class="icon-[heroicons--heart] w-3 h-3"></span>
+										{ formatBPM(track.Bpm) }
+									</span>
+								}
+								if track.Isrc != nil && *track.Isrc != "" {
+									<span class="badge badge-ghost gap-1">
+										ISRC: { *track.Isrc }
+									</span>
+								}
+							</div>
+						}
+					</div>
+				</div>
+			</div>
+			<!-- Listening Pattern Charts -->
+			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+				<!-- By Hour -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--clock] w-5 h-5"></span>
+							Listens by Hour
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("track-%d-hour", track.ID),
+							"",
+							stats.ListensByHour,
+							"oklch(var(--p))",
+							"200px",
+						)
+					</div>
+				</div>
+				<!-- By Day of Week -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--calendar-days] w-5 h-5"></span>
+							Listens by Day
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("track-%d-day", track.ID),
+							"",
+							stats.ListensByDayOfWeek,
+							"oklch(var(--s))",
+							"200px",
+						)
+					</div>
+				</div>
+				<!-- By Month -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--calendar] w-5 h-5"></span>
+							Listens by Month
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("track-%d-month", track.ID),
+							"",
+							stats.ListensByMonth,
+							"oklch(var(--a))",
+							"200px",
+						)
+					</div>
+				</div>
+			</div>
+			<!-- Related Info Cards -->
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+				<!-- Artist Card -->
+				if track.Edges.Artist != nil {
+					<div class="card bg-base-100 shadow-xl">
+						<div class="card-body">
+							<h3 class="card-title">
+								<span class="icon-[heroicons--user-circle] w-5 h-5"></span>
+								Artist
+							</h3>
+							<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", track.Edges.Artist.ID)) } class="flex items-center gap-4 p-3 rounded-lg bg-base-200 hover:bg-base-300 transition-colors">
+								<div class="avatar">
+									<div class="w-16 h-16 rounded-lg">
+										if track.Edges.Artist.Edges.Images != nil && len(track.Edges.Artist.Edges.Images) > 0 {
+											<img src={ getArtistImageURL(track.Edges.Artist) } alt={ track.Edges.Artist.Name }/>
+										} else {
+											<div class="bg-base-300 w-full h-full flex items-center justify-center">
+												<span class="icon-[heroicons--user-group] w-8 h-8 text-base-content/30"></span>
+											</div>
+										}
+									</div>
+								</div>
+								<div class="flex-1 min-w-0">
+									<div class="font-bold truncate">{ track.Edges.Artist.Name }</div>
+									if len(track.Edges.Artist.Genres) > 0 {
+										<div class="text-sm text-base-content/60 truncate">{ track.Edges.Artist.Genres[0] }</div>
+									}
+								</div>
+								<span class="icon-[heroicons--chevron-right] w-5 h-5 text-base-content/40"></span>
+							</a>
+						</div>
+					</div>
+				}
+				<!-- Album Card -->
+				if track.Edges.Album != nil {
+					<div class="card bg-base-100 shadow-xl">
+						<div class="card-body">
+							<h3 class="card-title">
+								<span class="icon-[heroicons--square-3-stack-3d] w-5 h-5"></span>
+								Album
+							</h3>
+							<a href={ templ.URL(fmt.Sprintf("/library/album/%d", track.Edges.Album.ID)) } class="flex items-center gap-4 p-3 rounded-lg bg-base-200 hover:bg-base-300 transition-colors">
+								<div class="avatar">
+									<div class="w-16 h-16 rounded-lg">
+										if img := getAlbumImage(track); img != "" {
+											<img src={ img } alt={ track.Edges.Album.Name }/>
+										} else {
+											<div class="bg-base-300 w-full h-full flex items-center justify-center">
+												<span class="icon-[heroicons--square-3-stack-3d] w-8 h-8 text-base-content/30"></span>
+											</div>
+										}
+									</div>
+								</div>
+								<div class="flex-1 min-w-0">
+									<div class="font-bold truncate">{ track.Edges.Album.Name }</div>
+									if track.Edges.Album.Year > 0 {
+										<div class="text-sm text-base-content/60">{ fmt.Sprintf("%d", track.Edges.Album.Year) }</div>
+									}
+								</div>
+								<span class="icon-[heroicons--chevron-right] w-5 h-5 text-base-content/40"></span>
+							</a>
+						</div>
+					</div>
+				}
+			</div>
+			<!-- Metadata Table -->
+			<div class="card bg-base-100 shadow-xl mb-8">
+				<div class="card-body">
+					<h3 class="card-title">
+						<span class="icon-[heroicons--information-circle] w-5 h-5"></span>
+						Metadata
+					</h3>
+					@components.MetadataTable(buildTrackMetadataRows(track))
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ ProviderHistoryChart(trackID int, data components.StackedChartData, currentTimeframe string) {
+	<div class="card bg-base-100 shadow-xl">
+		<div class="card-body">
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="card-title">
+					<span class="icon-[heroicons--chart-bar] w-5 h-5"></span>
+					Listens Over Time
+				</h3>
+				<select
+					class="select select-bordered select-sm w-40"
+					hx-get={ fmt.Sprintf("/library/track/%d/chart", trackID) }
+					hx-target="#provider-history-chart"
+					hx-swap="innerHTML"
+					name="timeframe"
+				>
+					<option value="30d" selected?={ currentTimeframe == "30d" }>Last 30 days</option>
+					<option value="90d" selected?={ currentTimeframe == "90d" }>Last 90 days</option>
+					<option value="6m" selected?={ currentTimeframe == "6m" }>Last 6 months</option>
+					<option value="1y" selected?={ currentTimeframe == "1y" }>Last year</option>
+					<option value="all" selected?={ currentTimeframe == "all" }>All time</option>
+				</select>
+			</div>
+			<div id="provider-history-chart">
+				@ProviderHistoryChartContent(trackID, data)
+			</div>
+		</div>
+	</div>
+}
+
+templ ProviderHistoryChartContent(trackID int, data components.StackedChartData) {
+	<div class="w-full" style="height: 300px">
+		<canvas id={ fmt.Sprintf("track-%d-provider-history", trackID) }></canvas>
+	</div>
+	@providerHistoryScript(trackID, data)
+}
+
+templ providerHistoryScript(trackID int, data components.StackedChartData) {
+	<script>
+		(function() {
+			const ctx = document.getElementById('track-' + {{ trackID }} + '-provider-history');
+			if (!ctx) return;
+
+			// Destroy existing chart if any
+			const existingChart = Chart.getChart(ctx);
+			if (existingChart) {
+				existingChart.destroy();
+			}
+
+			const chartData = JSON.parse('{{ toJSON(data) }}');
+
+			new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: chartData.labels,
+					datasets: chartData.datasets.map(ds => ({
+						label: ds.label,
+						data: ds.data,
+						backgroundColor: ds.backgroundColor,
+						borderColor: ds.borderColor,
+						borderWidth: 1,
+						borderRadius: 2
+					}))
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: true,
+							position: 'bottom',
+							labels: {
+								color: 'oklch(var(--bc))',
+								usePointStyle: true,
+								padding: 20
+							}
+						}
+					},
+					scales: {
+						y: {
+							stacked: true,
+							beginAtZero: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.1)'
+							}
+						},
+						x: {
+							stacked: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)',
+								maxRotation: 45,
+								minRotation: 0
+							},
+							grid: {
+								display: false
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+func getArtistImageURL(artist *ent.Artist) string {
+	if artist.Edges.Images == nil || len(artist.Edges.Images) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/library/artist/%d.png", artist.ID)
+}
+
+func buildTrackMetadataRows(track *ent.Track) []components.MetadataRow {
+	rows := []components.MetadataRow{
+		{Label: "Track Number", Value: formatIntPtr(track.TrackNumber)},
+		{Label: "Disc Number", Value: formatIntPtr(track.DiscNumber)},
+		{Label: "Duration", Value: formatDurationPtr(track.DurationMs)},
+		{Label: "ISRC", Value: getStringPtrOrDefault(track.Isrc, "N/A")},
+		{Label: "Musical Key", Value: getStringPtrOrDefault(track.MusicalKey, "N/A")},
+		{Label: "BPM", Value: formatBPM(track.Bpm)},
+	}
+
+	if track.MusicbrainzID != nil && *track.MusicbrainzID != "" {
+		rows = append(rows, components.MetadataRow{
+			Label: "MusicBrainz ID",
+			Value: *track.MusicbrainzID,
+			Link:  fmt.Sprintf("https://musicbrainz.org/recording/%s", *track.MusicbrainzID),
+		})
+	} else {
+		rows = append(rows, components.MetadataRow{Label: "MusicBrainz ID", Value: "N/A"})
+	}
+
+	if track.SpotifyID != nil && *track.SpotifyID != "" {
+		rows = append(rows, components.MetadataRow{
+			Label: "Spotify ID",
+			Value: *track.SpotifyID,
+			Link:  fmt.Sprintf("https://open.spotify.com/track/%s", *track.SpotifyID),
+		})
+	} else {
+		rows = append(rows, components.MetadataRow{Label: "Spotify ID", Value: "N/A"})
+	}
+
+	if track.NavidromeID != nil && *track.NavidromeID != "" {
+		rows = append(rows, components.MetadataRow{Label: "Navidrome ID", Value: *track.NavidromeID})
+	}
+
+	rows = append(rows, components.MetadataRow{Label: "Last Enriched", Value: formatEnrichedTime(track.LastEnrichedAt)})
+	rows = append(rows, components.MetadataRow{Label: "Created", Value: formatDate(track.CreatedAt)})
+	rows = append(rows, components.MetadataRow{Label: "Updated", Value: formatDate(track.UpdatedAt)})
+
+	return rows
+}
+
+func formatIntPtr(i *int) string {
+	if i == nil {
+		return "N/A"
+	}
+	return fmt.Sprintf("%d", *i)
+}
+
+func formatDurationPtr(ms *int) string {
+	if ms == nil {
+		return "N/A"
+	}
+	return formatDuration(*ms)
+}

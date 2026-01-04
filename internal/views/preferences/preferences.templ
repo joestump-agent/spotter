@@ -1,9 +1,9 @@
 package preferences
 
 import (
-	"spotter/internal/views/layouts"
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/views/layouts"
 	"strconv"
 )
 
@@ -14,7 +14,6 @@ templ Appearance(user *ent.User, cfg *config.Config) {
 				<h2 class="text-3xl font-bold">Appearance</h2>
 				<p class="text-base-content/60 mt-2">Customize your visual preferences</p>
 			</div>
-
 			<div class="space-y-6">
 				<!-- Theme Settings Card -->
 				<div class="card bg-base-100 shadow-xl">
@@ -41,7 +40,6 @@ templ Appearance(user *ent.User, cfg *config.Config) {
 									}
 								</select>
 							</div>
-
 							<!-- Pagination Size -->
 							<div class="form-control">
 								<label class="label">
@@ -58,7 +56,6 @@ templ Appearance(user *ent.User, cfg *config.Config) {
 									class="input input-bordered w-full max-w-xs"
 								/>
 							</div>
-
 							<div class="card-actions justify-end">
 								<button type="submit" class="btn btn-primary gap-2">
 									<span class="icon-[heroicons--check] w-5 h-5"></span>
@@ -70,7 +67,6 @@ templ Appearance(user *ent.User, cfg *config.Config) {
 				</div>
 			</div>
 		</div>
-
 		<script>
 			// Apply theme immediately when changed
 			function applyTheme(theme) {
@@ -119,115 +115,6 @@ templ Appearance(user *ent.User, cfg *config.Config) {
 						showToast('Settings saved successfully!', 'success');
 					} else {
 						showToast('Failed to save settings. Please try again.', 'error');
-					}
-				});
-			}
-		</script>
-	}
-}
-
-templ AIPrompt(user *ent.User, cfg *config.Config) {
-	@layouts.Dashboard("AI Prompt | Spotter", cfg, "/preferences/ai") {
-		<div class="max-w-5xl mx-auto">
-			<div class="mb-8">
-				<h2 class="text-3xl font-bold">AI Prompt</h2>
-				<p class="text-base-content/60 mt-2">Customize the AI personality for playlist generation</p>
-			</div>
-
-			<div class="space-y-6">
-				<!-- AI Settings Card -->
-				<div class="card bg-base-100 shadow-xl">
-					<div class="card-body">
-						<h3 class="card-title">
-							<span class="icon-[heroicons--sparkles] w-6 h-6"></span>
-							System Prompt
-						</h3>
-						<p class="text-base-content/60 text-sm mt-2">
-							The system prompt defines the AI's personality and behavior when generating playlists.
-							Customize it to get recommendations that match your style.
-						</p>
-						<form id="ai-prompt-form" hx-post="/preferences/ai" hx-swap="none" class="space-y-6 mt-4">
-							<!-- System Prompt -->
-							<div class="form-control">
-								<label class="label">
-									<span class="label-text font-medium">Custom System Prompt</span>
-								</label>
-								<textarea
-									name="system_prompt"
-									class="textarea textarea-bordered h-48 w-full font-mono text-sm"
-									placeholder="You are a music expert who creates personalized playlists based on the user's listening history and preferences..."
-								>{ user.SystemPrompt }</textarea>
-								<label class="label">
-									<span class="label-text-alt text-base-content/60">Leave blank to use the default AI behavior</span>
-								</label>
-							</div>
-
-							<div class="alert alert-info">
-								<span class="icon-[heroicons--information-circle] w-5 h-5"></span>
-								<div>
-									<h4 class="font-bold">Tips for writing a good prompt</h4>
-									<ul class="list-disc list-inside text-sm mt-1">
-										<li>Be specific about the type of music recommendations you want</li>
-										<li>Mention genres, moods, or eras you prefer</li>
-										<li>Include any constraints (e.g., "no explicit lyrics")</li>
-									</ul>
-								</div>
-							</div>
-
-							<div class="card-actions justify-end">
-								<button type="submit" class="btn btn-primary gap-2">
-									<span class="icon-[heroicons--check] w-5 h-5"></span>
-									Save Prompt
-								</button>
-							</div>
-						</form>
-					</div>
-				</div>
-			</div>
-		</div>
-
-		<script>
-			// Show toast notification
-			function showToast(message, type) {
-				const container = document.getElementById('toasts');
-				if (!container) return;
-
-				const toast = document.createElement('div');
-				toast.className = 'alert shadow-lg';
-
-				let iconClass, alertClass;
-				if (type === 'success') {
-					alertClass = 'alert-success';
-					iconClass = 'icon-[heroicons--check-circle]';
-				} else {
-					alertClass = 'alert-error';
-					iconClass = 'icon-[heroicons--x-circle]';
-				}
-
-				toast.classList.add(alertClass);
-				toast.innerHTML = `
-					<span class="${iconClass} w-6 h-6"></span>
-					<span>${message}</span>
-				`;
-
-				container.appendChild(toast);
-
-				// Auto-remove after 4 seconds
-				setTimeout(() => {
-					toast.style.opacity = '0';
-					toast.style.transition = 'opacity 0.3s ease-out';
-					setTimeout(() => toast.remove(), 300);
-				}, 4000);
-			}
-
-			// Handle form submission
-			const form = document.getElementById('ai-prompt-form');
-			if (form) {
-				form.addEventListener('htmx:afterRequest', function(event) {
-					if (event.detail.successful) {
-						showToast('AI prompt saved successfully!', 'success');
-					} else {
-						showToast('Failed to save prompt. Please try again.', 'error');
 					}
 				});
 			}

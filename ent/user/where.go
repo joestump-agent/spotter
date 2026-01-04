@@ -629,6 +629,52 @@ func HasAlbumsWith(preds ...predicate.Album) predicate.User {
 	})
 }
 
+// HasDjs applies the HasEdge predicate on the "djs" edge.
+func HasDjs() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, DjsTable, DjsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasDjsWith applies the HasEdge predicate on the "djs" edge with a given conditions (other predicates).
+func HasDjsWith(preds ...predicate.DJ) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newDjsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasMixtapes applies the HasEdge predicate on the "mixtapes" edge.
+func HasMixtapes() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, MixtapesTable, MixtapesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasMixtapesWith applies the HasEdge predicate on the "mixtapes" edge with a given conditions (other predicates).
+func HasMixtapesWith(preds ...predicate.Mixtape) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newMixtapesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.User) predicate.User {
 	return predicate.User(sql.AndPredicates(predicates...))

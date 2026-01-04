@@ -7,6 +7,8 @@ import (
 	"spotter/ent/albumimage"
 	"spotter/ent/artist"
 	"spotter/ent/artistimage"
+	"spotter/ent/dj"
+	"spotter/ent/mixtape"
 	"spotter/ent/playlist"
 	"spotter/ent/schema"
 	"spotter/ent/syncevent"
@@ -83,6 +85,50 @@ func init() {
 	artistimageDescCreatedAt := artistimageFields[8].Descriptor()
 	// artistimage.DefaultCreatedAt holds the default value on creation for the created_at field.
 	artistimage.DefaultCreatedAt = artistimageDescCreatedAt.Default.(func() time.Time)
+	djFields := schema.DJ{}.Fields()
+	_ = djFields
+	// djDescName is the schema descriptor for name field.
+	djDescName := djFields[0].Descriptor()
+	// dj.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	dj.NameValidator = djDescName.Validators[0].(func(string) error)
+	// djDescCreatedAt is the schema descriptor for created_at field.
+	djDescCreatedAt := djFields[7].Descriptor()
+	// dj.DefaultCreatedAt holds the default value on creation for the created_at field.
+	dj.DefaultCreatedAt = djDescCreatedAt.Default.(func() time.Time)
+	// djDescUpdatedAt is the schema descriptor for updated_at field.
+	djDescUpdatedAt := djFields[8].Descriptor()
+	// dj.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	dj.DefaultUpdatedAt = djDescUpdatedAt.Default.(func() time.Time)
+	// dj.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	dj.UpdateDefaultUpdatedAt = djDescUpdatedAt.UpdateDefault.(func() time.Time)
+	mixtapeFields := schema.Mixtape{}.Fields()
+	_ = mixtapeFields
+	// mixtapeDescName is the schema descriptor for name field.
+	mixtapeDescName := mixtapeFields[0].Descriptor()
+	// mixtape.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	mixtape.NameValidator = mixtapeDescName.Validators[0].(func(string) error)
+	// mixtapeDescSyncToNavidrome is the schema descriptor for sync_to_navidrome field.
+	mixtapeDescSyncToNavidrome := mixtapeFields[4].Descriptor()
+	// mixtape.DefaultSyncToNavidrome holds the default value on creation for the sync_to_navidrome field.
+	mixtape.DefaultSyncToNavidrome = mixtapeDescSyncToNavidrome.Default.(bool)
+	// mixtapeDescTrackCount is the schema descriptor for track_count field.
+	mixtapeDescTrackCount := mixtapeFields[6].Descriptor()
+	// mixtape.DefaultTrackCount holds the default value on creation for the track_count field.
+	mixtape.DefaultTrackCount = mixtapeDescTrackCount.Default.(int)
+	// mixtapeDescMaxTracks is the schema descriptor for max_tracks field.
+	mixtapeDescMaxTracks := mixtapeFields[7].Descriptor()
+	// mixtape.DefaultMaxTracks holds the default value on creation for the max_tracks field.
+	mixtape.DefaultMaxTracks = mixtapeDescMaxTracks.Default.(int)
+	// mixtapeDescCreatedAt is the schema descriptor for created_at field.
+	mixtapeDescCreatedAt := mixtapeFields[10].Descriptor()
+	// mixtape.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mixtape.DefaultCreatedAt = mixtapeDescCreatedAt.Default.(func() time.Time)
+	// mixtapeDescUpdatedAt is the schema descriptor for updated_at field.
+	mixtapeDescUpdatedAt := mixtapeFields[11].Descriptor()
+	// mixtape.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	mixtape.DefaultUpdatedAt = mixtapeDescUpdatedAt.Default.(func() time.Time)
+	// mixtape.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	mixtape.UpdateDefaultUpdatedAt = mixtapeDescUpdatedAt.UpdateDefault.(func() time.Time)
 	playlistFields := schema.Playlist{}.Fields()
 	_ = playlistFields
 	// playlistDescName is the schema descriptor for name field.

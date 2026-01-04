@@ -20,10 +20,14 @@ type Tx struct {
 	Artist *ArtistClient
 	// ArtistImage is the client for interacting with the ArtistImage builders.
 	ArtistImage *ArtistImageClient
+	// DJ is the client for interacting with the DJ builders.
+	DJ *DJClient
 	// LastFMAuth is the client for interacting with the LastFMAuth builders.
 	LastFMAuth *LastFMAuthClient
 	// Listen is the client for interacting with the Listen builders.
 	Listen *ListenClient
+	// Mixtape is the client for interacting with the Mixtape builders.
+	Mixtape *MixtapeClient
 	// NavidromeAuth is the client for interacting with the NavidromeAuth builders.
 	NavidromeAuth *NavidromeAuthClient
 	// Playlist is the client for interacting with the Playlist builders.
@@ -171,8 +175,10 @@ func (tx *Tx) init() {
 	tx.AlbumImage = NewAlbumImageClient(tx.config)
 	tx.Artist = NewArtistClient(tx.config)
 	tx.ArtistImage = NewArtistImageClient(tx.config)
+	tx.DJ = NewDJClient(tx.config)
 	tx.LastFMAuth = NewLastFMAuthClient(tx.config)
 	tx.Listen = NewListenClient(tx.config)
+	tx.Mixtape = NewMixtapeClient(tx.config)
 	tx.NavidromeAuth = NewNavidromeAuthClient(tx.config)
 	tx.Playlist = NewPlaylistClient(tx.config)
 	tx.SpotifyAuth = NewSpotifyAuthClient(tx.config)

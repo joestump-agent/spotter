@@ -68,9 +68,11 @@ type AlbumEdges struct {
 	Tracks []*Track `json:"tracks,omitempty"`
 	// Images holds the value of the images edge.
 	Images []*AlbumImage `json:"images,omitempty"`
+	// Listens holds the value of the listens edge.
+	Listens []*Listen `json:"listens,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [4]bool
+	loadedTypes [5]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -111,6 +113,15 @@ func (e AlbumEdges) ImagesOrErr() ([]*AlbumImage, error) {
 		return e.Images, nil
 	}
 	return nil, &NotLoadedError{edge: "images"}
+}
+
+// ListensOrErr returns the Listens value or an error if the edge
+// was not loaded in eager-loading.
+func (e AlbumEdges) ListensOrErr() ([]*Listen, error) {
+	if e.loadedTypes[4] {
+		return e.Listens, nil
+	}
+	return nil, &NotLoadedError{edge: "listens"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -288,6 +299,11 @@ func (_m *Album) QueryTracks() *TrackQuery {
 // QueryImages queries the "images" edge of the Album entity.
 func (_m *Album) QueryImages() *AlbumImageQuery {
 	return NewAlbumClient(_m.config).QueryImages(_m)
+}
+
+// QueryListens queries the "listens" edge of the Album entity.
+func (_m *Album) QueryListens() *ListenQuery {
+	return NewAlbumClient(_m.config).QueryListens(_m)
 }
 
 // Update returns a builder for updating this Album.

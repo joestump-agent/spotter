@@ -1,0 +1,325 @@
+package playlists
+
+import (
+	"encoding/json"
+	"fmt"
+	"spotter/ent"
+	"spotter/internal/config"
+	"spotter/internal/views/components"
+	"spotter/internal/views/layouts"
+	"time"
+)
+
+// PlaylistStats holds statistics for a playlist
+type PlaylistStats struct {
+	TotalListens       int
+	UniqueArtists      int
+	UniqueTracks       int
+	FirstListen        time.Time
+	LastListen         time.Time
+	ListensByProvider  []components.ChartDataPoint
+	ListensByHour      []components.ChartDataPoint
+	ListensByDayOfWeek []components.ChartDataPoint
+	ListensByMonth     []components.ChartDataPoint
+	TopArtists         []components.ChartDataPoint
+	TopTracks          []components.ChartDataPoint
+	ProviderHistory    components.StackedChartData
+	GenreBreakdown     []components.ChartDataPoint
+}
+
+// PlaylistTrack represents a track in the playlist with listen data
+type PlaylistTrack struct {
+	Name        string
+	ArtistName  string
+	AlbumName   string
+	TrackID     int
+	ArtistID    int
+	AlbumID     int
+	ListenCount int
+}
+
+func showFormatDate(t time.Time) string {
+	if t.IsZero() {
+		return "N/A"
+	}
+	return t.Local().Format("Jan 2 '06")
+}
+
+func showGetOrDefault(value, defaultVal string) string {
+	if value == "" {
+		return defaultVal
+	}
+	return value
+}
+
+func showToJSON(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+templ Show(playlist *ent.Playlist, tracks []PlaylistTrack, stats *PlaylistStats, cfg *config.Config, currentTimeframe string) {
+	@layouts.Dashboard(fmt.Sprintf("%s | Playlists | Spotter", playlist.Name), cfg, "/playlists") {
+		@components.ChartJSScript()
+		<!-- Hero Section -->
+		<div class="relative -mx-6 lg:-mx-8 -mt-6 lg:-mt-8 mb-8">
+			<!-- Background Blur -->
+			if playlist.ImageURL != "" {
+				<div class="absolute inset-0 h-80 overflow-hidden">
+					<img src={ playlist.ImageURL } alt="" class="w-full h-full object-cover opacity-20 blur-2xl scale-110"/>
+					<div class="absolute inset-0 bg-gradient-to-b from-transparent via-base-200/80 to-base-200"></div>
+				</div>
+			} else {
+				<div class="absolute inset-0 h-80 bg-gradient-to-b from-info/20 to-base-200"></div>
+			}
+			<!-- Playlist Info -->
+			<div class="relative pt-8 px-6 lg:px-8 pb-8">
+				<div class="max-w-7xl mx-auto">
+					<div class="flex flex-col md:flex-row items-start gap-8">
+						<!-- Playlist Cover -->
+						<div class="flex-shrink-0">
+							<div class="w-56 h-56 md:w-64 md:h-64 rounded-xl shadow-2xl ring ring-base-100 ring-offset-base-200 ring-offset-2 overflow-hidden">
+								if playlist.ImageURL != "" {
+									<img src={ playlist.ImageURL } alt={ playlist.Name } class="w-full h-full object-cover"/>
+								} else {
+									<div class="bg-base-300 w-full h-full flex items-center justify-center">
+										<span class="icon-[heroicons--queue-list] w-24 h-24 text-base-content/30"></span>
+									</div>
+								}
+							</div>
+						</div>
+						<!-- Playlist Details -->
+						<div class="flex-1 min-w-0">
+							<div class="flex items-center gap-3 mb-2">
+								<span class="badge badge-outline badge-lg">Playlist</span>
+								@providerBadge(playlist.Source)
+							</div>
+							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ playlist.Name }</h1>
+							if playlist.Description != "" {
+								<p class="text-base-content/60 mb-4 max-w-2xl">{ playlist.Description }</p>
+							}
+							<!-- Quick Stats -->
+							<div class="flex flex-wrap gap-4 mb-4">
+								<div class="flex items-center gap-2 text-base-content/70">
+									<span class="icon-[heroicons--musical-note] w-5 h-5"></span>
+									<span class="font-semibold">{ formatNumber(playlist.TrackCount) }</span> tracks
+								</div>
+								<div class="flex items-center gap-2 text-base-content/70">
+									<span class="icon-[heroicons--user-group] w-5 h-5"></span>
+									<span class="font-semibold">{ formatNumber(playlist.UniqueArtists) }</span> artists
+								</div>
+								<div class="flex items-center gap-2 text-base-content/70">
+									<span class="icon-[heroicons--square-3-stack-3d] w-5 h-5"></span>
+									<span class="font-semibold">{ formatNumber(playlist.UniqueAlbums) }</span> albums
+								</div>
+							</div>
+							<!-- External Link -->
+							<div class="flex flex-wrap gap-2">
+								if playlist.ExternalURL != "" {
+									@components.ExternalLinkBadge(
+										fmt.Sprintf("Open in %s", capitalizeFirst(playlist.Source)),
+										playlist.ExternalURL,
+										components.ProviderIcon(playlist.Source),
+										components.ProviderBadgeClass(playlist.Source),
+									)
+								}
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="max-w-7xl mx-auto">
+			<!-- Main Listens by Provider Chart -->
+			<div class="mb-8">
+				@ProviderHistoryChart(playlist.ID, stats.ProviderHistory, currentTimeframe)
+			</div>
+			<!-- Listening Pattern Charts -->
+			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+				<!-- By Hour -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--clock] w-5 h-5"></span>
+							Listens by Hour
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("playlist-%d-hour", playlist.ID),
+							"",
+							stats.ListensByHour,
+							"oklch(var(--p))",
+							"200px",
+						)
+					</div>
+				</div>
+				<!-- By Day of Week -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--calendar-days] w-5 h-5"></span>
+							Listens by Day
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("playlist-%d-day", playlist.ID),
+							"",
+							stats.ListensByDayOfWeek,
+							"oklch(var(--s))",
+							"200px",
+						)
+					</div>
+				</div>
+				<!-- By Month -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--calendar] w-5 h-5"></span>
+							Listens by Month
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("playlist-%d-month", playlist.ID),
+							"",
+							stats.ListensByMonth,
+							"oklch(var(--a))",
+							"200px",
+						)
+					</div>
+				</div>
+			</div>
+			<!-- Metadata Table -->
+			<div class="card bg-base-100 shadow-xl mb-8">
+				<div class="card-body">
+					<h3 class="card-title">
+						<span class="icon-[heroicons--information-circle] w-5 h-5"></span>
+						Metadata
+					</h3>
+					@components.MetadataTable([]components.MetadataRow{
+						{Label: "Name", Value: playlist.Name},
+						{Label: "Source", Value: capitalizeFirst(playlist.Source)},
+						{Label: "Remote ID", Value: playlist.RemoteID},
+						{Label: "Track Count", Value: formatNumber(playlist.TrackCount)},
+						{Label: "Unique Artists", Value: formatNumber(playlist.UniqueArtists)},
+						{Label: "Unique Albums", Value: formatNumber(playlist.UniqueAlbums)},
+						{Label: "External URL", Value: showGetOrDefault(playlist.ExternalURL, "N/A"), Link: playlist.ExternalURL},
+						{Label: "Created", Value: showFormatDate(playlist.CreatedAt)},
+						{Label: "Updated", Value: showFormatDate(playlist.UpdatedAt)},
+					})
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ ProviderHistoryChart(playlistID int, data components.StackedChartData, currentTimeframe string) {
+	<div class="card bg-base-100 shadow-xl">
+		<div class="card-body">
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="card-title">
+					<span class="icon-[heroicons--chart-bar] w-5 h-5"></span>
+					Listens Over Time
+				</h3>
+				<select
+					class="select select-bordered select-sm w-40"
+					hx-get={ fmt.Sprintf("/playlists/%d/chart", playlistID) }
+					hx-target="#provider-history-chart"
+					hx-swap="innerHTML"
+					name="timeframe"
+				>
+					<option value="30d" selected?={ currentTimeframe == "30d" }>Last 30 days</option>
+					<option value="90d" selected?={ currentTimeframe == "90d" }>Last 90 days</option>
+					<option value="6m" selected?={ currentTimeframe == "6m" }>Last 6 months</option>
+					<option value="1y" selected?={ currentTimeframe == "1y" }>Last year</option>
+					<option value="all" selected?={ currentTimeframe == "all" }>All time</option>
+				</select>
+			</div>
+			<div id="provider-history-chart">
+				@ProviderHistoryChartContent(playlistID, data)
+			</div>
+		</div>
+	</div>
+}
+
+templ ProviderHistoryChartContent(playlistID int, data components.StackedChartData) {
+	<div class="w-full" style="height: 300px">
+		<canvas id={ fmt.Sprintf("playlist-%d-provider-history", playlistID) }></canvas>
+	</div>
+	@providerHistoryScript(playlistID, data)
+}
+
+templ providerHistoryScript(playlistID int, data components.StackedChartData) {
+	<script>
+		(function() {
+			const ctx = document.getElementById('playlist-' + {{ playlistID }} + '-provider-history');
+			if (!ctx) return;
+
+			// Destroy existing chart if any
+			const existingChart = Chart.getChart(ctx);
+			if (existingChart) {
+				existingChart.destroy();
+			}
+
+			const chartData = JSON.parse('{{ showToJSON(data) }}');
+
+			new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: chartData.labels,
+					datasets: chartData.datasets.map(ds => ({
+						label: ds.label,
+						data: ds.data,
+						backgroundColor: ds.backgroundColor,
+						borderColor: ds.borderColor,
+						borderWidth: 1,
+						borderRadius: 2
+					}))
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: true,
+							position: 'bottom',
+							labels: {
+								color: 'oklch(var(--bc))',
+								usePointStyle: true,
+								padding: 20
+							}
+						}
+					},
+					scales: {
+						y: {
+							stacked: true,
+							beginAtZero: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.1)'
+							}
+						},
+						x: {
+							stacked: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)',
+								maxRotation: 45,
+								minRotation: 0
+							},
+							grid: {
+								display: false
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return string(s[0]-32) + s[1:]
+}

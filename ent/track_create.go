@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"spotter/ent/album"
 	"spotter/ent/artist"
+	"spotter/ent/listen"
 	"spotter/ent/track"
 	"time"
 
@@ -358,6 +359,21 @@ func (_c *TrackCreate) SetAlbum(v *Album) *TrackCreate {
 	return _c.SetAlbumID(v.ID)
 }
 
+// AddListenIDs adds the "listens" edge to the Listen entity by IDs.
+func (_c *TrackCreate) AddListenIDs(ids ...int) *TrackCreate {
+	_c.mutation.AddListenIDs(ids...)
+	return _c
+}
+
+// AddListens adds the "listens" edges to the Listen entity.
+func (_c *TrackCreate) AddListens(v ...*Listen) *TrackCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddListenIDs(ids...)
+}
+
 // Mutation returns the TrackMutation object of the builder.
 func (_c *TrackCreate) Mutation() *TrackMutation {
 	return _c.mutation
@@ -569,6 +585,22 @@ func (_c *TrackCreate) createSpec() (*Track, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.album_tracks = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ListensIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   track.ListensTable,
+			Columns: []string{track.ListensColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

@@ -11,8 +11,10 @@ import (
 	"spotter/ent/albumimage"
 	"spotter/ent/artist"
 	"spotter/ent/artistimage"
+	"spotter/ent/dj"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/mixtape"
 	"spotter/ent/navidromeauth"
 	"spotter/ent/playlist"
 	"spotter/ent/spotifyauth"
@@ -88,8 +90,10 @@ func checkColumn(t, c string) error {
 			albumimage.Table:    albumimage.ValidColumn,
 			artist.Table:        artist.ValidColumn,
 			artistimage.Table:   artistimage.ValidColumn,
+			dj.Table:            dj.ValidColumn,
 			lastfmauth.Table:    lastfmauth.ValidColumn,
 			listen.Table:        listen.ValidColumn,
+			mixtape.Table:       mixtape.ValidColumn,
 			navidromeauth.Table: navidromeauth.ValidColumn,
 			playlist.Table:      playlist.ValidColumn,
 			spotifyauth.Table:   spotifyauth.ValidColumn,

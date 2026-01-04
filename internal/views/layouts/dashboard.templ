@@ -17,9 +17,18 @@ func isPreferencesSection(currentPath string) bool {
 func isPreferencesActive(currentPath string) bool {
 	return isPreferencesSection(currentPath) &&
 		!isActive(currentPath, "/preferences/appearance") &&
-		!isActive(currentPath, "/preferences/ai") &&
 		!isActive(currentPath, "/preferences/providers") &&
 		!isActive(currentPath, "/preferences/tasks")
+}
+
+func isLibrarySection(currentPath string) bool {
+	return strings.HasPrefix(currentPath, "/library") ||
+		strings.HasPrefix(currentPath, "/recent") ||
+		strings.HasPrefix(currentPath, "/playlists")
+}
+
+func isVibesSection(currentPath string) bool {
+	return strings.HasPrefix(currentPath, "/vibes")
 }
 
 templ Dashboard(title string, cfg *config.Config, currentPath string) {
@@ -68,16 +77,66 @@ templ Dashboard(title string, cfg *config.Config, currentPath string) {
 								</a>
 							</li>
 							<li>
-								<a href="/recent" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/recent")) }>
-									<span class="icon-[heroicons--clock] w-5 h-5"></span>
-									<span>Listens</span>
-								</a>
+								<details open?={ isVibesSection(currentPath) }>
+									<summary class={ "flex items-center gap-3", templ.KV("active", false) }>
+										<span class="icon-[heroicons--sparkles] w-5 h-5"></span>
+										<span>Vibes</span>
+									</summary>
+									<ul>
+										<li>
+											<a href="/vibes/djs" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/vibes/djs")) }>
+												<span class="icon-[heroicons--user-circle] w-5 h-5"></span>
+												<span>DJs</span>
+											</a>
+										</li>
+										<li>
+											<a href="/vibes/mixtapes" class={ "flex items-center gap-3", templ.KV("active", strings.HasPrefix(currentPath, "/vibes/mixtapes")) }>
+												<span class="icon-[heroicons--musical-note] w-5 h-5"></span>
+												<span>Mixtapes</span>
+											</a>
+										</li>
+									</ul>
+								</details>
 							</li>
 							<li>
-								<a href="/playlists" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/playlists")) }>
-									<span class="icon-[heroicons--queue-list] w-5 h-5"></span>
-									<span>Playlists</span>
-								</a>
+								<details open?={ isLibrarySection(currentPath) }>
+									<summary class={ "flex items-center gap-3", templ.KV("active", false) }>
+										<span class="icon-[heroicons--folder] w-5 h-5"></span>
+										<span>Library</span>
+									</summary>
+									<ul>
+										<li>
+											<a href="/recent" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/recent")) }>
+												<span class="icon-[heroicons--clock] w-5 h-5"></span>
+												<span>Listens</span>
+											</a>
+										</li>
+										<li>
+											<a href="/playlists" class={ "flex items-center gap-3", templ.KV("active", strings.HasPrefix(currentPath, "/playlists")) }>
+												<span class="icon-[heroicons--queue-list] w-5 h-5"></span>
+												<span>Playlists</span>
+											</a>
+										</li>
+										<li>
+											<a href="/library/artists" class={ "flex items-center gap-3", templ.KV("active", strings.HasPrefix(currentPath, "/library/artist")) }>
+												<span class="icon-[heroicons--user-group] w-5 h-5"></span>
+												<span>Artists</span>
+											</a>
+										</li>
+										<li>
+											<a href="/library/albums" class={ "flex items-center gap-3", templ.KV("active", strings.HasPrefix(currentPath, "/library/album")) }>
+												<span class="icon-[heroicons--square-3-stack-3d] w-5 h-5"></span>
+												<span>Albums</span>
+											</a>
+										</li>
+										<li>
+											<a href="/library/tracks" class={ "flex items-center gap-3", templ.KV("active", strings.HasPrefix(currentPath, "/library/track")) }>
+												<span class="icon-[heroicons--musical-note] w-5 h-5"></span>
+												<span>Tracks</span>
+											</a>
+										</li>
+									</ul>
+								</details>
 							</li>
 							<li>
 								<details open?={ isPreferencesSection(currentPath) }>
@@ -90,12 +149,6 @@ templ Dashboard(title string, cfg *config.Config, currentPath string) {
 											<a href="/preferences/appearance" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/preferences/appearance")) }>
 												<span class="icon-[heroicons--paint-brush] w-5 h-5"></span>
 												<span>Appearance</span>
-											</a>
-										</li>
-										<li>
-											<a href="/preferences/ai" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/preferences/ai")) }>
-												<span class="icon-[heroicons--sparkles] w-5 h-5"></span>
-												<span>AI Prompt</span>
 											</a>
 										</li>
 										<li>

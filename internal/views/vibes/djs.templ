@@ -1,0 +1,428 @@
+package vibes
+
+import (
+	"fmt"
+	"spotter/ent"
+	"spotter/internal/config"
+	"spotter/internal/views/components"
+	"spotter/internal/views/layouts"
+	"strings"
+	"time"
+)
+
+func formatDJTime(t time.Time) string {
+	return t.Local().Format("Jan 02, 2006 at 3:04 PM")
+}
+
+func formatDJTimeISO(t time.Time) string {
+	return t.UTC().Format(time.RFC3339)
+}
+
+func joinTags(tags []string) string {
+	return strings.Join(tags, ", ")
+}
+
+templ DJsIndex(djs []*ent.DJ, cfg *config.Config) {
+	@layouts.Dashboard("DJs | Vibes | Spotter", cfg, "/vibes/djs") {
+		<div class="max-w-7xl mx-auto">
+			<div class="flex items-center justify-between mb-8">
+				<div>
+					<h2 class="text-3xl font-bold">DJs</h2>
+					<p class="text-base-content/60 mt-2">Music agents that power your mixtape generation</p>
+				</div>
+				if len(djs) > 0 {
+					<button
+						class="btn btn-primary gap-2"
+						onclick="resetCreateForm(); document.getElementById('create-dj-modal').showModal()"
+					>
+						<span class="icon-[heroicons--plus] w-5 h-5"></span>
+						Create DJ
+					</button>
+				}
+			</div>
+			if len(djs) == 0 {
+				<div class="card bg-base-200">
+					<div class="card-body items-center text-center">
+						<span class="icon-[heroicons--user-circle] w-16 h-16 text-base-content/30"></span>
+						<h3 class="card-title">No DJs yet</h3>
+						<p class="text-base-content/60">Create a DJ to define a personality for generating mixtapes.</p>
+						<button
+							class="btn btn-primary mt-4"
+							onclick="resetCreateForm(); document.getElementById('create-dj-modal').showModal()"
+						>
+							Create Your First DJ
+						</button>
+					</div>
+				</div>
+			} else {
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body p-0">
+						<div class="overflow-x-auto">
+							<table class="table table-zebra">
+								<thead>
+									<tr>
+										<th>Name</th>
+										<th>Genres</th>
+										<th>Vibes</th>
+										<th>Mixtapes</th>
+										<th>Created</th>
+										<th class="w-12"></th>
+									</tr>
+								</thead>
+								<tbody>
+									for _, dj := range djs {
+										<tr class="hover">
+											<td>
+												<a href={ templ.URL(fmt.Sprintf("/vibes/djs/%d", dj.ID)) } class="font-medium link link-hover link-primary">
+													{ dj.Name }
+												</a>
+											</td>
+											<td>
+												<div class="flex flex-wrap gap-1 max-w-xs">
+													if len(dj.GenresInclude) > 0 {
+														for _, genre := range dj.GenresInclude[:min(3, len(dj.GenresInclude))] {
+															<span class="badge badge-sm badge-success">{ genre }</span>
+														}
+														if len(dj.GenresInclude) > 3 {
+															<span class="badge badge-sm badge-ghost">+{ fmt.Sprintf("%d", len(dj.GenresInclude)-3) }</span>
+														}
+													} else {
+														<span class="text-base-content/40 text-sm italic">Any</span>
+													}
+												</div>
+											</td>
+											<td>
+												<div class="flex flex-wrap gap-1 max-w-xs">
+													if len(dj.Vibes) > 0 {
+														for _, vibe := range dj.Vibes[:min(3, len(dj.Vibes))] {
+															<span class="badge badge-sm badge-primary">{ vibe }</span>
+														}
+														if len(dj.Vibes) > 3 {
+															<span class="badge badge-sm badge-ghost">+{ fmt.Sprintf("%d", len(dj.Vibes)-3) }</span>
+														}
+													} else {
+														<span class="text-base-content/40 text-sm italic">None</span>
+													}
+												</div>
+											</td>
+											<td>
+												<span class="badge badge-ghost">{ fmt.Sprintf("%d", len(dj.Edges.Mixtapes)) }</span>
+											</td>
+											<td class="whitespace-nowrap">
+												<span class="timeago text-sm text-base-content/60" datetime={ formatDJTimeISO(dj.CreatedAt) } title={ formatDJTime(dj.CreatedAt) }>
+													{ formatDJTime(dj.CreatedAt) }
+												</span>
+											</td>
+											<td>
+												<button
+													onclick={ showDeleteModal(dj.ID, dj.Name, len(dj.Edges.Mixtapes)) }
+													class="btn btn-ghost btn-sm btn-square text-error hover:bg-error/10"
+													title="Delete DJ"
+												>
+													<span class="icon-[heroicons--trash] w-5 h-5"></span>
+												</button>
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			}
+		</div>
+		<!-- Create DJ Modal -->
+		<dialog id="create-dj-modal" class="modal">
+			<div class="modal-box w-11/12 max-w-3xl">
+				<form method="dialog">
+					<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+				</form>
+				<h3 class="font-bold text-lg mb-4">
+					<span class="icon-[heroicons--user-plus] w-6 h-6 inline-block mr-2"></span>
+					Create New DJ
+				</h3>
+				<form hx-post="/vibes/djs" hx-swap="none" class="space-y-4">
+					@DJFormFields(nil)
+					<div class="modal-action">
+						<button type="button" class="btn" onclick="document.getElementById('create-dj-modal').close()">Cancel</button>
+						<button type="submit" class="btn btn-primary gap-2">
+							<span class="icon-[heroicons--check] w-5 h-5"></span>
+							Create DJ
+						</button>
+					</div>
+				</form>
+			</div>
+			<form method="dialog" class="modal-backdrop">
+				<button>close</button>
+			</form>
+		</dialog>
+		<!-- Delete Confirmation Modal -->
+		<dialog id="delete-dj-modal" class="modal">
+			<div class="modal-box">
+				<h3 class="font-bold text-lg text-error">
+					<span class="icon-[heroicons--exclamation-triangle] w-6 h-6 inline-block mr-2"></span>
+					Delete DJ
+				</h3>
+				<p class="py-4">Are you sure you want to delete <span id="delete-dj-name" class="font-bold"></span>? This action cannot be undone.</p>
+				<div class="modal-action">
+					<button class="btn" onclick="document.getElementById('delete-dj-modal').close()">Cancel</button>
+					<button
+						id="confirm-delete-btn"
+						class="btn btn-error gap-2"
+						hx-swap="none"
+					>
+						<span class="icon-[heroicons--trash] w-5 h-5"></span>
+						Delete
+					</button>
+				</div>
+			</div>
+			<form method="dialog" class="modal-backdrop">
+				<button>close</button>
+			</form>
+		</dialog>
+		<!-- Cannot Delete DJ Modal (has mixtapes) -->
+		<dialog id="cannot-delete-dj-modal" class="modal">
+			<div class="modal-box">
+				<h3 class="font-bold text-lg text-warning">
+					<span class="icon-[heroicons--exclamation-triangle] w-6 h-6 inline-block mr-2"></span>
+					Cannot Delete DJ
+				</h3>
+				<p class="py-4">
+					<span id="cannot-delete-dj-name" class="font-bold"></span> has
+					<span id="cannot-delete-mixtape-count" class="font-bold"></span> mixtape(s) assigned to it.
+				</p>
+				<p class="text-sm text-base-content/60">
+					Please reassign or delete the associated mixtapes before deleting this DJ.
+				</p>
+				<div class="modal-action">
+					<button class="btn" onclick="document.getElementById('cannot-delete-dj-modal').close()">OK</button>
+					<a href="/vibes/mixtapes" class="btn btn-primary gap-2">
+						<span class="icon-[heroicons--musical-note] w-5 h-5"></span>
+						Go to Mixtapes
+					</a>
+				</div>
+			</div>
+			<form method="dialog" class="modal-backdrop">
+				<button>close</button>
+			</form>
+		</dialog>
+		<script>
+			// Initialize timeago
+			(function() {
+				if (typeof timeago !== 'undefined') {
+					const nodes = document.querySelectorAll('.timeago');
+					if (nodes.length > 0) {
+						timeago.render(nodes);
+					}
+				}
+			})();
+
+			// Handle form submissions
+			document.body.addEventListener('htmx:afterRequest', function(event) {
+				if (event.detail.successful) {
+					// Close modals and refresh page
+					document.getElementById('create-dj-modal').close();
+					document.getElementById('delete-dj-modal').close();
+					window.location.reload();
+				}
+			});
+
+			// Reset create form tag inputs
+			function resetCreateForm() {
+				const form = document.getElementById('create-dj-modal');
+				if (!form) return;
+
+				// Reset text inputs
+				const nameInput = document.getElementById('create-name');
+				if (nameInput) nameInput.value = '';
+				const promptInput = document.getElementById('create-system_prompt');
+				if (promptInput) promptInput.value = '';
+
+				// Reset all tag inputs in the create modal
+				const tagFieldIds = [
+					'create-genres_include',
+					'create-genres_exclude',
+					'create-vibes',
+					'create-artists_include',
+					'create-artists_exclude'
+				];
+
+				tagFieldIds.forEach(id => {
+					const input = document.getElementById(id);
+					if (input) {
+						input.value = '';
+						const container = input.closest('[x-data]');
+						if (container && typeof Alpine !== 'undefined') {
+							const data = Alpine.$data(container);
+							if (data) {
+								data.tags = [];
+								data.query = '';
+								data.suggestions = [];
+							}
+						}
+					}
+				});
+			}
+		</script>
+	}
+}
+
+script showDeleteModal(id int, name string, mixtapeCount int) {
+	if (mixtapeCount > 0) {
+		// Show cannot delete modal
+		const modal = document.getElementById('cannot-delete-dj-modal');
+		document.getElementById('cannot-delete-dj-name').textContent = name;
+		document.getElementById('cannot-delete-mixtape-count').textContent = mixtapeCount;
+		modal.showModal();
+	} else {
+		// Show delete confirmation modal
+		const modal = document.getElementById('delete-dj-modal');
+		const nameSpan = document.getElementById('delete-dj-name');
+		const deleteBtn = document.getElementById('confirm-delete-btn');
+
+		nameSpan.textContent = name;
+		deleteBtn.setAttribute('hx-delete', '/vibes/djs/' + id);
+		htmx.process(deleteBtn);
+
+		modal.showModal();
+	}
+}
+
+templ DJFormFields(dj *ent.DJ) {
+	<!-- Name -->
+	<div class="form-control">
+		<label class="label">
+			<span class="label-text font-medium">Name <span class="text-error">*</span></span>
+		</label>
+		<input
+			type="text"
+			name="name"
+			id={ formFieldID("name", dj) }
+			class="input input-bordered w-full"
+			placeholder="e.g., Chill Vibes DJ, Party Starter"
+			required
+			if dj != nil {
+				value={ dj.Name }
+			}
+		/>
+		<label class="label">
+			<span class="label-text-alt text-base-content/60">A memorable name for this DJ personality</span>
+		</label>
+	</div>
+	<!-- System Prompt -->
+	<div class="form-control">
+		<label class="label">
+			<span class="label-text font-medium">System Prompt</span>
+		</label>
+		<textarea
+			name="system_prompt"
+			id={ formFieldID("system_prompt", dj) }
+			class="textarea textarea-bordered h-24 w-full font-mono text-sm"
+			placeholder="You are a DJ who specializes in creating the perfect mood..."
+		>
+			if dj != nil {
+				{ dj.SystemPrompt }
+			}
+		</textarea>
+		<label class="label">
+			<span class="label-text-alt text-base-content/60">Custom instructions for how this DJ should behave</span>
+		</label>
+	</div>
+	<div class="divider">Filters</div>
+	<!-- Genres Include/Exclude -->
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+		@components.TagInput(components.TagInputConfig{
+			ID:             formFieldID("genres_include", dj),
+			Name:           "genres_include",
+			Label:          "Include Genres",
+			LabelIcon:      "icon-[heroicons--plus-circle]",
+			LabelIconClass: "text-success",
+			Placeholder:    "Type to search genres...",
+			HelpText:       "Genres to prioritize from your listening history",
+			SuggestionsURL: "/vibes/djs/suggestions/genres",
+			InitialTags:    getInitialTags(dj, "genres_include"),
+		})
+		@components.TagInput(components.TagInputConfig{
+			ID:             formFieldID("genres_exclude", dj),
+			Name:           "genres_exclude",
+			Label:          "Exclude Genres",
+			LabelIcon:      "icon-[heroicons--minus-circle]",
+			LabelIconClass: "text-error",
+			Placeholder:    "Type to search genres...",
+			HelpText:       "Genres to exclude from selections",
+			SuggestionsURL: "/vibes/djs/suggestions/genres",
+			InitialTags:    getInitialTags(dj, "genres_exclude"),
+		})
+	</div>
+	<!-- Vibes -->
+	@components.TagInput(components.TagInputConfig{
+		ID:             formFieldID("vibes", dj),
+		Name:           "vibes",
+		Label:          "Vibes",
+		LabelIcon:      "icon-[heroicons--sparkles]",
+		LabelIconClass: "text-primary",
+		Placeholder:    "Type a vibe and press Enter...",
+		HelpText:       "Emotions or adjectives like chill, energetic, nostalgic, uplifting",
+		SuggestionsURL: "",
+		InitialTags:    getInitialTags(dj, "vibes"),
+	})
+	<!-- Artists Include/Exclude -->
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+		@components.TagInput(components.TagInputConfig{
+			ID:             formFieldID("artists_include", dj),
+			Name:           "artists_include",
+			Label:          "Include Artists",
+			LabelIcon:      "icon-[heroicons--plus-circle]",
+			LabelIconClass: "text-success",
+			Placeholder:    "Type to search artists...",
+			HelpText:       "Artists to prioritize from your library",
+			SuggestionsURL: "/vibes/djs/suggestions/artists",
+			InitialTags:    getInitialTags(dj, "artists_include"),
+		})
+		@components.TagInput(components.TagInputConfig{
+			ID:             formFieldID("artists_exclude", dj),
+			Name:           "artists_exclude",
+			Label:          "Exclude Artists",
+			LabelIcon:      "icon-[heroicons--minus-circle]",
+			LabelIconClass: "text-error",
+			Placeholder:    "Type to search artists...",
+			HelpText:       "Artists to exclude from selections",
+			SuggestionsURL: "/vibes/djs/suggestions/artists",
+			InitialTags:    getInitialTags(dj, "artists_exclude"),
+		})
+	</div>
+}
+
+func formFieldID(field string, dj *ent.DJ) string {
+	if dj != nil {
+		return "edit-" + field
+	}
+	return "create-" + field
+}
+
+func getInitialTags(dj *ent.DJ, field string) []string {
+	if dj == nil {
+		return nil
+	}
+	switch field {
+	case "genres_include":
+		return dj.GenresInclude
+	case "genres_exclude":
+		return dj.GenresExclude
+	case "vibes":
+		return dj.Vibes
+	case "artists_include":
+		return dj.ArtistsInclude
+	case "artists_exclude":
+		return dj.ArtistsExclude
+	default:
+		return nil
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

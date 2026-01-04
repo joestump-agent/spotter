@@ -1,11 +1,11 @@
 package recent
 
 import (
+	"fmt"
 	"spotter/ent"
+	"spotter/internal/config"
 	"spotter/internal/views/layouts"
 	"time"
-	"fmt"
-	"spotter/internal/config"
 )
 
 templ Index(listens []*ent.Listen, currentPage int, totalPages int, cfg *config.Config) {
@@ -17,7 +17,6 @@ templ Index(listens []*ent.Listen, currentPage int, totalPages int, cfg *config.
 					<p class="text-base-content/60 mt-2">Your listening history from all connected services</p>
 				</div>
 			</div>
-
 			if len(listens) == 0 {
 				<div class="card bg-base-200">
 					<div class="card-body items-center text-center">
@@ -49,7 +48,6 @@ templ Index(listens []*ent.Listen, currentPage int, totalPages int, cfg *config.
 						</div>
 					</div>
 				</div>
-
 				if totalPages > 1 {
 					<div class="flex justify-center mt-8">
 						<div class="join">
@@ -58,7 +56,6 @@ templ Index(listens []*ent.Listen, currentPage int, totalPages int, cfg *config.
 							} else {
 								<button class="join-item btn btn-sm btn-disabled">«</button>
 							}
-
 							for i := 1; i <= totalPages; i++ {
 								if i == currentPage {
 									<button class="join-item btn btn-sm btn-active">{ fmt.Sprintf("%d", i) }</button>
@@ -68,7 +65,6 @@ templ Index(listens []*ent.Listen, currentPage int, totalPages int, cfg *config.
 									<button class="join-item btn btn-sm btn-disabled">...</button>
 								}
 							}
-
 							if currentPage < totalPages {
 								<a href={ templ.URL(fmt.Sprintf("/recent?page=%d", currentPage+1)) } class="join-item btn btn-sm">»</a>
 							} else {
@@ -82,8 +78,29 @@ templ Index(listens []*ent.Listen, currentPage int, totalPages int, cfg *config.
 	}
 }
 
+func getArtistURL(listen *ent.Listen) string {
+	if listen.Edges.Artist != nil {
+		return fmt.Sprintf("/library/artist/%d", listen.Edges.Artist.ID)
+	}
+	return fmt.Sprintf("/library/artists?search=%s", listen.ArtistName)
+}
+
+func getAlbumURL(listen *ent.Listen) string {
+	if listen.Edges.Album != nil {
+		return fmt.Sprintf("/library/album/%d", listen.Edges.Album.ID)
+	}
+	return fmt.Sprintf("/library/albums?search=%s", listen.AlbumName)
+}
+
+func getTrackURL(listen *ent.Listen) string {
+	if listen.Edges.Track != nil {
+		return fmt.Sprintf("/library/track/%d", listen.Edges.Track.ID)
+	}
+	return fmt.Sprintf("/library/tracks?search=%s", listen.TrackName)
+}
+
 templ ListenRow(listen *ent.Listen) {
-	<tr>
+	<tr class="hover">
 		<td>
 			if listen.Source == "spotify" {
 				<div class="badge badge-success gap-2">
@@ -110,13 +127,31 @@ templ ListenRow(listen *ent.Listen) {
 			</time>
 		</td>
 		<td>
-			<div class="text-sm">{ listen.ArtistName }</div>
+			<a
+				href={ templ.URL(getArtistURL(listen)) }
+				class="text-sm hover:text-primary hover:underline"
+				hx-boost="true"
+			>
+				{ listen.ArtistName }
+			</a>
 		</td>
 		<td>
-			<div class="text-sm text-base-content/60">{ listen.AlbumName }</div>
+			<a
+				href={ templ.URL(getAlbumURL(listen)) }
+				class="text-sm text-base-content/60 hover:text-secondary hover:underline"
+				hx-boost="true"
+			>
+				{ listen.AlbumName }
+			</a>
 		</td>
 		<td>
-			<div class="font-medium">{ listen.TrackName }</div>
+			<a
+				href={ templ.URL(getTrackURL(listen)) }
+				class="font-medium hover:text-accent hover:underline"
+				hx-boost="true"
+			>
+				{ listen.TrackName }
+			</a>
 		</td>
 	</tr>
 }

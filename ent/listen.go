@@ -4,7 +4,10 @@ package ent
 
 import (
 	"fmt"
+	"spotter/ent/album"
+	"spotter/ent/artist"
 	"spotter/ent/listen"
+	"spotter/ent/track"
 	"spotter/ent/user"
 	"strings"
 	"time"
@@ -32,18 +35,27 @@ type Listen struct {
 	URL string `json:"url,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the ListenQuery when eager-loading is set.
-	Edges        ListenEdges `json:"edges"`
-	user_listens *int
-	selectValues sql.SelectValues
+	Edges          ListenEdges `json:"edges"`
+	album_listens  *int
+	artist_listens *int
+	track_listens  *int
+	user_listens   *int
+	selectValues   sql.SelectValues
 }
 
 // ListenEdges holds the relations/edges for other nodes in the graph.
 type ListenEdges struct {
 	// User holds the value of the user edge.
 	User *User `json:"user,omitempty"`
+	// Artist holds the value of the artist edge.
+	Artist *Artist `json:"artist,omitempty"`
+	// Album holds the value of the album edge.
+	Album *Album `json:"album,omitempty"`
+	// Track holds the value of the track edge.
+	Track *Track `json:"track,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [4]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -57,6 +69,39 @@ func (e ListenEdges) UserOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "user"}
 }
 
+// ArtistOrErr returns the Artist value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e ListenEdges) ArtistOrErr() (*Artist, error) {
+	if e.Artist != nil {
+		return e.Artist, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: artist.Label}
+	}
+	return nil, &NotLoadedError{edge: "artist"}
+}
+
+// AlbumOrErr returns the Album value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e ListenEdges) AlbumOrErr() (*Album, error) {
+	if e.Album != nil {
+		return e.Album, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: album.Label}
+	}
+	return nil, &NotLoadedError{edge: "album"}
+}
+
+// TrackOrErr returns the Track value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e ListenEdges) TrackOrErr() (*Track, error) {
+	if e.Track != nil {
+		return e.Track, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: track.Label}
+	}
+	return nil, &NotLoadedError{edge: "track"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Listen) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -68,7 +113,13 @@ func (*Listen) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullString)
 		case listen.FieldPlayedAt:
 			values[i] = new(sql.NullTime)
-		case listen.ForeignKeys[0]: // user_listens
+		case listen.ForeignKeys[0]: // album_listens
+			values[i] = new(sql.NullInt64)
+		case listen.ForeignKeys[1]: // artist_listens
+			values[i] = new(sql.NullInt64)
+		case listen.ForeignKeys[2]: // track_listens
+			values[i] = new(sql.NullInt64)
+		case listen.ForeignKeys[3]: // user_listens
 			values[i] = new(sql.NullInt64)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -129,6 +180,27 @@ func (_m *Listen) assignValues(columns []string, values []any) error {
 			}
 		case listen.ForeignKeys[0]:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for edge-field album_listens", value)
+			} else if value.Valid {
+				_m.album_listens = new(int)
+				*_m.album_listens = int(value.Int64)
+			}
+		case listen.ForeignKeys[1]:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for edge-field artist_listens", value)
+			} else if value.Valid {
+				_m.artist_listens = new(int)
+				*_m.artist_listens = int(value.Int64)
+			}
+		case listen.ForeignKeys[2]:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for edge-field track_listens", value)
+			} else if value.Valid {
+				_m.track_listens = new(int)
+				*_m.track_listens = int(value.Int64)
+			}
+		case listen.ForeignKeys[3]:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for edge-field user_listens", value)
 			} else if value.Valid {
 				_m.user_listens = new(int)
@@ -150,6 +222,21 @@ func (_m *Listen) Value(name string) (ent.Value, error) {
 // QueryUser queries the "user" edge of the Listen entity.
 func (_m *Listen) QueryUser() *UserQuery {
 	return NewListenClient(_m.config).QueryUser(_m)
+}
+
+// QueryArtist queries the "artist" edge of the Listen entity.
+func (_m *Listen) QueryArtist() *ArtistQuery {
+	return NewListenClient(_m.config).QueryArtist(_m)
+}
+
+// QueryAlbum queries the "album" edge of the Listen entity.
+func (_m *Listen) QueryAlbum() *AlbumQuery {
+	return NewListenClient(_m.config).QueryAlbum(_m)
+}
+
+// QueryTrack queries the "track" edge of the Listen entity.
+func (_m *Listen) QueryTrack() *TrackQuery {
+	return NewListenClient(_m.config).QueryTrack(_m)
 }
 
 // Update returns a builder for updating this Listen.

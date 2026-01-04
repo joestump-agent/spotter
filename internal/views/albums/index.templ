@@ -1,0 +1,253 @@
+package albums
+
+import (
+	"fmt"
+	"spotter/ent"
+	"spotter/internal/config"
+	"spotter/internal/views/layouts"
+	"time"
+)
+
+func formatTime(t time.Time) string {
+	return t.Local().Format("Jan 02, 2006")
+}
+
+func formatTimeISO(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func getAlbumCover(album *ent.Album) string {
+	if album.Edges.Images == nil || len(album.Edges.Images) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/library/album/%d.png", album.ID)
+}
+
+templ Index(albums []*ent.Album, currentPage int, totalPages int, cfg *config.Config) {
+	@layouts.Dashboard("Albums | Spotter", cfg, "/library/albums") {
+		<div class="max-w-7xl mx-auto">
+			<div class="flex items-center justify-between mb-8">
+				<div>
+					<h2 class="text-3xl font-bold">Albums</h2>
+					<p class="text-base-content/60 mt-2">All albums from your enriched music catalog</p>
+				</div>
+				<!-- View Toggle -->
+				<div class="join">
+					<button
+						id="table-view-btn"
+						class="join-item btn btn-sm btn-square"
+						onclick="setView('table')"
+						title="Table view"
+					>
+						<span class="icon-[heroicons--table-cells] w-4 h-4"></span>
+					</button>
+					<button
+						id="tile-view-btn"
+						class="join-item btn btn-sm btn-square btn-active"
+						onclick="setView('tile')"
+						title="Tile view"
+					>
+						<span class="icon-[heroicons--squares-2x2] w-4 h-4"></span>
+					</button>
+				</div>
+			</div>
+			if len(albums) == 0 {
+				<div class="card bg-base-200">
+					<div class="card-body items-center text-center">
+						<span class="icon-[heroicons--square-3-stack-3d] w-16 h-16 text-base-content/30"></span>
+						<h3 class="card-title">No albums found</h3>
+						<p class="text-base-content/60">Albums will appear here once your music catalog is enriched.</p>
+					</div>
+				</div>
+			} else {
+				<!-- Table View -->
+				<div id="table-view" class="hidden card bg-base-100 shadow-xl">
+					<div class="card-body p-0">
+						<div class="overflow-x-auto">
+							<table class="table table-zebra">
+								<thead>
+									<tr>
+										<th class="w-12"></th>
+										<th>Album</th>
+										<th>Artist</th>
+										<th>Year</th>
+										<th>Type</th>
+										<th>Tracks</th>
+										<th>Genre</th>
+									</tr>
+								</thead>
+								<tbody>
+									for _, album := range albums {
+										<tr class="hover">
+											<td>
+												<div class="avatar">
+													<div class="w-10 h-10 rounded">
+														if img := getAlbumCover(album); img != "" {
+															<img src={ img } alt={ album.Name }/>
+														} else {
+															<div class="bg-base-300 w-full h-full flex items-center justify-center">
+																<span class="icon-[heroicons--square-3-stack-3d] w-5 h-5 text-base-content/40"></span>
+															</div>
+														}
+													</div>
+												</div>
+											</td>
+											<td>
+												<a href={ templ.URL(fmt.Sprintf("/library/album/%d", album.ID)) } class="font-medium hover:text-primary hover:underline">
+													{ album.Name }
+												</a>
+											</td>
+											<td>
+												if album.Edges.Artist != nil {
+													<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", album.Edges.Artist.ID)) } class="text-base-content/70 hover:text-primary hover:underline">
+														{ album.Edges.Artist.Name }
+													</a>
+												} else {
+													<span class="text-base-content/50">Unknown Artist</span>
+												}
+											</td>
+											<td>
+												if album.Year > 0 {
+													{ fmt.Sprintf("%d", album.Year) }
+												} else {
+													<span class="text-base-content/50">-</span>
+												}
+											</td>
+											<td>
+												if album.AlbumType != "" {
+													<span class="badge badge-ghost badge-sm">{ album.AlbumType }</span>
+												} else {
+													<span class="text-base-content/50">-</span>
+												}
+											</td>
+											<td>
+												if album.TotalTracks > 0 {
+													{ fmt.Sprintf("%d", album.TotalTracks) }
+												} else {
+													<span class="text-base-content/50">-</span>
+												}
+											</td>
+											<td>
+												if album.Genre != "" {
+													<span class="badge badge-outline badge-sm">{ album.Genre }</span>
+												} else {
+													<span class="text-base-content/50">-</span>
+												}
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+				<!-- Tile View -->
+				<div id="tile-view" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+					for _, album := range albums {
+						<a href={ templ.URL(fmt.Sprintf("/library/album/%d", album.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
+							<figure class="aspect-square bg-base-300">
+								if img := getAlbumCover(album); img != "" {
+									<img src={ img } alt={ album.Name } class="w-full h-full object-cover"/>
+								} else {
+									<div class="w-full h-full flex items-center justify-center">
+										<span class="icon-[heroicons--square-3-stack-3d] w-16 h-16 text-base-content/20"></span>
+									</div>
+								}
+							</figure>
+							<div class="card-body p-4">
+								<h3 class="card-title text-sm line-clamp-1">{ album.Name }</h3>
+								<p class="text-xs text-base-content/60 line-clamp-1">
+									if album.Edges.Artist != nil {
+										{ album.Edges.Artist.Name }
+									} else {
+										Unknown Artist
+									}
+								</p>
+								<div class="flex items-center justify-between mt-2">
+									if album.Year > 0 {
+										<span class="text-xs text-base-content/50">{ fmt.Sprintf("%d", album.Year) }</span>
+									} else {
+										<span></span>
+									}
+									if album.AlbumType != "" && album.AlbumType != "album" {
+										<span class="badge badge-ghost badge-xs">{ album.AlbumType }</span>
+									}
+								</div>
+							</div>
+						</a>
+					}
+				</div>
+				if totalPages > 1 {
+					<div class="flex justify-center mt-8">
+						<div class="join">
+							if currentPage > 1 {
+								<a href={ templ.URL(fmt.Sprintf("/library/albums?page=%d", currentPage-1)) } class="join-item btn btn-sm">«</a>
+							} else {
+								<button class="join-item btn btn-sm btn-disabled">«</button>
+							}
+							for i := 1; i <= totalPages; i++ {
+								if i == currentPage {
+									<button class="join-item btn btn-sm btn-active">{ fmt.Sprintf("%d", i) }</button>
+								} else if i == 1 || i == totalPages || (i >= currentPage-2 && i <= currentPage+2) {
+									<a href={ templ.URL(fmt.Sprintf("/library/albums?page=%d", i)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", i) }</a>
+								} else if i == currentPage-3 || i == currentPage+3 {
+									<button class="join-item btn btn-sm btn-disabled">...</button>
+								}
+							}
+							if currentPage < totalPages {
+								<a href={ templ.URL(fmt.Sprintf("/library/albums?page=%d", currentPage+1)) } class="join-item btn btn-sm">»</a>
+							} else {
+								<button class="join-item btn btn-sm btn-disabled">»</button>
+							}
+						</div>
+					</div>
+				}
+			}
+		</div>
+		<script>
+			// View toggle functionality
+			function setView(view) {
+				const tableView = document.getElementById('table-view');
+				const tileView = document.getElementById('tile-view');
+				const tableBtn = document.getElementById('table-view-btn');
+				const tileBtn = document.getElementById('tile-view-btn');
+
+				if (view === 'table') {
+					tableView.classList.remove('hidden');
+					tileView.classList.add('hidden');
+					tableBtn.classList.add('btn-active');
+					tileBtn.classList.remove('btn-active');
+				} else {
+					tableView.classList.add('hidden');
+					tileView.classList.remove('hidden');
+					tableBtn.classList.remove('btn-active');
+					tileBtn.classList.add('btn-active');
+				}
+
+				// Save preference
+				localStorage.setItem('spotter-albums-view', view);
+			}
+
+			// Restore saved preference (default is tile)
+			(function() {
+				const savedView = localStorage.getItem('spotter-albums-view');
+				if (savedView === 'table') {
+					setView('table');
+				}
+			})();
+
+			// Initialize timeago
+			(function() {
+				if (typeof timeago !== 'undefined') {
+					const nodes = document.querySelectorAll('.timeago');
+					if (nodes.length > 0) {
+						timeago.render(nodes);
+					}
+				}
+			})();
+		</script>
+	}
+}

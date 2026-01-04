@@ -64,9 +64,11 @@ type ArtistEdges struct {
 	Tracks []*Track `json:"tracks,omitempty"`
 	// Images holds the value of the images edge.
 	Images []*ArtistImage `json:"images,omitempty"`
+	// Listens holds the value of the listens edge.
+	Listens []*Listen `json:"listens,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [4]bool
+	loadedTypes [5]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -105,6 +107,15 @@ func (e ArtistEdges) ImagesOrErr() ([]*ArtistImage, error) {
 		return e.Images, nil
 	}
 	return nil, &NotLoadedError{edge: "images"}
+}
+
+// ListensOrErr returns the Listens value or an error if the edge
+// was not loaded in eager-loading.
+func (e ArtistEdges) ListensOrErr() ([]*Listen, error) {
+	if e.loadedTypes[4] {
+		return e.Listens, nil
+	}
+	return nil, &NotLoadedError{edge: "listens"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -272,6 +283,11 @@ func (_m *Artist) QueryTracks() *TrackQuery {
 // QueryImages queries the "images" edge of the Artist entity.
 func (_m *Artist) QueryImages() *ArtistImageQuery {
 	return NewArtistClient(_m.config).QueryImages(_m)
+}
+
+// QueryListens queries the "listens" edge of the Artist entity.
+func (_m *Artist) QueryListens() *ListenQuery {
+	return NewArtistClient(_m.config).QueryListens(_m)
 }
 
 // Update returns a builder for updating this Artist.

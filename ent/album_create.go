@@ -9,6 +9,7 @@ import (
 	"spotter/ent/album"
 	"spotter/ent/albumimage"
 	"spotter/ent/artist"
+	"spotter/ent/listen"
 	"spotter/ent/track"
 	"spotter/ent/user"
 	"time"
@@ -278,6 +279,21 @@ func (_c *AlbumCreate) AddImages(v ...*AlbumImage) *AlbumCreate {
 	return _c.AddImageIDs(ids...)
 }
 
+// AddListenIDs adds the "listens" edge to the Listen entity by IDs.
+func (_c *AlbumCreate) AddListenIDs(ids ...int) *AlbumCreate {
+	_c.mutation.AddListenIDs(ids...)
+	return _c
+}
+
+// AddListens adds the "listens" edges to the Listen entity.
+func (_c *AlbumCreate) AddListens(v ...*Listen) *AlbumCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddListenIDs(ids...)
+}
+
 // Mutation returns the AlbumMutation object of the builder.
 func (_c *AlbumCreate) Mutation() *AlbumMutation {
 	return _c.mutation
@@ -487,6 +503,22 @@ func (_c *AlbumCreate) createSpec() (*Album, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(albumimage.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ListensIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   album.ListensTable,
+			Columns: []string{album.ListensColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

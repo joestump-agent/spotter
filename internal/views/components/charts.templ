@@ -1,0 +1,765 @@
+package components
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+// ChartDataPoint represents a single data point for charts
+type ChartDataPoint struct {
+	Label string  `json:"label"`
+	Value float64 `json:"value"`
+}
+
+// StackedChartDataset represents a dataset for stacked charts
+type StackedChartDataset struct {
+	Label           string    `json:"label"`
+	Data            []float64 `json:"data"`
+	BackgroundColor string    `json:"backgroundColor"`
+	BorderColor     string    `json:"borderColor"`
+}
+
+// StackedChartData represents data for stacked bar charts
+type StackedChartData struct {
+	Labels   []string              `json:"labels"`
+	Datasets []StackedChartDataset `json:"datasets"`
+}
+
+// RadarChartData represents data for radar/spider charts
+type RadarChartData struct {
+	Labels   []string  `json:"labels"`
+	Data     []float64 `json:"data"`
+	MaxValue float64   `json:"maxValue"`
+}
+
+func toJSON(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// BarChart renders a simple bar chart
+templ BarChart(id string, title string, data []ChartDataPoint, color string, height string) {
+	<div class="w-full" style={ fmt.Sprintf("height: %s", height) }>
+		<canvas id={ id }></canvas>
+	</div>
+	<script>
+		(function() {
+			const ctx = document.getElementById('{{ id }}');
+			if (!ctx) return;
+
+			const data = JSON.parse('{{ toJSON(data) }}');
+			const labels = data.map(d => d.label);
+			const values = data.map(d => d.value);
+
+			new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: labels,
+					datasets: [{
+						label: '{{ title }}',
+						data: values,
+						backgroundColor: '{{ color }}',
+						borderColor: '{{ color }}',
+						borderWidth: 1,
+						borderRadius: 4
+					}]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: false
+						},
+						title: {
+							display: true,
+							text: '{{ title }}',
+							color: 'oklch(var(--bc))',
+							font: {
+								size: 14,
+								weight: 'bold'
+							}
+						}
+					},
+					scales: {
+						y: {
+							beginAtZero: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.1)'
+							}
+						},
+						x: {
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)',
+								maxRotation: 45,
+								minRotation: 45
+							},
+							grid: {
+								display: false
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+// HorizontalBarChart renders a horizontal bar chart
+templ HorizontalBarChart(id string, title string, data []ChartDataPoint, color string, height string) {
+	<div class="w-full" style={ fmt.Sprintf("height: %s", height) }>
+		<canvas id={ id }></canvas>
+	</div>
+	<script>
+		(function() {
+			const ctx = document.getElementById('{{ id }}');
+			if (!ctx) return;
+
+			const data = JSON.parse('{{ toJSON(data) }}');
+			const labels = data.map(d => d.label);
+			const values = data.map(d => d.value);
+
+			new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: labels,
+					datasets: [{
+						label: '{{ title }}',
+						data: values,
+						backgroundColor: '{{ color }}',
+						borderColor: '{{ color }}',
+						borderWidth: 1,
+						borderRadius: 4
+					}]
+				},
+				options: {
+					indexAxis: 'y',
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: false
+						},
+						title: {
+							display: true,
+							text: '{{ title }}',
+							color: 'oklch(var(--bc))',
+							font: {
+								size: 14,
+								weight: 'bold'
+							}
+						}
+					},
+					scales: {
+						x: {
+							beginAtZero: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.1)'
+							}
+						},
+						y: {
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								display: false
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+// StackedBarChart renders a stacked bar chart with multiple datasets
+templ StackedBarChart(id string, title string, data StackedChartData, height string) {
+	<div class="w-full" style={ fmt.Sprintf("height: %s", height) }>
+		<canvas id={ id }></canvas>
+	</div>
+	<script>
+		(function() {
+			const ctx = document.getElementById('{{ id }}');
+			if (!ctx) return;
+
+			const chartData = JSON.parse('{{ toJSON(data) }}');
+
+			new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: chartData.labels,
+					datasets: chartData.datasets.map(ds => ({
+						label: ds.label,
+						data: ds.data,
+						backgroundColor: ds.backgroundColor,
+						borderColor: ds.borderColor,
+						borderWidth: 1,
+						borderRadius: 2
+					}))
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: true,
+							position: 'bottom',
+							labels: {
+								color: 'oklch(var(--bc))',
+								usePointStyle: true,
+								padding: 20
+							}
+						},
+						title: {
+							display: true,
+							text: '{{ title }}',
+							color: 'oklch(var(--bc))',
+							font: {
+								size: 14,
+								weight: 'bold'
+							}
+						}
+					},
+					scales: {
+						y: {
+							stacked: true,
+							beginAtZero: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.1)'
+							}
+						},
+						x: {
+							stacked: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								display: false
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+// StackedBarChartWithTimeframe renders a stacked bar chart with a timeframe dropdown
+templ StackedBarChartWithTimeframe(id string, title string, baseURL string, timeframes []string, currentTimeframe string, data StackedChartData, height string) {
+	<div class="card bg-base-100 shadow-xl">
+		<div class="card-body">
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="card-title text-lg">{ title }</h3>
+				<select
+					class="select select-bordered select-sm w-32"
+					hx-get={ baseURL }
+					hx-target={ fmt.Sprintf("#%s-container", id) }
+					hx-swap="innerHTML"
+					name="timeframe"
+				>
+					for _, tf := range timeframes {
+						<option value={ tf } selected?={ tf == currentTimeframe }>{ tf }</option>
+					}
+				</select>
+			</div>
+			<div id={ fmt.Sprintf("%s-container", id) }>
+				<div class="w-full" style={ fmt.Sprintf("height: %s", height) }>
+					<canvas id={ id }></canvas>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script>
+		(function() {
+			const ctx = document.getElementById('{{ id }}');
+			if (!ctx) return;
+
+			const chartData = JSON.parse('{{ toJSON(data) }}');
+
+			new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: chartData.labels,
+					datasets: chartData.datasets.map(ds => ({
+						label: ds.label,
+						data: ds.data,
+						backgroundColor: ds.backgroundColor,
+						borderColor: ds.borderColor,
+						borderWidth: 1,
+						borderRadius: 2
+					}))
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: true,
+							position: 'bottom',
+							labels: {
+								color: 'oklch(var(--bc))',
+								usePointStyle: true,
+								padding: 20
+							}
+						}
+					},
+					scales: {
+						y: {
+							stacked: true,
+							beginAtZero: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.1)'
+							}
+						},
+						x: {
+							stacked: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								display: false
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+// RadarChart renders a spider/radar chart
+templ RadarChart(id string, title string, data RadarChartData, color string, height string) {
+	<div class="w-full" style={ fmt.Sprintf("height: %s", height) }>
+		<canvas id={ id }></canvas>
+	</div>
+	<script>
+		(function() {
+			const ctx = document.getElementById('{{ id }}');
+			if (!ctx) return;
+
+			const chartData = JSON.parse('{{ toJSON(data) }}');
+
+			new Chart(ctx, {
+				type: 'radar',
+				data: {
+					labels: chartData.labels,
+					datasets: [{
+						label: '{{ title }}',
+						data: chartData.data,
+						backgroundColor: '{{ color }}33',
+						borderColor: '{{ color }}',
+						borderWidth: 2,
+						pointBackgroundColor: '{{ color }}',
+						pointBorderColor: '#fff',
+						pointHoverBackgroundColor: '#fff',
+						pointHoverBorderColor: '{{ color }}'
+					}]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: false
+						},
+						title: {
+							display: true,
+							text: '{{ title }}',
+							color: 'oklch(var(--bc))',
+							font: {
+								size: 14,
+								weight: 'bold'
+							}
+						}
+					},
+					scales: {
+						r: {
+							beginAtZero: true,
+							max: chartData.maxValue > 0 ? chartData.maxValue : undefined,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)',
+								backdropColor: 'transparent'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.2)'
+							},
+							pointLabels: {
+								color: 'oklch(var(--bc))',
+								font: {
+									size: 11
+								}
+							},
+							angleLines: {
+								color: 'oklch(var(--bc) / 0.2)'
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+// DoughnutChart renders a doughnut chart
+templ DoughnutChart(id string, title string, data []ChartDataPoint, colors []string, height string) {
+	<div class="w-full" style={ fmt.Sprintf("height: %s", height) }>
+		<canvas id={ id }></canvas>
+	</div>
+	<script>
+		(function() {
+			const ctx = document.getElementById('{{ id }}');
+			if (!ctx) return;
+
+			const data = JSON.parse('{{ toJSON(data) }}');
+			const colors = JSON.parse('{{ toJSON(colors) }}');
+			const labels = data.map(d => d.label);
+			const values = data.map(d => d.value);
+
+			new Chart(ctx, {
+				type: 'doughnut',
+				data: {
+					labels: labels,
+					datasets: [{
+						data: values,
+						backgroundColor: colors,
+						borderColor: colors.map(c => c),
+						borderWidth: 1
+					}]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: true,
+							position: 'right',
+							labels: {
+								color: 'oklch(var(--bc))',
+								usePointStyle: true,
+								padding: 15
+							}
+						},
+						title: {
+							display: true,
+							text: '{{ title }}',
+							color: 'oklch(var(--bc))',
+							font: {
+								size: 14,
+								weight: 'bold'
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+// LineChart renders a line chart
+templ LineChart(id string, title string, data []ChartDataPoint, color string, height string, fill bool) {
+	<div class="w-full" style={ fmt.Sprintf("height: %s", height) }>
+		<canvas id={ id }></canvas>
+	</div>
+	<script>
+		(function() {
+			const ctx = document.getElementById('{{ id }}');
+			if (!ctx) return;
+
+			const data = JSON.parse('{{ toJSON(data) }}');
+			const labels = data.map(d => d.label);
+			const values = data.map(d => d.value);
+			const shouldFill = {{ fill }};
+
+			new Chart(ctx, {
+				type: 'line',
+				data: {
+					labels: labels,
+					datasets: [{
+						label: '{{ title }}',
+						data: values,
+						backgroundColor: shouldFill ? '{{ color }}33' : '{{ color }}',
+						borderColor: '{{ color }}',
+						borderWidth: 2,
+						fill: shouldFill,
+						tension: 0.3,
+						pointRadius: 3,
+						pointHoverRadius: 5
+					}]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: false
+						},
+						title: {
+							display: true,
+							text: '{{ title }}',
+							color: 'oklch(var(--bc))',
+							font: {
+								size: 14,
+								weight: 'bold'
+							}
+						}
+					},
+					scales: {
+						y: {
+							beginAtZero: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.1)'
+							}
+						},
+						x: {
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								display: false
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+// AudioFeaturesRadar renders a radar chart for Spotify audio features
+templ AudioFeaturesRadar(id string, energy float64, danceability float64, valence float64, acousticness float64, instrumentalness float64, height string) {
+	<div class="w-full" style={ fmt.Sprintf("height: %s", height) }>
+		<canvas id={ id }></canvas>
+	</div>
+	<script>
+		(function() {
+			const ctx = document.getElementById('{{ id }}');
+			if (!ctx) return;
+
+			new Chart(ctx, {
+				type: 'radar',
+				data: {
+					labels: ['Energy', 'Danceability', 'Valence', 'Acousticness', 'Instrumentalness'],
+					datasets: [{
+						label: 'Audio Features',
+						data: [{{ energy }}, {{ danceability }}, {{ valence }}, {{ acousticness }}, {{ instrumentalness }}],
+						backgroundColor: 'oklch(var(--p) / 0.3)',
+						borderColor: 'oklch(var(--p))',
+						borderWidth: 2,
+						pointBackgroundColor: 'oklch(var(--p))',
+						pointBorderColor: '#fff',
+						pointHoverBackgroundColor: '#fff',
+						pointHoverBorderColor: 'oklch(var(--p))'
+					}]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: false
+						},
+						title: {
+							display: true,
+							text: 'Audio Features',
+							color: 'oklch(var(--bc))',
+							font: {
+								size: 14,
+								weight: 'bold'
+							}
+						}
+					},
+					scales: {
+						r: {
+							beginAtZero: true,
+							max: 1,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)',
+								backdropColor: 'transparent',
+								stepSize: 0.2
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.2)'
+							},
+							pointLabels: {
+								color: 'oklch(var(--bc))',
+								font: {
+									size: 11
+								}
+							},
+							angleLines: {
+								color: 'oklch(var(--bc) / 0.2)'
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+// StatCard renders a stat card with icon
+templ StatCard(title string, value string, subtitle string, icon string, colorClass string) {
+	<div class="stat bg-base-100 rounded-box shadow-xl">
+		<div class={ "stat-figure", colorClass }>
+			<span class={ icon, "w-10 h-10" }></span>
+		</div>
+		<div class="stat-title">{ title }</div>
+		<div class={ "stat-value", colorClass }>{ value }</div>
+		if subtitle != "" {
+			<div class="stat-desc">{ subtitle }</div>
+		}
+	</div>
+}
+
+// StatCardLink renders a clickable stat card with icon that links to a page
+templ StatCardLink(title string, value string, subtitle string, icon string, colorClass string, href string) {
+	<a href={ templ.URL(href) } class="stat bg-base-100 rounded-box shadow-xl hover:shadow-2xl hover:scale-105 transition-all cursor-pointer">
+		<div class={ "stat-figure", colorClass }>
+			<span class={ icon, "w-10 h-10" }></span>
+		</div>
+		<div class="stat-title">{ title }</div>
+		<div class={ "stat-value", colorClass }>{ value }</div>
+		if subtitle != "" {
+			<div class="stat-desc">{ subtitle }</div>
+		}
+	</a>
+}
+
+// MiniStatCard renders a smaller stat card
+templ MiniStatCard(title string, value string, icon string, colorClass string) {
+	<div class="stat place-items-center bg-base-100 rounded-lg p-4">
+		<div class={ "stat-figure", colorClass }>
+			<span class={ icon, "w-6 h-6" }></span>
+		</div>
+		<div class="stat-title text-xs">{ title }</div>
+		<div class={ "stat-value text-lg", colorClass }>{ value }</div>
+	</div>
+}
+
+// ChartJS script include - add this once in the base layout
+templ ChartJSScript() {
+	<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+}
+
+// GenreTagCloud renders genre tags as badges
+templ GenreTagCloud(genres []string, limit int) {
+	<div class="flex flex-wrap gap-2">
+		for i, genre := range genres {
+			if limit <= 0 || i < limit {
+				<span class="badge badge-outline badge-sm">{ genre }</span>
+			}
+		}
+		if limit > 0 && len(genres) > limit {
+			<span class="badge badge-ghost badge-sm">+{ fmt.Sprintf("%d", len(genres)-limit) } more</span>
+		}
+	</div>
+}
+
+// TagBadges renders tags with DaisyUI badges
+templ TagBadges(tags []string, colorClass string) {
+	<div class="flex flex-wrap gap-2">
+		for _, tag := range tags {
+			<span class={ "badge", colorClass }>{ tag }</span>
+		}
+	</div>
+}
+
+// MetadataTable renders a table of key-value metadata
+type MetadataRow struct {
+	Label string
+	Value string
+	Link  string
+}
+
+templ MetadataTable(rows []MetadataRow) {
+	<div class="overflow-x-auto">
+		<table class="table table-sm">
+			<tbody>
+				for _, row := range rows {
+					<tr>
+						<th class="text-base-content/60 font-medium w-1/3">{ row.Label }</th>
+						<td>
+							if row.Link != "" {
+								<a href={ templ.URL(row.Link) } target="_blank" rel="noopener noreferrer" class="link link-primary">
+									{ row.Value }
+									<span class="icon-[heroicons--arrow-top-right-on-square] w-3 h-3 ml-1"></span>
+								</a>
+							} else {
+								{ row.Value }
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+// ExternalLinkBadge renders a badge that links to an external service
+templ ExternalLinkBadge(name string, url string, icon string, colorClass string) {
+	<a href={ templ.URL(url) } target="_blank" rel="noopener noreferrer" class={ "badge gap-1 hover:brightness-110 transition-all", colorClass }>
+		<span class={ icon, "w-3 h-3" }></span>
+		{ name }
+		<span class="icon-[heroicons--arrow-top-right-on-square] w-3 h-3"></span>
+	</a>
+}
+
+// ProviderColors returns consistent colors for providers
+func ProviderColor(provider string) string {
+	switch provider {
+	case "spotify":
+		return "#1DB954"
+	case "navidrome":
+		return "#4285F4"
+	case "lastfm":
+		return "#D51007"
+	default:
+		return "#6B7280"
+	}
+}
+
+// ProviderBadgeClass returns DaisyUI badge class for providers
+func ProviderBadgeClass(provider string) string {
+	switch provider {
+	case "spotify":
+		return "badge-success"
+	case "navidrome":
+		return "badge-primary"
+	case "lastfm":
+		return "badge-error"
+	default:
+		return "badge-ghost"
+	}
+}
+
+// ProviderIcon returns the icon class for providers
+func ProviderIcon(provider string) string {
+	switch provider {
+	case "spotify":
+		return "icon-[simple-icons--spotify]"
+	case "navidrome":
+		return "icon-[heroicons--musical-note]"
+	case "lastfm":
+		return "icon-[simple-icons--lastdotfm]"
+	default:
+		return "icon-[heroicons--globe-alt]"
+	}
+}

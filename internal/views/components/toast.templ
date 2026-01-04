@@ -42,17 +42,19 @@ script initToast(id string) {
 
 templ Toast(title, message, iconType string) {
 	{{ id := toastID() }}
-	<div id={ id }
-		 class={
-			 "alert shadow-lg toast-item pointer-events-auto cursor-pointer relative w-80",
-			 templ.KV("alert-success", iconType == "play" || iconType == "success"),
-			 templ.KV("alert-info", iconType == "playlist" || iconType == "info" || iconType == ""),
-			 templ.KV("alert-warning", iconType == "warning"),
-			 templ.KV("alert-error", iconType == "error"),
-		 }
-		 role="alert"
-		 style="opacity: 0; transform: translateY(-8px); transition: opacity 0.3s ease, transform 0.3s ease;">
-		<div class="flex gap-3 items-start flex-1">
+	<div
+		id={ id }
+		class={
+			"alert shadow-lg toast-item pointer-events-auto cursor-pointer relative w-80 max-w-[calc(100vw-2rem)]",
+			templ.KV("alert-success", iconType == "play" || iconType == "success"),
+			templ.KV("alert-info", iconType == "playlist" || iconType == "info" || iconType == ""),
+			templ.KV("alert-warning", iconType == "warning"),
+			templ.KV("alert-error", iconType == "error"),
+		}
+		role="alert"
+		style="opacity: 0; transform: translateY(-8px); transition: opacity 0.3s ease, transform 0.3s ease;"
+	>
+		<div class="flex gap-3 items-start flex-1 min-w-0 overflow-hidden">
 			if iconType == "play" || iconType == "success" {
 				<span class="icon-[heroicons--check-circle] w-6 h-6 flex-shrink-0"></span>
 			} else if iconType == "playlist" {
@@ -64,9 +66,9 @@ templ Toast(title, message, iconType string) {
 			} else {
 				<span class="icon-[heroicons--information-circle] w-6 h-6 flex-shrink-0"></span>
 			}
-			<div class="flex-1 pr-4">
-				<h3 class="font-bold">{ title }</h3>
-				<div class="text-sm">{ message }</div>
+			<div class="flex-1 min-w-0 pr-4 overflow-hidden">
+				<h3 class="font-bold truncate">{ title }</h3>
+				<div class="text-sm break-words whitespace-normal overflow-wrap-anywhere">{ message }</div>
 			</div>
 		</div>
 		<span class="icon-[heroicons--x-mark] w-4 h-4 absolute top-2 right-2 opacity-60 hover:opacity-100"></span>
@@ -75,7 +77,10 @@ templ Toast(title, message, iconType string) {
 }
 
 templ ToastContainer() {
-	<div id="toasts" class="toast toast-end toast-top z-50 gap-2 mt-4 mr-4"
-		 sse-swap="notification" hx-swap="beforeend">
-	</div>
+	<div
+		id="toasts"
+		class="toast toast-end toast-top z-50 gap-2 mt-4 mr-4"
+		sse-swap="notification"
+		hx-swap="beforeend"
+	></div>
 }

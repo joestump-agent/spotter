@@ -31,3 +31,7 @@ vendor/
 .idea/
 .vscode/
 *.swp
+
+# Junk
+tmp/**
+data/*/**

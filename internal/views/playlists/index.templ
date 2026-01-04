@@ -69,7 +69,6 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 					</button>
 				</div>
 			</div>
-
 			if len(playlists) == 0 {
 				<div class="card bg-base-200">
 					<div class="card-body items-center text-center">
@@ -98,12 +97,12 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 								</thead>
 								<tbody>
 									for _, pl := range playlists {
-										<tr>
+										<tr class="hover">
 											<td>
 												<div class="avatar">
 													<div class="w-10 h-10 rounded">
 														if pl.ImageURL != "" {
-															<img src={ pl.ImageURL } alt={ pl.Name } />
+															<img src={ pl.ImageURL } alt={ pl.Name }/>
 														} else {
 															<div class="bg-base-300 w-full h-full flex items-center justify-center">
 																<span class="icon-[heroicons--queue-list] w-5 h-5 text-base-content/40"></span>
@@ -113,13 +112,13 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 												</div>
 											</td>
 											<td>
+												<a href={ templ.URL(fmt.Sprintf("/playlists/%d", pl.ID)) } class="font-medium hover:text-primary hover:underline">
+													{ pl.Name }
+												</a>
 												if pl.ExternalURL != "" {
-													<a href={ templ.URL(pl.ExternalURL) } target="_blank" rel="noopener noreferrer" class="font-medium hover:text-primary hover:underline flex items-center gap-1">
-														{ pl.Name }
-														<span class="icon-[heroicons--arrow-top-right-on-square] w-3 h-3 opacity-50"></span>
+													<a href={ templ.URL(pl.ExternalURL) } target="_blank" rel="noopener noreferrer" class="ml-2 opacity-50 hover:opacity-100">
+														<span class="icon-[heroicons--arrow-top-right-on-square] w-3 h-3"></span>
 													</a>
-												} else {
-													<div class="font-medium">{ pl.Name }</div>
 												}
 											</td>
 											<td>
@@ -155,15 +154,14 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 						</div>
 					</div>
 				</div>
-
 				<!-- Tile View -->
 				<div id="tile-view" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 					for _, pl := range playlists {
-						<div class="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">
+						<a href={ templ.URL(fmt.Sprintf("/playlists/%d", pl.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
 							<!-- Cover Art -->
 							<figure class="aspect-square bg-base-300">
 								if pl.ImageURL != "" {
-									<img src={ pl.ImageURL } alt={ pl.Name } class="w-full h-full object-cover" />
+									<img src={ pl.ImageURL } alt={ pl.Name } class="w-full h-full object-cover"/>
 								} else {
 									<div class="w-full h-full flex items-center justify-center">
 										<span class="icon-[heroicons--queue-list] w-16 h-16 text-base-content/20"></span>
@@ -174,18 +172,10 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 								<!-- Title & Provider -->
 								<div class="flex items-start justify-between gap-2">
 									<h3 class="card-title text-base line-clamp-1">
-										if pl.ExternalURL != "" {
-											<a href={ templ.URL(pl.ExternalURL) } target="_blank" rel="noopener noreferrer" class="hover:text-primary hover:underline flex items-center gap-1">
-												{ pl.Name }
-												<span class="icon-[heroicons--arrow-top-right-on-square] w-3 h-3 opacity-50 flex-shrink-0"></span>
-											</a>
-										} else {
-											{ pl.Name }
-										}
+										{ pl.Name }
 									</h3>
 									@providerBadge(pl.Source)
 								</div>
-
 								<!-- Description -->
 								<p class="text-sm text-base-content/60 line-clamp-2 min-h-[2.5rem]">
 									if pl.Description != "" {
@@ -194,7 +184,6 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 										<span class="italic opacity-50">No description</span>
 									}
 								</p>
-
 								<!-- Stats -->
 								<div class="divider my-2"></div>
 								<div class="grid grid-cols-3 gap-2 text-center">
@@ -211,16 +200,14 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 										<div class="text-xs text-base-content/60">Albums</div>
 									</div>
 								</div>
-
 								<!-- Last Updated -->
 								<div class="text-xs text-base-content/50 mt-2 text-center">
 									Updated <span class="timeago" datetime={ formatPlaylistTimeISO(pl.UpdatedAt) } title={ formatPlaylistTime(pl.UpdatedAt) }>{ formatPlaylistTime(pl.UpdatedAt) }</span>
 								</div>
 							</div>
-						</div>
+						</a>
 					}
 				</div>
-
 				if totalPages > 1 {
 					<div class="flex justify-center mt-8">
 						<div class="join">
@@ -229,7 +216,6 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 							} else {
 								<button class="join-item btn btn-sm btn-disabled">«</button>
 							}
-
 							for i := 1; i <= totalPages; i++ {
 								if i == currentPage {
 									<button class="join-item btn btn-sm btn-active">{ fmt.Sprintf("%d", i) }</button>
@@ -239,7 +225,6 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 									<button class="join-item btn btn-sm btn-disabled">...</button>
 								}
 							}
-
 							if currentPage < totalPages {
 								<a href={ templ.URL(fmt.Sprintf("/playlists?page=%d", currentPage+1)) } class="join-item btn btn-sm">»</a>
 							} else {
@@ -250,7 +235,6 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 				}
 			}
 		</div>
-
 		<script>
 			// View toggle functionality
 			function setView(view) {

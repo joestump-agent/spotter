@@ -141,6 +141,10 @@ func main() {
 	fileServer := http.FileServer(http.Dir("./static"))
 	r.Handle("/static/*", http.StripPrefix("/static", fileServer))
 
+	// Data Files (images, etc.)
+	dataFileServer := http.FileServer(http.Dir("./data"))
+	r.Handle("/data/*", http.StripPrefix("/data", dataFileServer))
+
 	// Public Routes
 	r.Group(func(r chi.Router) {
 		r.Get("/auth/login", h.Login)
@@ -158,8 +162,6 @@ func main() {
 		r.Get("/preferences", h.PreferencesRedirect)
 		r.Get("/preferences/appearance", h.PreferencesAppearance)
 		r.Post("/preferences/appearance", h.PostPreferencesAppearance)
-		r.Get("/preferences/ai", h.PreferencesAI)
-		r.Post("/preferences/ai", h.PostPreferencesAI)
 		r.Get("/preferences/providers", h.PreferencesProviders)
 		r.Get("/preferences/tasks", h.PreferencesTasks)
 
@@ -186,6 +188,50 @@ func main() {
 
 		r.Get("/recent", h.RecentListens)
 		r.Get("/playlists", h.Playlists)
+		r.Get("/playlists/{id}", h.PlaylistShow)
+		r.Get("/playlists/{id}.png", h.PlaylistImage)
+		r.Get("/playlists/{id}/chart", h.PlaylistChart)
+
+		// Vibes routes (DJs and Mixtapes)
+		r.Get("/vibes", h.VibesRedirect)
+		r.Route("/vibes/djs", func(r chi.Router) {
+			r.Get("/", h.DJsIndex)
+			r.Post("/", h.CreateDJ)
+			r.Get("/{id}", h.DJShow)
+			r.Put("/{id}", h.UpdateDJ)
+			r.Delete("/{id}", h.DeleteDJ)
+			r.Get("/suggestions/genres", h.GenreSuggestions)
+			r.Get("/suggestions/artists", h.ArtistSuggestions)
+		})
+		r.Route("/vibes/mixtapes", func(r chi.Router) {
+			r.Get("/", h.MixtapesIndex)
+			r.Get("/{id}", h.MixtapeShow)
+			r.Post("/", h.CreateMixtape)
+			r.Put("/{id}", h.UpdateMixtape)
+			r.Delete("/{id}", h.DeleteMixtape)
+			r.Post("/{id}/toggle-sync", h.ToggleMixtapeSync)
+			r.Post("/{id}/generate", h.GenerateMixtape)
+		})
+
+		// Library routes (artists, albums, tracks)
+		r.Route("/library", func(r chi.Router) {
+			// Artist routes
+			r.Get("/artists", h.ArtistIndex)
+			r.Get("/artist/{id}", h.ArtistShow)
+			r.Get("/artist/{id}.png", h.ArtistImage)
+			r.Get("/artist/{id}/chart", h.ArtistChart)
+
+			// Album routes
+			r.Get("/albums", h.AlbumIndex)
+			r.Get("/album/{id}", h.AlbumShow)
+			r.Get("/album/{id}.png", h.AlbumImage)
+			r.Get("/album/{id}/chart", h.AlbumChart)
+
+			// Track routes
+			r.Get("/tracks", h.TrackIndex)
+			r.Get("/track/{id}", h.TrackShow)
+			r.Get("/track/{id}/chart", h.TrackChart)
+		})
 	})
 
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)

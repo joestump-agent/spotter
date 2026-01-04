@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"spotter/ent/album"
 	"spotter/ent/artist"
+	"spotter/ent/dj"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/mixtape"
 	"spotter/ent/navidromeauth"
 	"spotter/ent/playlist"
 	"spotter/ent/spotifyauth"
@@ -234,6 +236,36 @@ func (_c *UserCreate) AddAlbums(v ...*Album) *UserCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddAlbumIDs(ids...)
+}
+
+// AddDjIDs adds the "djs" edge to the DJ entity by IDs.
+func (_c *UserCreate) AddDjIDs(ids ...int) *UserCreate {
+	_c.mutation.AddDjIDs(ids...)
+	return _c
+}
+
+// AddDjs adds the "djs" edges to the DJ entity.
+func (_c *UserCreate) AddDjs(v ...*DJ) *UserCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddDjIDs(ids...)
+}
+
+// AddMixtapeIDs adds the "mixtapes" edge to the Mixtape entity by IDs.
+func (_c *UserCreate) AddMixtapeIDs(ids ...int) *UserCreate {
+	_c.mutation.AddMixtapeIDs(ids...)
+	return _c
+}
+
+// AddMixtapes adds the "mixtapes" edges to the Mixtape entity.
+func (_c *UserCreate) AddMixtapes(v ...*Mixtape) *UserCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddMixtapeIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -470,6 +502,38 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.DjsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DjsTable,
+			Columns: []string{user.DjsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(dj.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.MixtapesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MixtapesTable,
+			Columns: []string{user.MixtapesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mixtape.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

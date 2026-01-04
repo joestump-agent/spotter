@@ -1,0 +1,539 @@
+package artists
+
+import (
+	"encoding/json"
+	"fmt"
+	"spotter/ent"
+	"spotter/internal/config"
+	"spotter/internal/views/components"
+	"spotter/internal/views/layouts"
+	"time"
+)
+
+// ArtistStats holds statistics for an artist
+type ArtistStats struct {
+	TotalListens       int
+	UniqueAlbums       int
+	UniqueTracks       int
+	FirstListen        time.Time
+	LastListen         time.Time
+	ListensByProvider  []components.ChartDataPoint
+	ListensByHour      []components.ChartDataPoint
+	ListensByDayOfWeek []components.ChartDataPoint
+	ListensByMonth     []components.ChartDataPoint
+	ProviderHistory    components.StackedChartData
+	TopTracks          []TrackListenCount
+}
+
+// TrackListenCount represents a track with its listen count
+type TrackListenCount struct {
+	Track       *ent.Track
+	ListenCount int
+}
+
+// PlaylistWithArtist represents a playlist containing tracks from this artist
+type PlaylistWithArtist struct {
+	Playlist   *ent.Playlist
+	TrackCount int
+}
+
+func showFormatNumber(n int) string {
+	return fmt.Sprintf("%d", n)
+}
+
+func showFormatDate(t time.Time) string {
+	if t.IsZero() {
+		return "N/A"
+	}
+	return t.Local().Format("Jan 2 '06")
+}
+
+func getArtistImage(artist *ent.Artist) string {
+	if artist.Edges.Images == nil || len(artist.Edges.Images) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/library/artist/%d.png", artist.ID)
+}
+
+func getAnyArtistImage(artist *ent.Artist) string {
+	return getArtistImage(artist)
+}
+
+func getBackgroundImage(artist *ent.Artist) string {
+	return getArtistImage(artist)
+}
+
+templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArtist, stats *ArtistStats, cfg *config.Config, currentTimeframe string) {
+	@layouts.Dashboard(fmt.Sprintf("%s | Artists | Spotter", artist.Name), cfg, "/library/artist") {
+		@components.ChartJSScript()
+		<!-- Hero Section with Background -->
+		<div class="relative -mx-6 lg:-mx-8 -mt-6 lg:-mt-8 mb-8">
+			<!-- Background Image -->
+			if bg := getBackgroundImage(artist); bg != "" {
+				<div class="absolute inset-0 h-80 overflow-hidden">
+					<img src={ bg } alt="" class="w-full h-full object-cover opacity-30"/>
+					<div class="absolute inset-0 bg-gradient-to-b from-transparent via-base-200/80 to-base-200"></div>
+				</div>
+			} else {
+				<div class="absolute inset-0 h-80 bg-gradient-to-b from-primary/20 to-base-200"></div>
+			}
+			<!-- Artist Info -->
+			<div class="relative pt-8 px-6 lg:px-8 pb-8">
+				<div class="max-w-7xl mx-auto">
+					<div class="flex flex-col md:flex-row items-start gap-8">
+						<!-- Artist Image -->
+						<div class="flex-shrink-0">
+							<div class="avatar">
+								<div class="w-48 h-48 rounded-xl shadow-2xl ring ring-base-100 ring-offset-base-200 ring-offset-2">
+									if img := getAnyArtistImage(artist); img != "" {
+										<img src={ img } alt={ artist.Name }/>
+									} else {
+										<div class="bg-base-300 w-full h-full flex items-center justify-center">
+											<span class="icon-[heroicons--user-group] w-24 h-24 text-base-content/30"></span>
+										</div>
+									}
+								</div>
+							</div>
+						</div>
+						<!-- Artist Details -->
+						<div class="flex-1 min-w-0">
+							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ artist.Name }</h1>
+							<!-- Genres in Header -->
+							if len(artist.Genres) > 0 {
+								<div class="flex flex-wrap gap-1 mb-3">
+									for i, genre := range artist.Genres {
+										if i < 8 {
+											<span class="badge badge-sm badge-primary">{ genre }</span>
+										}
+									}
+									if len(artist.Genres) > 8 {
+										<span class="badge badge-sm badge-ghost">+{ fmt.Sprintf("%d", len(artist.Genres)-8) } more</span>
+									}
+								</div>
+							}
+							<!-- Metadata Table -->
+							<div class="bg-base-100/50 rounded-lg p-3 mb-4">
+								<table class="text-sm">
+									<tbody>
+										<tr>
+											<td class="pr-6 py-1 text-base-content/60">Listens</td>
+											<td class="py-1 font-medium">{ showFormatNumber(stats.TotalListens) }</td>
+											<td class="pr-6 py-1 text-base-content/60 pl-6">Albums</td>
+											<td class="py-1 font-medium">{ showFormatNumber(stats.UniqueAlbums) }</td>
+										</tr>
+										<tr>
+											<td class="pr-6 py-1 text-base-content/60">Tracks</td>
+											<td class="py-1 font-medium">{ showFormatNumber(stats.UniqueTracks) }</td>
+											<td class="pr-6 py-1 text-base-content/60 pl-6">Followers</td>
+											<td class="py-1 font-medium">
+												if artist.FollowerCount != nil && *artist.FollowerCount > 0 {
+													{ showFormatNumber(*artist.FollowerCount) }
+												} else {
+													—
+												}
+											</td>
+										</tr>
+										<tr>
+											<td class="pr-6 py-1 text-base-content/60">Popularity</td>
+											<td class="py-1 font-medium">
+												if artist.Popularity != nil && *artist.Popularity > 0 {
+													{ fmt.Sprintf("%d%%", *artist.Popularity) }
+												} else {
+													—
+												}
+											</td>
+											<td class="pr-6 py-1 text-base-content/60 pl-6"></td>
+											<td class="py-1 font-medium"></td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+							<!-- External Links -->
+							<div class="flex flex-wrap gap-2">
+								if artist.SpotifyID != "" {
+									@components.ExternalLinkBadge("Spotify", fmt.Sprintf("https://open.spotify.com/artist/%s", artist.SpotifyID), "icon-[simple-icons--spotify]", "badge-success")
+								}
+								if artist.MusicbrainzID != "" {
+									@components.ExternalLinkBadge("MusicBrainz", fmt.Sprintf("https://musicbrainz.org/artist/%s", artist.MusicbrainzID), "icon-[heroicons--globe-alt]", "badge-warning")
+								}
+								if artist.LastfmURL != "" {
+									@components.ExternalLinkBadge("Last.fm", artist.LastfmURL, "icon-[simple-icons--lastdotfm]", "badge-error")
+								}
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="max-w-7xl mx-auto">
+			<!-- Main Listens by Provider Chart -->
+			<div class="mb-8">
+				@ProviderHistoryChart(artist.ID, stats.ProviderHistory, currentTimeframe)
+			</div>
+			<!-- Stats Grid -->
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+				@components.StatCard("Total Listens", showFormatNumber(stats.TotalListens), "all time", "icon-[heroicons--play-circle]", "text-primary")
+				@components.StatCard("Albums", showFormatNumber(stats.UniqueAlbums), "in your library", "icon-[heroicons--square-3-stack-3d]", "text-secondary")
+				@components.StatCard("Tracks", showFormatNumber(stats.UniqueTracks), "unique songs", "icon-[heroicons--musical-note]", "text-accent")
+				@components.StatCard("First Listen", showFormatDate(stats.FirstListen), "discovered", "icon-[heroicons--calendar]", "text-info")
+			</div>
+			<!-- Bio Section -->
+			if artist.Bio != "" {
+				<div class="card bg-base-100 shadow-xl mb-8">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--document-text] w-5 h-5"></span>
+							Biography
+						</h3>
+						<div class="prose prose-sm max-w-none text-base-content/80">
+							{ artist.Bio }
+						</div>
+					</div>
+				</div>
+			}
+			<!-- Listening Pattern Charts -->
+			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+				<!-- By Hour -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--clock] w-5 h-5"></span>
+							Listens by Hour
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("artist-%d-hour", artist.ID),
+							"",
+							stats.ListensByHour,
+							"oklch(var(--p))",
+							"200px",
+						)
+					</div>
+				</div>
+				<!-- By Day of Week -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--calendar-days] w-5 h-5"></span>
+							Listens by Day
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("artist-%d-day", artist.ID),
+							"",
+							stats.ListensByDayOfWeek,
+							"oklch(var(--s))",
+							"200px",
+						)
+					</div>
+				</div>
+				<!-- By Month -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--calendar] w-5 h-5"></span>
+							Listens by Month
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("artist-%d-month", artist.ID),
+							"",
+							stats.ListensByMonth,
+							"oklch(var(--a))",
+							"200px",
+						)
+					</div>
+				</div>
+			</div>
+			<!-- Top Tracks -->
+			if len(stats.TopTracks) > 0 {
+				<div class="card bg-base-100 shadow-xl mb-8">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--fire] w-5 h-5 text-error"></span>
+							Top Tracks
+						</h3>
+						<div class="overflow-x-auto">
+							<table class="table table-zebra">
+								<thead>
+									<tr>
+										<th class="w-12">#</th>
+										<th>Track</th>
+										<th>Album</th>
+										<th class="text-right">Plays</th>
+									</tr>
+								</thead>
+								<tbody>
+									for i, tc := range stats.TopTracks {
+										<tr>
+											<td class="text-base-content/50">{ fmt.Sprintf("%d", i+1) }</td>
+											<td>
+												<a href={ templ.URL(fmt.Sprintf("/library/track/%d", tc.Track.ID)) } class="font-medium hover:text-primary hover:underline">
+													{ tc.Track.Name }
+												</a>
+											</td>
+											<td class="text-base-content/60">
+												if tc.Track.Edges.Album != nil {
+													<a href={ templ.URL(fmt.Sprintf("/library/album/%d", tc.Track.Edges.Album.ID)) } class="hover:text-primary hover:underline">
+														{ tc.Track.Edges.Album.Name }
+													</a>
+												}
+											</td>
+											<td class="text-right font-mono">{ showFormatNumber(tc.ListenCount) }</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			}
+			<!-- Albums Grid -->
+			if len(albums) > 0 {
+				<div class="mb-8">
+					<h3 class="text-2xl font-bold mb-6 flex items-center gap-2">
+						<span class="icon-[heroicons--square-3-stack-3d] w-6 h-6"></span>
+						Albums
+					</h3>
+					<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+						for _, album := range albums {
+							@AlbumTile(album)
+						}
+					</div>
+				</div>
+			}
+			<!-- Playlists with this Artist -->
+			if len(playlists) > 0 {
+				<div class="mb-8">
+					<h3 class="text-2xl font-bold mb-6 flex items-center gap-2">
+						<span class="icon-[heroicons--queue-list] w-6 h-6"></span>
+						In Playlists
+					</h3>
+					<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+						for _, pl := range playlists {
+							@PlaylistTile(pl.Playlist, pl.TrackCount)
+						}
+					</div>
+				</div>
+			}
+			<!-- Metadata Table -->
+			<div class="card bg-base-100 shadow-xl mb-8">
+				<div class="card-body">
+					<h3 class="card-title">
+						<span class="icon-[heroicons--information-circle] w-5 h-5"></span>
+						Metadata
+					</h3>
+					@components.MetadataTable([]components.MetadataRow{
+						{Label: "Sort Name", Value: showGetOrDefault(artist.SortName, artist.Name)},
+						{Label: "MusicBrainz ID", Value: showGetOrDefault(artist.MusicbrainzID, "N/A"), Link: getMBLink(artist.MusicbrainzID)},
+						{Label: "Spotify ID", Value: showGetOrDefault(artist.SpotifyID, "N/A"), Link: getMBLink(artist.SpotifyID)},
+						{Label: "Navidrome ID", Value: showGetOrDefault(artist.NavidromeID, "N/A")},
+						{Label: "Last Enriched", Value: showFormatEnrichedTime(artist.LastEnrichedAt)},
+						{Label: "Created", Value: showFormatDate(artist.CreatedAt)},
+						{Label: "Updated", Value: showFormatDate(artist.UpdatedAt)},
+					})
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ ProviderHistoryChart(artistID int, data components.StackedChartData, currentTimeframe string) {
+	<div class="card bg-base-100 shadow-xl">
+		<div class="card-body">
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="card-title">
+					<span class="icon-[heroicons--chart-bar] w-5 h-5"></span>
+					Listens Over Time
+				</h3>
+				<select
+					class="select select-bordered select-sm w-40"
+					hx-get={ fmt.Sprintf("/library/artist/%d/chart", artistID) }
+					hx-target="#provider-history-chart"
+					hx-swap="innerHTML"
+					name="timeframe"
+				>
+					<option value="30d" selected?={ currentTimeframe == "30d" }>Last 30 days</option>
+					<option value="90d" selected?={ currentTimeframe == "90d" }>Last 90 days</option>
+					<option value="6m" selected?={ currentTimeframe == "6m" }>Last 6 months</option>
+					<option value="1y" selected?={ currentTimeframe == "1y" }>Last year</option>
+					<option value="all" selected?={ currentTimeframe == "all" }>All time</option>
+				</select>
+			</div>
+			<div id="provider-history-chart">
+				@ProviderHistoryChartContent(artistID, data)
+			</div>
+		</div>
+	</div>
+}
+
+templ ProviderHistoryChartContent(artistID int, data components.StackedChartData) {
+	<div class="w-full" style="height: 300px">
+		<canvas id={ fmt.Sprintf("artist-%d-provider-history", artistID) }></canvas>
+	</div>
+	@providerHistoryScript(artistID, data)
+}
+
+templ providerHistoryScript(artistID int, data components.StackedChartData) {
+	<script>
+		(function() {
+			const ctx = document.getElementById('artist-' + {{ artistID }} + '-provider-history');
+			if (!ctx) return;
+
+			// Destroy existing chart if any
+			const existingChart = Chart.getChart(ctx);
+			if (existingChart) {
+				existingChart.destroy();
+			}
+
+			const chartData = JSON.parse('{{ toJSON(data) }}');
+
+			new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: chartData.labels,
+					datasets: chartData.datasets.map(ds => ({
+						label: ds.label,
+						data: ds.data,
+						backgroundColor: ds.backgroundColor,
+						borderColor: ds.borderColor,
+						borderWidth: 1,
+						borderRadius: 2
+					}))
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: true,
+							position: 'bottom',
+							labels: {
+								color: 'oklch(var(--bc))',
+								usePointStyle: true,
+								padding: 20
+							}
+						}
+					},
+					scales: {
+						y: {
+							stacked: true,
+							beginAtZero: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.1)'
+							}
+						},
+						x: {
+							stacked: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)',
+								maxRotation: 45,
+								minRotation: 0
+							},
+							grid: {
+								display: false
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+templ AlbumTile(album *ent.Album) {
+	<a href={ templ.URL(fmt.Sprintf("/library/album/%d", album.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
+		<figure class="aspect-square bg-base-300">
+			if album.Edges.Images != nil && len(album.Edges.Images) > 0 {
+				if img := getPrimaryAlbumImage(album); img != "" {
+					<img src={ img } alt={ album.Name } class="w-full h-full object-cover"/>
+				} else {
+					<div class="w-full h-full flex items-center justify-center">
+						<span class="icon-[heroicons--square-3-stack-3d] w-12 h-12 text-base-content/20"></span>
+					</div>
+				}
+			} else {
+				<div class="w-full h-full flex items-center justify-center">
+					<span class="icon-[heroicons--square-3-stack-3d] w-12 h-12 text-base-content/20"></span>
+				</div>
+			}
+		</figure>
+		<div class="card-body p-3">
+			<h4 class="card-title text-sm line-clamp-1">{ album.Name }</h4>
+			<div class="flex items-center justify-between text-xs text-base-content/60">
+				if album.Year > 0 {
+					<span>{ fmt.Sprintf("%d", album.Year) }</span>
+				} else {
+					<span>-</span>
+				}
+				if album.AlbumType != "" {
+					<span class="badge badge-ghost badge-xs">{ album.AlbumType }</span>
+				}
+			</div>
+		</div>
+	</a>
+}
+
+templ PlaylistTile(playlist *ent.Playlist, trackCount int) {
+	<a href={ templ.URL(fmt.Sprintf("/playlists/%d", playlist.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
+		<figure class="aspect-square bg-base-300">
+			if playlist.ImageURL != "" {
+				<img src={ playlist.ImageURL } alt={ playlist.Name } class="w-full h-full object-cover"/>
+			} else {
+				<div class="w-full h-full flex items-center justify-center">
+					<span class="icon-[heroicons--queue-list] w-12 h-12 text-base-content/20"></span>
+				</div>
+			}
+		</figure>
+		<div class="card-body p-3">
+			<h4 class="card-title text-sm line-clamp-1">{ playlist.Name }</h4>
+			<div class="flex items-center justify-between text-xs text-base-content/60">
+				<span>{ fmt.Sprintf("%d tracks", trackCount) } from artist</span>
+				<span class={ "badge badge-xs", components.ProviderBadgeClass(playlist.Source) }>{ playlist.Source }</span>
+			</div>
+		</div>
+	</a>
+}
+
+func toJSON(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+func getPrimaryAlbumImage(album *ent.Album) string {
+	if album.Edges.Images == nil || len(album.Edges.Images) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/library/album/%d.png", album.ID)
+}
+
+func showGetOrDefault(value, defaultVal string) string {
+	if value == "" {
+		return defaultVal
+	}
+	return value
+}
+
+func getMBLink(mbid string) string {
+	if mbid == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://musicbrainz.org/artist/%s", mbid)
+}
+
+func getSpotifyArtistLink(spotifyID string) string {
+	if spotifyID == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://open.spotify.com/artist/%s", spotifyID)
+}
+
+func showFormatEnrichedTime(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return "Never"
+	}
+	return t.Local().Format("Jan 02, 2006 at 3:04 PM")
+}

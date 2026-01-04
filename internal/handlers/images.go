@@ -1,0 +1,223 @@
+package handlers
+
+import (
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"spotter/ent/album"
+	"spotter/ent/artist"
+	"spotter/ent/playlist"
+	"spotter/ent/user"
+
+	"github.com/go-chi/chi/v5"
+)
+
+// ArtistImage serves the primary image for an artist
+func (h *Handler) ArtistImage(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse ID from URL (remove .png extension if present)
+	idStr := chi.URLParam(r, "id")
+	idStr = strings.TrimSuffix(idStr, ".png")
+	idStr = strings.TrimSuffix(idStr, ".jpg")
+	idStr = strings.TrimSuffix(idStr, ".jpeg")
+	idStr = strings.TrimSuffix(idStr, ".webp")
+
+	artistID, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get the artist with images
+	a, err := h.Client.Artist.Query().
+		Where(
+			artist.ID(artistID),
+			artist.HasUserWith(user.ID(u.ID)),
+		).
+		WithImages().
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Artist not found", http.StatusNotFound)
+		return
+	}
+
+	// Find the best image to serve
+	if a.Edges.Images == nil || len(a.Edges.Images) == 0 {
+		http.Error(w, "No image available", http.StatusNotFound)
+		return
+	}
+
+	// Prefer primary thumbnail, then any primary, then first image
+	var imageURL, localPath string
+	for _, img := range a.Edges.Images {
+		if img.IsPrimary && string(img.ImageType) == "thumbnail" {
+			localPath = img.LocalPath
+			imageURL = img.URL
+			break
+		}
+	}
+	if localPath == "" && imageURL == "" {
+		for _, img := range a.Edges.Images {
+			if img.IsPrimary {
+				localPath = img.LocalPath
+				imageURL = img.URL
+				break
+			}
+		}
+	}
+	if localPath == "" && imageURL == "" {
+		localPath = a.Edges.Images[0].LocalPath
+		imageURL = a.Edges.Images[0].URL
+	}
+
+	h.serveImage(w, r, localPath, imageURL)
+}
+
+// AlbumImage serves the primary image for an album
+func (h *Handler) AlbumImage(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse ID from URL (remove extension if present)
+	idStr := chi.URLParam(r, "id")
+	idStr = strings.TrimSuffix(idStr, ".png")
+	idStr = strings.TrimSuffix(idStr, ".jpg")
+	idStr = strings.TrimSuffix(idStr, ".jpeg")
+	idStr = strings.TrimSuffix(idStr, ".webp")
+
+	albumID, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid album ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get the album with images
+	a, err := h.Client.Album.Query().
+		Where(
+			album.ID(albumID),
+			album.HasUserWith(user.ID(u.ID)),
+		).
+		WithImages().
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Album not found", http.StatusNotFound)
+		return
+	}
+
+	// Find the best image to serve
+	if a.Edges.Images == nil || len(a.Edges.Images) == 0 {
+		http.Error(w, "No image available", http.StatusNotFound)
+		return
+	}
+
+	// Prefer primary image, then first image
+	var imageURL, localPath string
+	for _, img := range a.Edges.Images {
+		if img.IsPrimary {
+			localPath = img.LocalPath
+			imageURL = img.URL
+			break
+		}
+	}
+	if localPath == "" && imageURL == "" {
+		localPath = a.Edges.Images[0].LocalPath
+		imageURL = a.Edges.Images[0].URL
+	}
+
+	h.serveImage(w, r, localPath, imageURL)
+}
+
+// PlaylistImage serves the image for a playlist
+func (h *Handler) PlaylistImage(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse ID from URL (remove extension if present)
+	idStr := chi.URLParam(r, "id")
+	idStr = strings.TrimSuffix(idStr, ".png")
+	idStr = strings.TrimSuffix(idStr, ".jpg")
+	idStr = strings.TrimSuffix(idStr, ".jpeg")
+	idStr = strings.TrimSuffix(idStr, ".webp")
+
+	playlistID, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get the playlist
+	p, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	// Playlists store image URL directly
+	if p.ImageURL == "" {
+		http.Error(w, "No image available", http.StatusNotFound)
+		return
+	}
+
+	// Redirect to the external URL for playlists
+	http.Redirect(w, r, p.ImageURL, http.StatusTemporaryRedirect)
+}
+
+// serveImage serves an image from local path or redirects to external URL
+func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request, localPath, externalURL string) {
+	// Try to serve local file first
+	if localPath != "" {
+		// Clean and validate the path
+		cleanPath := filepath.Clean(localPath)
+
+		// Check if file exists
+		if _, err := os.Stat(cleanPath); err == nil {
+			// Determine content type from extension
+			ext := strings.ToLower(filepath.Ext(cleanPath))
+			switch ext {
+			case ".png":
+				w.Header().Set("Content-Type", "image/png")
+			case ".jpg", ".jpeg":
+				w.Header().Set("Content-Type", "image/jpeg")
+			case ".webp":
+				w.Header().Set("Content-Type", "image/webp")
+			case ".gif":
+				w.Header().Set("Content-Type", "image/gif")
+			default:
+				w.Header().Set("Content-Type", "application/octet-stream")
+			}
+
+			// Set cache headers for images
+			w.Header().Set("Cache-Control", "public, max-age=86400") // 24 hours
+
+			http.ServeFile(w, r, cleanPath)
+			return
+		}
+	}
+
+	// Fall back to external URL
+	if externalURL != "" {
+		http.Redirect(w, r, externalURL, http.StatusTemporaryRedirect)
+		return
+	}
+
+	http.Error(w, "No image available", http.StatusNotFound)
+}

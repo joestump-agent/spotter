@@ -1,0 +1,492 @@
+package handlers
+
+import (
+	"context"
+	"net/http"
+	"sort"
+	"strconv"
+	"time"
+
+	"spotter/ent"
+	"spotter/ent/album"
+	"spotter/ent/artist"
+	"spotter/ent/listen"
+	"spotter/ent/playlist"
+	"spotter/ent/track"
+	"spotter/ent/user"
+	"spotter/internal/views/artists"
+	"spotter/internal/views/components"
+
+	"github.com/go-chi/chi/v5"
+)
+
+func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get the artist with images
+	a, err := h.Client.Artist.Query().
+		Where(
+			artist.ID(artistID),
+			artist.HasUserWith(user.ID(u.ID)),
+		).
+		WithImages().
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get artist", "error", err, "id", artistID)
+		http.Error(w, "Artist not found", http.StatusNotFound)
+		return
+	}
+
+	// Get timeframe from query
+	timeframe := r.URL.Query().Get("timeframe")
+	if timeframe == "" {
+		timeframe = "30d"
+	}
+
+	// Get albums for this artist
+	albums, err := h.Client.Album.Query().
+		Where(
+			album.HasArtistWith(artist.ID(artistID)),
+			album.HasUserWith(user.ID(u.ID)),
+		).
+		WithImages().
+		Order(ent.Desc(album.FieldYear)).
+		All(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get artist albums", "error", err)
+		albums = []*ent.Album{}
+	}
+
+	// Get playlists containing this artist
+	playlists := h.getPlaylistsWithArtist(r.Context(), u.ID, a.Name)
+
+	// Get stats
+	stats := h.getArtistStats(r.Context(), u.ID, a.Name, timeframe)
+
+	h.Render(w, r, artists.Show(a, albums, playlists, stats, h.Config, timeframe))
+}
+
+func (h *Handler) ArtistChart(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get artist name
+	a, err := h.Client.Artist.Query().
+		Where(
+			artist.ID(artistID),
+			artist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Artist not found", http.StatusNotFound)
+		return
+	}
+
+	timeframe := r.URL.Query().Get("timeframe")
+	if timeframe == "" {
+		timeframe = "30d"
+	}
+
+	data := h.getProviderHistory(r.Context(), u.ID, a.Name, "", "", timeframe)
+	h.Render(w, r, artists.ProviderHistoryChartContent(artistID, data))
+}
+
+func (h *Handler) getArtistStats(ctx context.Context, userID int, artistName string, timeframe string) *artists.ArtistStats {
+	stats := &artists.ArtistStats{
+		ListensByHour:      make([]components.ChartDataPoint, 24),
+		ListensByDayOfWeek: make([]components.ChartDataPoint, 7),
+		ListensByMonth:     make([]components.ChartDataPoint, 12),
+	}
+
+	// Initialize hour labels
+	for i := 0; i < 24; i++ {
+		stats.ListensByHour[i] = components.ChartDataPoint{Label: strconv.Itoa(i), Value: 0}
+	}
+
+	// Initialize day labels
+	days := []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+	for i, day := range days {
+		stats.ListensByDayOfWeek[i] = components.ChartDataPoint{Label: day, Value: 0}
+	}
+
+	// Initialize month labels
+	months := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+	for i, month := range months {
+		stats.ListensByMonth[i] = components.ChartDataPoint{Label: month, Value: 0}
+	}
+
+	// Get all listens for this artist
+	listens, err := h.Client.Listen.Query().
+		Where(
+			listen.HasUserWith(user.ID(userID)),
+			listen.ArtistName(artistName),
+		).
+		Order(ent.Asc(listen.FieldPlayedAt)).
+		All(ctx)
+	if err != nil {
+		h.Logger.Error("failed to get artist listens", "error", err)
+		return stats
+	}
+
+	stats.TotalListens = len(listens)
+
+	if len(listens) > 0 {
+		stats.FirstListen = listens[0].PlayedAt
+		stats.LastListen = listens[len(listens)-1].PlayedAt
+	}
+
+	// Count unique albums and tracks
+	albumSet := make(map[string]bool)
+	trackSet := make(map[string]bool)
+	providerCounts := make(map[string]int)
+
+	for _, l := range listens {
+		albumSet[l.AlbumName] = true
+		trackSet[l.TrackName] = true
+		providerCounts[l.Source]++
+
+		// Hour stats
+		hour := l.PlayedAt.Local().Hour()
+		stats.ListensByHour[hour].Value++
+
+		// Day of week stats
+		day := int(l.PlayedAt.Local().Weekday())
+		stats.ListensByDayOfWeek[day].Value++
+
+		// Month stats
+		month := int(l.PlayedAt.Local().Month()) - 1
+		stats.ListensByMonth[month].Value++
+	}
+
+	stats.UniqueAlbums = len(albumSet)
+	stats.UniqueTracks = len(trackSet)
+
+	// Provider breakdown
+	for provider, count := range providerCounts {
+		stats.ListensByProvider = append(stats.ListensByProvider, components.ChartDataPoint{
+			Label: provider,
+			Value: float64(count),
+		})
+	}
+
+	// Get provider history chart data
+	stats.ProviderHistory = h.getProviderHistory(ctx, userID, artistName, "", "", timeframe)
+
+	// Get top tracks
+	stats.TopTracks = h.getTopTracksForArtist(ctx, userID, artistName, 10)
+
+	return stats
+}
+
+func (h *Handler) getTopTracksForArtist(ctx context.Context, userID int, artistName string, limit int) []artists.TrackListenCount {
+	// Get listen counts grouped by track name
+	type trackCount struct {
+		TrackName string `json:"track_name"`
+		Count     int    `json:"count"`
+	}
+
+	var results []trackCount
+	err := h.Client.Listen.Query().
+		Where(
+			listen.HasUserWith(user.ID(userID)),
+			listen.ArtistName(artistName),
+		).
+		GroupBy(listen.FieldTrackName).
+		Aggregate(ent.Count()).
+		Scan(ctx, &results)
+	if err != nil {
+		h.Logger.Error("failed to get top tracks", "error", err)
+		return nil
+	}
+
+	// Sort by count descending
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Count > results[j].Count
+	})
+
+	// Limit results
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	// Get actual track entities
+	topTracks := make([]artists.TrackListenCount, 0, len(results))
+	for _, r := range results {
+		t, err := h.Client.Track.Query().
+			Where(
+				track.Name(r.TrackName),
+				track.HasArtistWith(artist.Name(artistName)),
+			).
+			WithAlbum().
+			First(ctx)
+		if err != nil {
+			// Track might not exist in catalog, create a minimal entry
+			topTracks = append(topTracks, artists.TrackListenCount{
+				Track:       &ent.Track{Name: r.TrackName},
+				ListenCount: r.Count,
+			})
+		} else {
+			topTracks = append(topTracks, artists.TrackListenCount{
+				Track:       t,
+				ListenCount: r.Count,
+			})
+		}
+	}
+
+	return topTracks
+}
+
+func (h *Handler) getPlaylistsWithArtist(ctx context.Context, userID int, artistName string) []artists.PlaylistWithArtist {
+	// Get listens for this artist to find which playlists contain them
+	// Since playlists don't have direct track associations, we'll match by source
+	// This is a simplified approach - in reality you'd need playlist track data
+
+	pls, err := h.Client.Playlist.Query().
+		Where(playlist.HasUserWith(user.ID(userID))).
+		All(ctx)
+	if err != nil {
+		h.Logger.Error("failed to get playlists", "error", err)
+		return nil
+	}
+
+	// For now, return empty as we don't have playlist-track associations
+	// This would need enhancement with actual playlist track data
+	result := make([]artists.PlaylistWithArtist, 0)
+	for _, pl := range pls {
+		// Count listens for this artist from this playlist's source
+		count, _ := h.Client.Listen.Query().
+			Where(
+				listen.HasUserWith(user.ID(userID)),
+				listen.ArtistName(artistName),
+				listen.Source(pl.Source),
+			).
+			Count(ctx)
+		if count > 0 {
+			result = append(result, artists.PlaylistWithArtist{
+				Playlist:   pl,
+				TrackCount: count,
+			})
+		}
+	}
+
+	return result
+}
+
+func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName, albumName, trackName string, timeframe string) components.StackedChartData {
+	data := components.StackedChartData{
+		Labels:   []string{},
+		Datasets: []components.StackedChartDataset{},
+	}
+
+	// Calculate date range
+	now := time.Now()
+	var startDate time.Time
+	var groupBy string
+
+	switch timeframe {
+	case "30d":
+		startDate = now.AddDate(0, 0, -30)
+		groupBy = "day"
+	case "90d":
+		startDate = now.AddDate(0, 0, -90)
+		groupBy = "day"
+	case "6m":
+		startDate = now.AddDate(0, -6, 0)
+		groupBy = "week"
+	case "1y":
+		startDate = now.AddDate(-1, 0, 0)
+		groupBy = "month"
+	case "all":
+		startDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+		groupBy = "month"
+	default:
+		startDate = now.AddDate(0, 0, -30)
+		groupBy = "day"
+	}
+
+	// Build query
+	query := h.Client.Listen.Query().
+		Where(
+			listen.HasUserWith(user.ID(userID)),
+			listen.PlayedAtGTE(startDate),
+		)
+
+	if artistName != "" {
+		query = query.Where(listen.ArtistName(artistName))
+	}
+	if albumName != "" {
+		query = query.Where(listen.AlbumName(albumName))
+	}
+	if trackName != "" {
+		query = query.Where(listen.TrackName(trackName))
+	}
+
+	listens, err := query.All(ctx)
+	if err != nil {
+		h.Logger.Error("failed to get listens for history", "error", err)
+		return data
+	}
+
+	// Group listens by date and provider
+	providerData := make(map[string]map[string]int) // date -> provider -> count
+	providers := make(map[string]bool)
+
+	for _, l := range listens {
+		var dateKey string
+		switch groupBy {
+		case "day":
+			dateKey = l.PlayedAt.Local().Format("Jan 2")
+		case "week":
+			year, week := l.PlayedAt.Local().ISOWeek()
+			dateKey = time.Date(year, 1, 1, 0, 0, 0, 0, time.Local).AddDate(0, 0, (week-1)*7).Format("Jan 2")
+		case "month":
+			dateKey = l.PlayedAt.Local().Format("Jan 2006")
+		}
+
+		if providerData[dateKey] == nil {
+			providerData[dateKey] = make(map[string]int)
+		}
+		providerData[dateKey][l.Source]++
+		providers[l.Source] = true
+	}
+
+	// Generate labels (dates)
+	labels := make([]string, 0)
+	current := startDate
+	for current.Before(now) || current.Equal(now) {
+		var dateKey string
+		var nextDate time.Time
+		switch groupBy {
+		case "day":
+			dateKey = current.Format("Jan 2")
+			nextDate = current.AddDate(0, 0, 1)
+		case "week":
+			dateKey = current.Format("Jan 2")
+			nextDate = current.AddDate(0, 0, 7)
+		case "month":
+			dateKey = current.Format("Jan 2006")
+			nextDate = current.AddDate(0, 1, 0)
+		}
+		labels = append(labels, dateKey)
+		current = nextDate
+	}
+
+	data.Labels = labels
+
+	// Create datasets for each provider
+	providerColors := map[string]string{
+		"spotify":   "#1DB954",
+		"navidrome": "#4285F4",
+		"lastfm":    "#D51007",
+	}
+
+	for provider := range providers {
+		dataset := components.StackedChartDataset{
+			Label:           capitalizeFirst(provider),
+			Data:            make([]float64, len(labels)),
+			BackgroundColor: providerColors[provider],
+			BorderColor:     providerColors[provider],
+		}
+		if dataset.BackgroundColor == "" {
+			dataset.BackgroundColor = "#6B7280"
+			dataset.BorderColor = "#6B7280"
+		}
+
+		for i, label := range labels {
+			if providerData[label] != nil {
+				dataset.Data[i] = float64(providerData[label][provider])
+			}
+		}
+
+		data.Datasets = append(data.Datasets, dataset)
+	}
+
+	return data
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	if s[0] >= 'a' && s[0] <= 'z' {
+		return string(s[0]-32) + s[1:]
+	}
+	return s
+}
+
+// ArtistIndex shows all artists for the user
+func (h *Handler) ArtistIndex(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	// Refresh user to get pagination settings
+	u, err := h.Client.User.Query().
+		Where(user.ID(u.ID)).
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to query user", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get page number from query
+	page := 1
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := u.PaginationSize
+	offset := (page - 1) * pageSize
+
+	// Query artists with pagination
+	artistList, err := h.Client.Artist.Query().
+		Where(artist.HasUserWith(user.ID(u.ID))).
+		WithImages().
+		Order(ent.Asc(artist.FieldName)).
+		Limit(pageSize).
+		Offset(offset).
+		All(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to query artists", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get total count for pagination
+	total, err := h.Client.Artist.Query().
+		Where(artist.HasUserWith(user.ID(u.ID))).
+		Count(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to count artists", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := (total + pageSize - 1) / pageSize
+
+	h.Render(w, r, artists.Index(artistList, page, totalPages, h.Config))
+}

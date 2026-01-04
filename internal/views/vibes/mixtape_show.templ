@@ -1,0 +1,296 @@
+package vibes
+
+import (
+	"fmt"
+	"spotter/ent"
+	"spotter/internal/config"
+	"spotter/internal/views/layouts"
+)
+
+templ MixtapeShow(m *ent.Mixtape, djs []*ent.DJ, cfg *config.Config) {
+	@layouts.Dashboard(m.Name+" | Mixtapes | Spotter", cfg, "/vibes/mixtapes") {
+		<div class="max-w-7xl mx-auto">
+			<!-- Breadcrumb -->
+			<div class="text-sm breadcrumbs mb-4">
+				<ul>
+					<li><a href="/vibes/mixtapes">Mixtapes</a></li>
+					<li>{ m.Name }</li>
+				</ul>
+			</div>
+			<!-- Header -->
+			<div class="flex flex-col lg:flex-row gap-6 mb-8">
+				<!-- Cover Art -->
+				<div class="flex-shrink-0">
+					<div class="w-48 h-48 rounded-lg shadow-lg overflow-hidden bg-gradient-to-br from-primary to-secondary">
+						if m.ImageURL != "" {
+							<img src={ m.ImageURL } alt={ m.Name } class="w-full h-full object-cover"/>
+						} else {
+							<div class="w-full h-full flex items-center justify-center">
+								<span class="icon-[heroicons--musical-note] w-20 h-20 text-white/50"></span>
+							</div>
+						}
+					</div>
+				</div>
+				<!-- Info -->
+				<div class="flex-1">
+					<div class="flex items-start justify-between gap-4">
+						<div>
+							<h1 class="text-3xl font-bold">{ m.Name }</h1>
+							if m.Description != "" {
+								<p class="text-base-content/60 mt-2">{ m.Description }</p>
+							}
+						</div>
+						<div class="flex gap-2">
+							<button
+								hx-post={ fmt.Sprintf("/vibes/mixtapes/%d/generate", m.ID) }
+								hx-swap="none"
+								class="btn btn-primary gap-2"
+							>
+								<span class="icon-[heroicons--sparkles] w-5 h-5"></span>
+								Generate Tracks
+							</button>
+							<button
+								onclick="document.getElementById('edit-mixtape-modal').showModal()"
+								class="btn btn-ghost btn-square"
+								title="Edit Mixtape"
+							>
+								<span class="icon-[heroicons--pencil] w-5 h-5"></span>
+							</button>
+						</div>
+					</div>
+					<!-- Meta Info -->
+					<div class="flex flex-wrap gap-4 mt-4">
+						<!-- DJ -->
+						if m.Edges.Dj != nil {
+							<div class="flex items-center gap-2">
+								<span class="icon-[heroicons--user-circle] w-5 h-5 text-base-content/60"></span>
+								<a href={ templ.URL(fmt.Sprintf("/vibes/djs/%d", m.Edges.Dj.ID)) } class="font-medium link link-hover link-primary">{ m.Edges.Dj.Name }</a>
+							</div>
+						}
+						<!-- Track Count -->
+						<div class="flex items-center gap-2">
+							<span class="icon-[heroicons--musical-note] w-5 h-5 text-base-content/60"></span>
+							<span>{ fmt.Sprintf("%d / %d", m.TrackCount, m.MaxTracks) } tracks</span>
+						</div>
+						<!-- Schedule -->
+						<div class="flex items-center gap-2">
+							<span class="icon-[heroicons--clock] w-5 h-5 text-base-content/60"></span>
+							@scheduleBadge(string(m.Schedule))
+						</div>
+						<!-- Sync Status -->
+						<div class="flex items-center gap-2">
+							if m.SyncToNavidrome {
+								<span class="icon-[heroicons--check-circle] w-5 h-5 text-success"></span>
+								<span class="text-success">Synced to Navidrome</span>
+							} else {
+								<span class="icon-[heroicons--x-circle] w-5 h-5 text-base-content/40"></span>
+								<span class="text-base-content/60">Not synced</span>
+							}
+						</div>
+					</div>
+					<!-- Last Generated -->
+					<div class="mt-4 text-sm text-base-content/60">
+						if m.LastGeneratedAt != nil {
+							Last generated <span class="timeago" datetime={ formatMixtapeTimeISO(*m.LastGeneratedAt) } title={ formatMixtapeTime(*m.LastGeneratedAt) }>{ formatMixtapeTime(*m.LastGeneratedAt) }</span>
+						} else {
+							<span class="italic">Not yet generated</span>
+						}
+					</div>
+				</div>
+			</div>
+			<!-- DJ Configuration Card -->
+			if m.Edges.Dj != nil {
+				<div class="card bg-base-100 shadow-xl mb-6">
+					<div class="card-body">
+						<h2 class="card-title">
+							<span class="icon-[heroicons--user-circle] w-6 h-6"></span>
+							DJ Configuration
+						</h2>
+						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+							<!-- Genres Include -->
+							<div>
+								<h3 class="text-sm font-medium text-base-content/60 mb-2">
+									<span class="icon-[heroicons--plus-circle] w-4 h-4 inline-block text-success"></span>
+									Included Genres
+								</h3>
+								<div class="flex flex-wrap gap-1">
+									if len(m.Edges.Dj.GenresInclude) > 0 {
+										for _, genre := range m.Edges.Dj.GenresInclude {
+											<span class="badge badge-sm badge-success">{ genre }</span>
+										}
+									} else {
+										<span class="text-base-content/40 text-sm italic">Any</span>
+									}
+								</div>
+							</div>
+							<!-- Genres Exclude -->
+							<div>
+								<h3 class="text-sm font-medium text-base-content/60 mb-2">
+									<span class="icon-[heroicons--minus-circle] w-4 h-4 inline-block text-error"></span>
+									Excluded Genres
+								</h3>
+								<div class="flex flex-wrap gap-1">
+									if len(m.Edges.Dj.GenresExclude) > 0 {
+										for _, genre := range m.Edges.Dj.GenresExclude {
+											<span class="badge badge-sm badge-error">{ genre }</span>
+										}
+									} else {
+										<span class="text-base-content/40 text-sm italic">None</span>
+									}
+								</div>
+							</div>
+							<!-- Vibes -->
+							<div>
+								<h3 class="text-sm font-medium text-base-content/60 mb-2">
+									<span class="icon-[heroicons--sparkles] w-4 h-4 inline-block text-primary"></span>
+									Vibes
+								</h3>
+								<div class="flex flex-wrap gap-1">
+									if len(m.Edges.Dj.Vibes) > 0 {
+										for _, vibe := range m.Edges.Dj.Vibes {
+											<span class="badge badge-sm badge-primary">{ vibe }</span>
+										}
+									} else {
+										<span class="text-base-content/40 text-sm italic">None</span>
+									}
+								</div>
+							</div>
+							<!-- Artists Include -->
+							<div>
+								<h3 class="text-sm font-medium text-base-content/60 mb-2">
+									<span class="icon-[heroicons--plus-circle] w-4 h-4 inline-block text-success"></span>
+									Included Artists
+								</h3>
+								<div class="flex flex-wrap gap-1">
+									if len(m.Edges.Dj.ArtistsInclude) > 0 {
+										for _, artist := range m.Edges.Dj.ArtistsInclude {
+											<span class="badge badge-sm badge-outline">{ artist }</span>
+										}
+									} else {
+										<span class="text-base-content/40 text-sm italic">Any</span>
+									}
+								</div>
+							</div>
+							<!-- Artists Exclude -->
+							<div>
+								<h3 class="text-sm font-medium text-base-content/60 mb-2">
+									<span class="icon-[heroicons--minus-circle] w-4 h-4 inline-block text-error"></span>
+									Excluded Artists
+								</h3>
+								<div class="flex flex-wrap gap-1">
+									if len(m.Edges.Dj.ArtistsExclude) > 0 {
+										for _, artist := range m.Edges.Dj.ArtistsExclude {
+											<span class="badge badge-sm badge-outline badge-error">{ artist }</span>
+										}
+									} else {
+										<span class="text-base-content/40 text-sm italic">None</span>
+									}
+								</div>
+							</div>
+							<!-- System Prompt -->
+							if m.Edges.Dj.SystemPrompt != "" {
+								<div class="md:col-span-2 lg:col-span-3">
+									<h3 class="text-sm font-medium text-base-content/60 mb-2">
+										<span class="icon-[heroicons--chat-bubble-left-ellipsis] w-4 h-4 inline-block"></span>
+										System Prompt
+									</h3>
+									<div class="bg-base-200 rounded-lg p-3 text-sm font-mono whitespace-pre-wrap">{ m.Edges.Dj.SystemPrompt }</div>
+								</div>
+							}
+						</div>
+					</div>
+				</div>
+			}
+			<!-- Tracks -->
+			<div class="card bg-base-100 shadow-xl">
+				<div class="card-body">
+					<h2 class="card-title">
+						<span class="icon-[heroicons--queue-list] w-6 h-6"></span>
+						Tracks
+					</h2>
+					if m.TrackCount == 0 {
+						<div class="text-center py-12">
+							<span class="icon-[heroicons--musical-note] w-12 h-12 text-base-content/20 mx-auto"></span>
+							<p class="text-base-content/60 mt-4">No tracks yet. Click "Generate Tracks" to let the DJ curate this mixtape.</p>
+							<button
+								hx-post={ fmt.Sprintf("/vibes/mixtapes/%d/generate", m.ID) }
+								hx-swap="none"
+								class="btn btn-primary mt-4 gap-2"
+							>
+								<span class="icon-[heroicons--sparkles] w-5 h-5"></span>
+								Generate Tracks
+							</button>
+						</div>
+					} else {
+						<div class="overflow-x-auto">
+							<table class="table">
+								<thead>
+									<tr>
+										<th class="w-12">#</th>
+										<th>Title</th>
+										<th>Artist</th>
+										<th>Album</th>
+									</tr>
+								</thead>
+								<tbody>
+									<!-- Tracks will be populated here when generation is implemented -->
+									<tr>
+										<td colspan="4" class="text-center text-base-content/60 italic">
+											Track list display coming soon
+										</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+		<!-- Edit Mixtape Modal -->
+		<dialog id="edit-mixtape-modal" class="modal">
+			<div class="modal-box w-11/12 max-w-2xl">
+				<form method="dialog">
+					<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+				</form>
+				<h3 class="font-bold text-lg mb-4">
+					<span class="icon-[heroicons--pencil-square] w-6 h-6 inline-block mr-2"></span>
+					Edit Mixtape
+				</h3>
+				<form id="edit-mixtape-form" hx-put={ fmt.Sprintf("/vibes/mixtapes/%d", m.ID) } hx-swap="none" class="space-y-4">
+					<input type="hidden" name="id" id="edit-mixtape-id" value={ fmt.Sprintf("%d", m.ID) }/>
+					@MixtapeFormFields(m, djs)
+					<div class="modal-action">
+						<button type="button" class="btn" onclick="document.getElementById('edit-mixtape-modal').close()">Cancel</button>
+						<button type="submit" class="btn btn-primary gap-2">
+							<span class="icon-[heroicons--check] w-5 h-5"></span>
+							Save Changes
+						</button>
+					</div>
+				</form>
+			</div>
+			<form method="dialog" class="modal-backdrop">
+				<button>close</button>
+			</form>
+		</dialog>
+		<script>
+			// Initialize timeago
+			(function() {
+				if (typeof timeago !== 'undefined') {
+					const nodes = document.querySelectorAll('.timeago');
+					if (nodes.length > 0) {
+						timeago.render(nodes);
+					}
+				}
+			})();
+
+			// Handle form submissions
+			document.body.addEventListener('htmx:afterRequest', function(event) {
+				if (event.detail.successful) {
+					var editModal = document.getElementById('edit-mixtape-modal');
+					if (editModal) editModal.close();
+					window.location.reload();
+				}
+			});
+		</script>
+	}
+}

@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"spotter/ent/album"
 	"spotter/ent/artist"
+	"spotter/ent/dj"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/mixtape"
 	"spotter/ent/navidromeauth"
 	"spotter/ent/playlist"
 	"spotter/ent/predicate"
@@ -271,6 +273,36 @@ func (_u *UserUpdate) AddAlbums(v ...*Album) *UserUpdate {
 	return _u.AddAlbumIDs(ids...)
 }
 
+// AddDjIDs adds the "djs" edge to the DJ entity by IDs.
+func (_u *UserUpdate) AddDjIDs(ids ...int) *UserUpdate {
+	_u.mutation.AddDjIDs(ids...)
+	return _u
+}
+
+// AddDjs adds the "djs" edges to the DJ entity.
+func (_u *UserUpdate) AddDjs(v ...*DJ) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddDjIDs(ids...)
+}
+
+// AddMixtapeIDs adds the "mixtapes" edge to the Mixtape entity by IDs.
+func (_u *UserUpdate) AddMixtapeIDs(ids ...int) *UserUpdate {
+	_u.mutation.AddMixtapeIDs(ids...)
+	return _u
+}
+
+// AddMixtapes adds the "mixtapes" edges to the Mixtape entity.
+func (_u *UserUpdate) AddMixtapes(v ...*Mixtape) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMixtapeIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdate) Mutation() *UserMutation {
 	return _u.mutation
@@ -397,6 +429,48 @@ func (_u *UserUpdate) RemoveAlbums(v ...*Album) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveAlbumIDs(ids...)
+}
+
+// ClearDjs clears all "djs" edges to the DJ entity.
+func (_u *UserUpdate) ClearDjs() *UserUpdate {
+	_u.mutation.ClearDjs()
+	return _u
+}
+
+// RemoveDjIDs removes the "djs" edge to DJ entities by IDs.
+func (_u *UserUpdate) RemoveDjIDs(ids ...int) *UserUpdate {
+	_u.mutation.RemoveDjIDs(ids...)
+	return _u
+}
+
+// RemoveDjs removes "djs" edges to DJ entities.
+func (_u *UserUpdate) RemoveDjs(v ...*DJ) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveDjIDs(ids...)
+}
+
+// ClearMixtapes clears all "mixtapes" edges to the Mixtape entity.
+func (_u *UserUpdate) ClearMixtapes() *UserUpdate {
+	_u.mutation.ClearMixtapes()
+	return _u
+}
+
+// RemoveMixtapeIDs removes the "mixtapes" edge to Mixtape entities by IDs.
+func (_u *UserUpdate) RemoveMixtapeIDs(ids ...int) *UserUpdate {
+	_u.mutation.RemoveMixtapeIDs(ids...)
+	return _u
+}
+
+// RemoveMixtapes removes "mixtapes" edges to Mixtape entities.
+func (_u *UserUpdate) RemoveMixtapes(v ...*Mixtape) *UserUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMixtapeIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -774,6 +848,96 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.DjsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DjsTable,
+			Columns: []string{user.DjsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(dj.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedDjsIDs(); len(nodes) > 0 && !_u.mutation.DjsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DjsTable,
+			Columns: []string{user.DjsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(dj.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DjsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DjsTable,
+			Columns: []string{user.DjsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(dj.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.MixtapesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MixtapesTable,
+			Columns: []string{user.MixtapesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mixtape.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMixtapesIDs(); len(nodes) > 0 && !_u.mutation.MixtapesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MixtapesTable,
+			Columns: []string{user.MixtapesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mixtape.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.MixtapesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MixtapesTable,
+			Columns: []string{user.MixtapesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mixtape.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{user.Label}
@@ -1029,6 +1193,36 @@ func (_u *UserUpdateOne) AddAlbums(v ...*Album) *UserUpdateOne {
 	return _u.AddAlbumIDs(ids...)
 }
 
+// AddDjIDs adds the "djs" edge to the DJ entity by IDs.
+func (_u *UserUpdateOne) AddDjIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.AddDjIDs(ids...)
+	return _u
+}
+
+// AddDjs adds the "djs" edges to the DJ entity.
+func (_u *UserUpdateOne) AddDjs(v ...*DJ) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddDjIDs(ids...)
+}
+
+// AddMixtapeIDs adds the "mixtapes" edge to the Mixtape entity by IDs.
+func (_u *UserUpdateOne) AddMixtapeIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.AddMixtapeIDs(ids...)
+	return _u
+}
+
+// AddMixtapes adds the "mixtapes" edges to the Mixtape entity.
+func (_u *UserUpdateOne) AddMixtapes(v ...*Mixtape) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMixtapeIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdateOne) Mutation() *UserMutation {
 	return _u.mutation
@@ -1155,6 +1349,48 @@ func (_u *UserUpdateOne) RemoveAlbums(v ...*Album) *UserUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveAlbumIDs(ids...)
+}
+
+// ClearDjs clears all "djs" edges to the DJ entity.
+func (_u *UserUpdateOne) ClearDjs() *UserUpdateOne {
+	_u.mutation.ClearDjs()
+	return _u
+}
+
+// RemoveDjIDs removes the "djs" edge to DJ entities by IDs.
+func (_u *UserUpdateOne) RemoveDjIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.RemoveDjIDs(ids...)
+	return _u
+}
+
+// RemoveDjs removes "djs" edges to DJ entities.
+func (_u *UserUpdateOne) RemoveDjs(v ...*DJ) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveDjIDs(ids...)
+}
+
+// ClearMixtapes clears all "mixtapes" edges to the Mixtape entity.
+func (_u *UserUpdateOne) ClearMixtapes() *UserUpdateOne {
+	_u.mutation.ClearMixtapes()
+	return _u
+}
+
+// RemoveMixtapeIDs removes the "mixtapes" edge to Mixtape entities by IDs.
+func (_u *UserUpdateOne) RemoveMixtapeIDs(ids ...int) *UserUpdateOne {
+	_u.mutation.RemoveMixtapeIDs(ids...)
+	return _u
+}
+
+// RemoveMixtapes removes "mixtapes" edges to Mixtape entities.
+func (_u *UserUpdateOne) RemoveMixtapes(v ...*Mixtape) *UserUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMixtapeIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -1555,6 +1791,96 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.DjsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DjsTable,
+			Columns: []string{user.DjsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(dj.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedDjsIDs(); len(nodes) > 0 && !_u.mutation.DjsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DjsTable,
+			Columns: []string{user.DjsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(dj.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DjsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.DjsTable,
+			Columns: []string{user.DjsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(dj.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.MixtapesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MixtapesTable,
+			Columns: []string{user.MixtapesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mixtape.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMixtapesIDs(); len(nodes) > 0 && !_u.mutation.MixtapesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MixtapesTable,
+			Columns: []string{user.MixtapesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mixtape.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.MixtapesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MixtapesTable,
+			Columns: []string{user.MixtapesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(mixtape.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -9,6 +9,7 @@ import (
 	"spotter/ent/album"
 	"spotter/ent/artist"
 	"spotter/ent/artistimage"
+	"spotter/ent/listen"
 	"spotter/ent/predicate"
 	"spotter/ent/track"
 	"spotter/ent/user"
@@ -339,6 +340,21 @@ func (_u *ArtistUpdate) AddImages(v ...*ArtistImage) *ArtistUpdate {
 	return _u.AddImageIDs(ids...)
 }
 
+// AddListenIDs adds the "listens" edge to the Listen entity by IDs.
+func (_u *ArtistUpdate) AddListenIDs(ids ...int) *ArtistUpdate {
+	_u.mutation.AddListenIDs(ids...)
+	return _u
+}
+
+// AddListens adds the "listens" edges to the Listen entity.
+func (_u *ArtistUpdate) AddListens(v ...*Listen) *ArtistUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddListenIDs(ids...)
+}
+
 // Mutation returns the ArtistMutation object of the builder.
 func (_u *ArtistUpdate) Mutation() *ArtistMutation {
 	return _u.mutation
@@ -411,6 +427,27 @@ func (_u *ArtistUpdate) RemoveImages(v ...*ArtistImage) *ArtistUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveImageIDs(ids...)
+}
+
+// ClearListens clears all "listens" edges to the Listen entity.
+func (_u *ArtistUpdate) ClearListens() *ArtistUpdate {
+	_u.mutation.ClearListens()
+	return _u
+}
+
+// RemoveListenIDs removes the "listens" edge to Listen entities by IDs.
+func (_u *ArtistUpdate) RemoveListenIDs(ids ...int) *ArtistUpdate {
+	_u.mutation.RemoveListenIDs(ids...)
+	return _u
+}
+
+// RemoveListens removes "listens" edges to Listen entities.
+func (_u *ArtistUpdate) RemoveListens(v ...*Listen) *ArtistUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveListenIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -719,6 +756,51 @@ func (_u *ArtistUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(artistimage.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ListensCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   artist.ListensTable,
+			Columns: []string{artist.ListensColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedListensIDs(); len(nodes) > 0 && !_u.mutation.ListensCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   artist.ListensTable,
+			Columns: []string{artist.ListensColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ListensIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   artist.ListensTable,
+			Columns: []string{artist.ListensColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -1052,6 +1134,21 @@ func (_u *ArtistUpdateOne) AddImages(v ...*ArtistImage) *ArtistUpdateOne {
 	return _u.AddImageIDs(ids...)
 }
 
+// AddListenIDs adds the "listens" edge to the Listen entity by IDs.
+func (_u *ArtistUpdateOne) AddListenIDs(ids ...int) *ArtistUpdateOne {
+	_u.mutation.AddListenIDs(ids...)
+	return _u
+}
+
+// AddListens adds the "listens" edges to the Listen entity.
+func (_u *ArtistUpdateOne) AddListens(v ...*Listen) *ArtistUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddListenIDs(ids...)
+}
+
 // Mutation returns the ArtistMutation object of the builder.
 func (_u *ArtistUpdateOne) Mutation() *ArtistMutation {
 	return _u.mutation
@@ -1124,6 +1221,27 @@ func (_u *ArtistUpdateOne) RemoveImages(v ...*ArtistImage) *ArtistUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveImageIDs(ids...)
+}
+
+// ClearListens clears all "listens" edges to the Listen entity.
+func (_u *ArtistUpdateOne) ClearListens() *ArtistUpdateOne {
+	_u.mutation.ClearListens()
+	return _u
+}
+
+// RemoveListenIDs removes the "listens" edge to Listen entities by IDs.
+func (_u *ArtistUpdateOne) RemoveListenIDs(ids ...int) *ArtistUpdateOne {
+	_u.mutation.RemoveListenIDs(ids...)
+	return _u
+}
+
+// RemoveListens removes "listens" edges to Listen entities.
+func (_u *ArtistUpdateOne) RemoveListens(v ...*Listen) *ArtistUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveListenIDs(ids...)
 }
 
 // Where appends a list predicates to the ArtistUpdate builder.
@@ -1462,6 +1580,51 @@ func (_u *ArtistUpdateOne) sqlSave(ctx context.Context) (_node *Artist, err erro
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(artistimage.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ListensCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   artist.ListensTable,
+			Columns: []string{artist.ListensColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedListensIDs(); len(nodes) > 0 && !_u.mutation.ListensCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   artist.ListensTable,
+			Columns: []string{artist.ListensColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ListensIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   artist.ListensTable,
+			Columns: []string{artist.ListensColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(listen.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

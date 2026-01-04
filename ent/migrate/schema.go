@@ -202,6 +202,41 @@ var (
 			},
 		},
 	}
+	// DjsColumns holds the columns for the "djs" table.
+	DjsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "system_prompt", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "genres_include", Type: field.TypeJSON, Nullable: true},
+		{Name: "genres_exclude", Type: field.TypeJSON, Nullable: true},
+		{Name: "vibes", Type: field.TypeJSON, Nullable: true},
+		{Name: "artists_include", Type: field.TypeJSON, Nullable: true},
+		{Name: "artists_exclude", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "user_djs", Type: field.TypeInt},
+	}
+	// DjsTable holds the schema information for the "djs" table.
+	DjsTable = &schema.Table{
+		Name:       "djs",
+		Columns:    DjsColumns,
+		PrimaryKey: []*schema.Column{DjsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "djs_users_djs",
+				Columns:    []*schema.Column{DjsColumns[10]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "dj_name_user_djs",
+				Unique:  true,
+				Columns: []*schema.Column{DjsColumns[1], DjsColumns[10]},
+			},
+		},
+	}
 	// LastFmAuthsColumns holds the columns for the "last_fm_auths" table.
 	LastFmAuthsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -233,6 +268,9 @@ var (
 		{Name: "source", Type: field.TypeString},
 		{Name: "played_at", Type: field.TypeTime},
 		{Name: "url", Type: field.TypeString, Nullable: true},
+		{Name: "album_listens", Type: field.TypeInt, Nullable: true},
+		{Name: "artist_listens", Type: field.TypeInt, Nullable: true},
+		{Name: "track_listens", Type: field.TypeInt, Nullable: true},
 		{Name: "user_listens", Type: field.TypeInt},
 	}
 	// ListensTable holds the schema information for the "listens" table.
@@ -242,8 +280,26 @@ var (
 		PrimaryKey: []*schema.Column{ListensColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "listens_users_listens",
+				Symbol:     "listens_albums_listens",
 				Columns:    []*schema.Column{ListensColumns[7]},
+				RefColumns: []*schema.Column{AlbumsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "listens_artists_listens",
+				Columns:    []*schema.Column{ListensColumns[8]},
+				RefColumns: []*schema.Column{ArtistsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "listens_tracks_listens",
+				Columns:    []*schema.Column{ListensColumns[9]},
+				RefColumns: []*schema.Column{TracksColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "listens_users_listens",
+				Columns:    []*schema.Column{ListensColumns[10]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -252,7 +308,52 @@ var (
 			{
 				Name:    "listen_played_at_source_track_name_artist_name_user_listens",
 				Unique:  true,
-				Columns: []*schema.Column{ListensColumns[5], ListensColumns[4], ListensColumns[1], ListensColumns[2], ListensColumns[7]},
+				Columns: []*schema.Column{ListensColumns[5], ListensColumns[4], ListensColumns[1], ListensColumns[2], ListensColumns[10]},
+			},
+		},
+	}
+	// MixtapesColumns holds the columns for the "mixtapes" table.
+	MixtapesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "description", Type: field.TypeString, Nullable: true},
+		{Name: "image_url", Type: field.TypeString, Nullable: true},
+		{Name: "schedule", Type: field.TypeEnum, Enums: []string{"none", "daily", "weekly", "monthly"}, Default: "none"},
+		{Name: "sync_to_navidrome", Type: field.TypeBool, Default: false},
+		{Name: "navidrome_playlist_id", Type: field.TypeString, Nullable: true},
+		{Name: "track_count", Type: field.TypeInt, Default: 0},
+		{Name: "max_tracks", Type: field.TypeInt, Default: 25},
+		{Name: "track_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "last_generated_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "dj_mixtapes", Type: field.TypeInt},
+		{Name: "user_mixtapes", Type: field.TypeInt},
+	}
+	// MixtapesTable holds the schema information for the "mixtapes" table.
+	MixtapesTable = &schema.Table{
+		Name:       "mixtapes",
+		Columns:    MixtapesColumns,
+		PrimaryKey: []*schema.Column{MixtapesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "mixtapes_djs_mixtapes",
+				Columns:    []*schema.Column{MixtapesColumns[13]},
+				RefColumns: []*schema.Column{DjsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "mixtapes_users_mixtapes",
+				Columns:    []*schema.Column{MixtapesColumns[14]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mixtape_name_user_mixtapes",
+				Unique:  true,
+				Columns: []*schema.Column{MixtapesColumns[1], MixtapesColumns[14]},
 			},
 		},
 	}
@@ -477,8 +578,10 @@ var (
 		AlbumImagesTable,
 		ArtistsTable,
 		ArtistImagesTable,
+		DjsTable,
 		LastFmAuthsTable,
 		ListensTable,
+		MixtapesTable,
 		NavidromeAuthsTable,
 		PlaylistsTable,
 		SpotifyAuthsTable,
@@ -494,8 +597,14 @@ func init() {
 	AlbumImagesTable.ForeignKeys[0].RefTable = AlbumsTable
 	ArtistsTable.ForeignKeys[0].RefTable = UsersTable
 	ArtistImagesTable.ForeignKeys[0].RefTable = ArtistsTable
+	DjsTable.ForeignKeys[0].RefTable = UsersTable
 	LastFmAuthsTable.ForeignKeys[0].RefTable = UsersTable
-	ListensTable.ForeignKeys[0].RefTable = UsersTable
+	ListensTable.ForeignKeys[0].RefTable = AlbumsTable
+	ListensTable.ForeignKeys[1].RefTable = ArtistsTable
+	ListensTable.ForeignKeys[2].RefTable = TracksTable
+	ListensTable.ForeignKeys[3].RefTable = UsersTable
+	MixtapesTable.ForeignKeys[0].RefTable = DjsTable
+	MixtapesTable.ForeignKeys[1].RefTable = UsersTable
 	NavidromeAuthsTable.ForeignKeys[0].RefTable = UsersTable
 	PlaylistsTable.ForeignKeys[0].RefTable = UsersTable
 	SpotifyAuthsTable.ForeignKeys[0].RefTable = UsersTable

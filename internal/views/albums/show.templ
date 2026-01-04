@@ -1,0 +1,584 @@
+package albums
+
+import (
+	"encoding/json"
+	"fmt"
+	"spotter/ent"
+	"spotter/internal/config"
+	"spotter/internal/views/components"
+	"spotter/internal/views/layouts"
+	"time"
+)
+
+// AlbumStats holds statistics for an album
+type AlbumStats struct {
+	TotalListens       int
+	UniqueTracks       int
+	FirstListen        time.Time
+	LastListen         time.Time
+	ListensByProvider  []components.ChartDataPoint
+	ListensByHour      []components.ChartDataPoint
+	ListensByDayOfWeek []components.ChartDataPoint
+	ListensByMonth     []components.ChartDataPoint
+	TrackListens       []components.ChartDataPoint
+	ProviderHistory    components.StackedChartData
+}
+
+// TrackWithListens represents a track with its listen count
+type TrackWithListens struct {
+	Track       *ent.Track
+	ListenCount int
+}
+
+func formatNumber(n int) string {
+	return fmt.Sprintf("%d", n)
+}
+
+func formatDate(t time.Time) string {
+	if t.IsZero() {
+		return "N/A"
+	}
+	return t.Local().Format("Jan 2 '06")
+}
+
+func formatDuration(ms int) string {
+	if ms <= 0 {
+		return "N/A"
+	}
+	seconds := ms / 1000
+	minutes := seconds / 60
+	secs := seconds % 60
+	if minutes >= 60 {
+		hours := minutes / 60
+		mins := minutes % 60
+		return fmt.Sprintf("%d:%02d:%02d", hours, mins, secs)
+	}
+	return fmt.Sprintf("%d:%02d", minutes, secs)
+}
+
+func getPrimaryAlbumImage(album *ent.Album) string {
+	if album.Edges.Images == nil || len(album.Edges.Images) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/library/album/%d.png", album.ID)
+}
+
+func getOrDefault(value, defaultVal string) string {
+	if value == "" {
+		return defaultVal
+	}
+	return value
+}
+
+func toJSON(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+func formatEnrichedTime(t time.Time) string {
+	if t.IsZero() {
+		return "Never"
+	}
+	return t.Local().Format("Jan 02, 2006 at 3:04 PM")
+}
+
+func getAllTags(album *ent.Album, tracks []*ent.Track) []string {
+	tagMap := make(map[string]bool)
+	for _, tag := range album.Tags {
+		tagMap[tag] = true
+	}
+	for _, track := range tracks {
+		for _, tag := range track.Tags {
+			tagMap[tag] = true
+		}
+	}
+	tags := make([]string, 0, len(tagMap))
+	for tag := range tagMap {
+		tags = append(tags, tag)
+	}
+	return tags
+}
+
+func getAllGenres(album *ent.Album, tracks []*ent.Track) []string {
+	genreMap := make(map[string]bool)
+	if album.Genre != "" {
+		genreMap[album.Genre] = true
+	}
+	for _, track := range tracks {
+		for _, genre := range track.Genres {
+			genreMap[genre] = true
+		}
+	}
+	genres := make([]string, 0, len(genreMap))
+	for genre := range genreMap {
+		genres = append(genres, genre)
+	}
+	return genres
+}
+
+func getTotalDuration(tracks []*ent.Track) int {
+	total := 0
+	for _, track := range tracks {
+		if track.DurationMs != nil {
+			total += *track.DurationMs
+		}
+	}
+	return total
+}
+
+templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *config.Config, currentTimeframe string) {
+	@layouts.Dashboard(fmt.Sprintf("%s | Albums | Spotter", album.Name), cfg, "/library/album") {
+		@components.ChartJSScript()
+		<!-- Hero Section -->
+		<div class="relative -mx-6 lg:-mx-8 -mt-6 lg:-mt-8 mb-8">
+			<!-- Background Blur -->
+			if img := getPrimaryAlbumImage(album); img != "" {
+				<div class="absolute inset-0 h-96 overflow-hidden">
+					<img src={ img } alt="" class="w-full h-full object-cover opacity-20 blur-2xl scale-110"/>
+					<div class="absolute inset-0 bg-gradient-to-b from-transparent via-base-200/80 to-base-200"></div>
+				</div>
+			} else {
+				<div class="absolute inset-0 h-96 bg-gradient-to-b from-secondary/20 to-base-200"></div>
+			}
+			<!-- Album Info -->
+			<div class="relative pt-8 px-6 lg:px-8 pb-8">
+				<div class="max-w-7xl mx-auto">
+					<div class="flex flex-col md:flex-row items-start gap-8">
+						<!-- Album Cover -->
+						<div class="flex-shrink-0">
+							<div class="w-56 h-56 md:w-64 md:h-64 rounded-xl shadow-2xl ring ring-base-100 ring-offset-base-200 ring-offset-2 overflow-hidden">
+								if img := getPrimaryAlbumImage(album); img != "" {
+									<img src={ img } alt={ album.Name } class="w-full h-full object-cover"/>
+								} else {
+									<div class="bg-base-300 w-full h-full flex items-center justify-center">
+										<span class="icon-[heroicons--square-3-stack-3d] w-24 h-24 text-base-content/30"></span>
+									</div>
+								}
+							</div>
+						</div>
+						<!-- Album Details -->
+						<div class="flex-1 min-w-0">
+							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ album.Name }</h1>
+							<!-- Artist Link -->
+							if album.Edges.Artist != nil {
+								<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", album.Edges.Artist.ID)) } class="text-xl text-base-content/70 hover:text-primary hover:underline flex items-center gap-2 mb-4">
+									<span class="icon-[heroicons--user-circle] w-5 h-5"></span>
+									{ album.Edges.Artist.Name }
+								</a>
+							}
+							<!-- Genres & Tags in Header -->
+							if genres := getAllGenres(album, extractTracks(tracks)); len(genres) > 0 {
+								<div class="flex flex-wrap gap-1 mb-3">
+									for i, genre := range genres {
+										if i < 8 {
+											<span class="badge badge-sm badge-primary">{ genre }</span>
+										}
+									}
+									if len(genres) > 8 {
+										<span class="badge badge-sm badge-ghost">+{ fmt.Sprintf("%d", len(genres)-8) } more</span>
+									}
+								</div>
+							}
+							<!-- Metadata Table -->
+							<div class="bg-base-100/50 rounded-lg p-3 mb-4">
+								<table class="text-sm">
+									<tbody>
+										<tr>
+											<td class="pr-6 py-1 text-base-content/60">Type</td>
+											<td class="py-1 font-medium">
+												if album.AlbumType != "" {
+													{ album.AlbumType }
+												} else {
+													Album
+												}
+											</td>
+											<td class="pr-6 py-1 text-base-content/60 pl-6">Year</td>
+											<td class="py-1 font-medium">
+												if album.Year > 0 {
+													{ fmt.Sprintf("%d", album.Year) }
+												} else {
+													—
+												}
+											</td>
+										</tr>
+										<tr>
+											<td class="pr-6 py-1 text-base-content/60">Tracks</td>
+											<td class="py-1 font-medium">{ formatNumber(album.TotalTracks) }</td>
+											<td class="pr-6 py-1 text-base-content/60 pl-6">Duration</td>
+											<td class="py-1 font-medium">
+												if totalDur := getTotalDuration(extractTracks(tracks)); totalDur > 0 {
+													{ formatDuration(totalDur) }
+												} else {
+													—
+												}
+											</td>
+										</tr>
+										<tr>
+											<td class="pr-6 py-1 text-base-content/60">Listens</td>
+											<td class="py-1 font-medium">{ formatNumber(stats.TotalListens) }</td>
+											<td class="pr-6 py-1 text-base-content/60 pl-6">Popularity</td>
+											<td class="py-1 font-medium">
+												if album.Popularity > 0 {
+													{ fmt.Sprintf("%d%%", album.Popularity) }
+												} else {
+													—
+												}
+											</td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+							<!-- External Links -->
+							<div class="flex flex-wrap gap-2">
+								if album.SpotifyID != "" {
+									@components.ExternalLinkBadge("Spotify", fmt.Sprintf("https://open.spotify.com/album/%s", album.SpotifyID), "icon-[simple-icons--spotify]", "badge-success")
+								}
+								if album.MusicbrainzID != "" {
+									@components.ExternalLinkBadge("MusicBrainz", fmt.Sprintf("https://musicbrainz.org/release-group/%s", album.MusicbrainzID), "icon-[heroicons--globe-alt]", "badge-warning")
+								}
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="max-w-7xl mx-auto">
+			<!-- Main Listens by Provider Chart -->
+			<div class="mb-8">
+				@ProviderHistoryChart(album.ID, stats.ProviderHistory, currentTimeframe)
+			</div>
+			<!-- Stats Grid -->
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+				@components.StatCard("Total Listens", formatNumber(stats.TotalListens), "all time", "icon-[heroicons--play-circle]", "text-primary")
+				@components.StatCard("Tracks", formatNumber(stats.UniqueTracks), fmt.Sprintf("of %d total", album.TotalTracks), "icon-[heroicons--musical-note]", "text-secondary")
+				@components.StatCard("First Listen", formatDate(stats.FirstListen), "discovered", "icon-[heroicons--calendar]", "text-accent")
+				@components.StatCard("Last Listen", formatDate(stats.LastListen), "most recent", "icon-[heroicons--clock]", "text-info")
+			</div>
+			<!-- Artist Info Card -->
+			if album.Edges.Artist != nil {
+				<div class="card bg-base-100 shadow-xl mb-8">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--user-circle] w-5 h-5"></span>
+							Artist
+						</h3>
+						<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", album.Edges.Artist.ID)) } class="flex items-center gap-4 p-3 rounded-lg bg-base-200 hover:bg-base-300 transition-colors">
+							<div class="avatar">
+								<div class="w-16 h-16 rounded-lg">
+									if album.Edges.Artist.Edges.Images != nil && len(album.Edges.Artist.Edges.Images) > 0 {
+										<img src={ getArtistImageURL(album.Edges.Artist) } alt={ album.Edges.Artist.Name }/>
+									} else {
+										<div class="bg-base-300 w-full h-full flex items-center justify-center">
+											<span class="icon-[heroicons--user-group] w-8 h-8 text-base-content/30"></span>
+										</div>
+									}
+								</div>
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="font-bold truncate">{ album.Edges.Artist.Name }</div>
+								if len(album.Edges.Artist.Genres) > 0 {
+									<div class="text-sm text-base-content/60 truncate">{ album.Edges.Artist.Genres[0] }</div>
+								}
+							</div>
+							<span class="icon-[heroicons--chevron-right] w-5 h-5 text-base-content/40"></span>
+						</a>
+					</div>
+				</div>
+			}
+			<!-- Track Listens Bar Chart -->
+			if len(stats.TrackListens) > 0 {
+				<div class="card bg-base-100 shadow-xl mb-8">
+					<div class="card-body">
+						<h3 class="card-title">
+							<span class="icon-[heroicons--chart-bar] w-5 h-5"></span>
+							Listens by Track
+						</h3>
+						@components.HorizontalBarChart(
+							fmt.Sprintf("album-%d-tracks", album.ID),
+							"",
+							stats.TrackListens,
+							"oklch(var(--p))",
+							fmt.Sprintf("%dpx", max(200, len(stats.TrackListens)*35)),
+						)
+					</div>
+				</div>
+			}
+			<!-- Listening Pattern Charts -->
+			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+				<!-- By Hour -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--clock] w-5 h-5"></span>
+							Listens by Hour
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("album-%d-hour", album.ID),
+							"",
+							stats.ListensByHour,
+							"oklch(var(--p))",
+							"200px",
+						)
+					</div>
+				</div>
+				<!-- By Day of Week -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--calendar-days] w-5 h-5"></span>
+							Listens by Day
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("album-%d-day", album.ID),
+							"",
+							stats.ListensByDayOfWeek,
+							"oklch(var(--s))",
+							"200px",
+						)
+					</div>
+				</div>
+				<!-- By Month -->
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<h3 class="card-title text-base">
+							<span class="icon-[heroicons--calendar] w-5 h-5"></span>
+							Listens by Month
+						</h3>
+						@components.BarChart(
+							fmt.Sprintf("album-%d-month", album.ID),
+							"",
+							stats.ListensByMonth,
+							"oklch(var(--a))",
+							"200px",
+						)
+					</div>
+				</div>
+			</div>
+			<!-- Track List -->
+			<div class="card bg-base-100 shadow-xl mb-8">
+				<div class="card-body">
+					<h3 class="card-title">
+						<span class="icon-[heroicons--musical-note] w-5 h-5"></span>
+						Tracks
+					</h3>
+					<div class="overflow-x-auto">
+						<table class="table table-zebra">
+							<thead>
+								<tr>
+									<th class="w-12">#</th>
+									<th>Title</th>
+									<th class="w-24">Duration</th>
+									<th class="w-24 text-right">Plays</th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, tw := range tracks {
+									<tr>
+										<td class="text-base-content/50">
+											if tw.Track.TrackNumber != nil {
+												{ fmt.Sprintf("%d", *tw.Track.TrackNumber) }
+											} else {
+												-
+											}
+										</td>
+										<td>
+											<a href={ templ.URL(fmt.Sprintf("/library/track/%d", tw.Track.ID)) } class="font-medium hover:text-primary hover:underline">
+												{ tw.Track.Name }
+											</a>
+											if tw.Track.Popularity != nil && *tw.Track.Popularity > 70 {
+												<span class="badge badge-warning badge-xs ml-2">Popular</span>
+											}
+										</td>
+										<td class="text-base-content/60 font-mono text-sm">
+											if tw.Track.DurationMs != nil {
+												{ formatDuration(*tw.Track.DurationMs) }
+											} else {
+												-
+											}
+										</td>
+										<td class="text-right font-mono">{ formatNumber(tw.ListenCount) }</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+			<!-- Metadata Table -->
+			<div class="card bg-base-100 shadow-xl mb-8">
+				<div class="card-body">
+					<h3 class="card-title">
+						<span class="icon-[heroicons--information-circle] w-5 h-5"></span>
+						Metadata
+					</h3>
+					@components.MetadataTable([]components.MetadataRow{
+						{Label: "Sort Name", Value: getOrDefault(album.SortName, album.Name)},
+						{Label: "Release Date", Value: getOrDefault(album.ReleaseDate, "Unknown")},
+						{Label: "Year", Value: formatYear(album.Year)},
+						{Label: "Album Type", Value: getOrDefault(album.AlbumType, "album")},
+						{Label: "Label", Value: getOrDefault(album.Label, "Unknown")},
+						{Label: "Total Tracks", Value: formatNumber(album.TotalTracks)},
+						{Label: "Genre", Value: getOrDefault(album.Genre, "N/A")},
+						{Label: "MusicBrainz ID", Value: getOrDefault(album.MusicbrainzID, "N/A"), Link: getMBAlbumLink(album.MusicbrainzID)},
+						{Label: "Spotify ID", Value: getOrDefault(album.SpotifyID, "N/A"), Link: getSpotifyAlbumLink(album.SpotifyID)},
+						{Label: "Last Enriched", Value: formatEnrichedTime(album.LastEnrichedAt)},
+						{Label: "Created", Value: formatDate(album.CreatedAt)},
+						{Label: "Updated", Value: formatDate(album.UpdatedAt)},
+					})
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ ProviderHistoryChart(albumID int, data components.StackedChartData, currentTimeframe string) {
+	<div class="card bg-base-100 shadow-xl">
+		<div class="card-body">
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="card-title">
+					<span class="icon-[heroicons--chart-bar] w-5 h-5"></span>
+					Listens Over Time
+				</h3>
+				<select
+					class="select select-bordered select-sm w-40"
+					hx-get={ fmt.Sprintf("/library/album/%d/chart", albumID) }
+					hx-target="#provider-history-chart"
+					hx-swap="innerHTML"
+					name="timeframe"
+				>
+					<option value="30d" selected?={ currentTimeframe == "30d" }>Last 30 days</option>
+					<option value="90d" selected?={ currentTimeframe == "90d" }>Last 90 days</option>
+					<option value="6m" selected?={ currentTimeframe == "6m" }>Last 6 months</option>
+					<option value="1y" selected?={ currentTimeframe == "1y" }>Last year</option>
+					<option value="all" selected?={ currentTimeframe == "all" }>All time</option>
+				</select>
+			</div>
+			<div id="provider-history-chart">
+				@ProviderHistoryChartContent(albumID, data)
+			</div>
+		</div>
+	</div>
+}
+
+templ ProviderHistoryChartContent(albumID int, data components.StackedChartData) {
+	<div class="w-full" style="height: 300px">
+		<canvas id={ fmt.Sprintf("album-%d-provider-history", albumID) }></canvas>
+	</div>
+	@providerHistoryScript(albumID, data)
+}
+
+templ providerHistoryScript(albumID int, data components.StackedChartData) {
+	<script>
+		(function() {
+			const ctx = document.getElementById('album-' + {{ albumID }} + '-provider-history');
+			if (!ctx) return;
+
+			// Destroy existing chart if any
+			const existingChart = Chart.getChart(ctx);
+			if (existingChart) {
+				existingChart.destroy();
+			}
+
+			const chartData = JSON.parse('{{ toJSON(data) }}');
+
+			new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: chartData.labels,
+					datasets: chartData.datasets.map(ds => ({
+						label: ds.label,
+						data: ds.data,
+						backgroundColor: ds.backgroundColor,
+						borderColor: ds.borderColor,
+						borderWidth: 1,
+						borderRadius: 2
+					}))
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: true,
+							position: 'bottom',
+							labels: {
+								color: 'oklch(var(--bc))',
+								usePointStyle: true,
+								padding: 20
+							}
+						}
+					},
+					scales: {
+						y: {
+							stacked: true,
+							beginAtZero: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)'
+							},
+							grid: {
+								color: 'oklch(var(--bc) / 0.1)'
+							}
+						},
+						x: {
+							stacked: true,
+							ticks: {
+								color: 'oklch(var(--bc) / 0.7)',
+								maxRotation: 45,
+								minRotation: 0
+							},
+							grid: {
+								display: false
+							}
+						}
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+func extractTracks(tracks []TrackWithListens) []*ent.Track {
+	result := make([]*ent.Track, len(tracks))
+	for i, tw := range tracks {
+		result[i] = tw.Track
+	}
+	return result
+}
+
+func getArtistImageURL(artist *ent.Artist) string {
+	if artist.Edges.Images == nil || len(artist.Edges.Images) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/library/artist/%d.png", artist.ID)
+}
+
+func formatYear(year int) string {
+	if year <= 0 {
+		return "Unknown"
+	}
+	return fmt.Sprintf("%d", year)
+}
+
+func getMBAlbumLink(mbid string) string {
+	if mbid == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://musicbrainz.org/release-group/%s", mbid)
+}
+
+func getSpotifyAlbumLink(spotifyID string) string {
+	if spotifyID == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://open.spotify.com/album/%s", spotifyID)
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

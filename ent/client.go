@@ -15,8 +15,10 @@ import (
 	"spotter/ent/albumimage"
 	"spotter/ent/artist"
 	"spotter/ent/artistimage"
+	"spotter/ent/dj"
 	"spotter/ent/lastfmauth"
 	"spotter/ent/listen"
+	"spotter/ent/mixtape"
 	"spotter/ent/navidromeauth"
 	"spotter/ent/playlist"
 	"spotter/ent/spotifyauth"
@@ -43,10 +45,14 @@ type Client struct {
 	Artist *ArtistClient
 	// ArtistImage is the client for interacting with the ArtistImage builders.
 	ArtistImage *ArtistImageClient
+	// DJ is the client for interacting with the DJ builders.
+	DJ *DJClient
 	// LastFMAuth is the client for interacting with the LastFMAuth builders.
 	LastFMAuth *LastFMAuthClient
 	// Listen is the client for interacting with the Listen builders.
 	Listen *ListenClient
+	// Mixtape is the client for interacting with the Mixtape builders.
+	Mixtape *MixtapeClient
 	// NavidromeAuth is the client for interacting with the NavidromeAuth builders.
 	NavidromeAuth *NavidromeAuthClient
 	// Playlist is the client for interacting with the Playlist builders.
@@ -74,8 +80,10 @@ func (c *Client) init() {
 	c.AlbumImage = NewAlbumImageClient(c.config)
 	c.Artist = NewArtistClient(c.config)
 	c.ArtistImage = NewArtistImageClient(c.config)
+	c.DJ = NewDJClient(c.config)
 	c.LastFMAuth = NewLastFMAuthClient(c.config)
 	c.Listen = NewListenClient(c.config)
+	c.Mixtape = NewMixtapeClient(c.config)
 	c.NavidromeAuth = NewNavidromeAuthClient(c.config)
 	c.Playlist = NewPlaylistClient(c.config)
 	c.SpotifyAuth = NewSpotifyAuthClient(c.config)
@@ -178,8 +186,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AlbumImage:    NewAlbumImageClient(cfg),
 		Artist:        NewArtistClient(cfg),
 		ArtistImage:   NewArtistImageClient(cfg),
+		DJ:            NewDJClient(cfg),
 		LastFMAuth:    NewLastFMAuthClient(cfg),
 		Listen:        NewListenClient(cfg),
+		Mixtape:       NewMixtapeClient(cfg),
 		NavidromeAuth: NewNavidromeAuthClient(cfg),
 		Playlist:      NewPlaylistClient(cfg),
 		SpotifyAuth:   NewSpotifyAuthClient(cfg),
@@ -209,8 +219,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AlbumImage:    NewAlbumImageClient(cfg),
 		Artist:        NewArtistClient(cfg),
 		ArtistImage:   NewArtistImageClient(cfg),
+		DJ:            NewDJClient(cfg),
 		LastFMAuth:    NewLastFMAuthClient(cfg),
 		Listen:        NewListenClient(cfg),
+		Mixtape:       NewMixtapeClient(cfg),
 		NavidromeAuth: NewNavidromeAuthClient(cfg),
 		Playlist:      NewPlaylistClient(cfg),
 		SpotifyAuth:   NewSpotifyAuthClient(cfg),
@@ -246,8 +258,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Album, c.AlbumImage, c.Artist, c.ArtistImage, c.LastFMAuth, c.Listen,
-		c.NavidromeAuth, c.Playlist, c.SpotifyAuth, c.SyncEvent, c.Track, c.User,
+		c.Album, c.AlbumImage, c.Artist, c.ArtistImage, c.DJ, c.LastFMAuth, c.Listen,
+		c.Mixtape, c.NavidromeAuth, c.Playlist, c.SpotifyAuth, c.SyncEvent, c.Track,
+		c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -257,8 +270,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Album, c.AlbumImage, c.Artist, c.ArtistImage, c.LastFMAuth, c.Listen,
-		c.NavidromeAuth, c.Playlist, c.SpotifyAuth, c.SyncEvent, c.Track, c.User,
+		c.Album, c.AlbumImage, c.Artist, c.ArtistImage, c.DJ, c.LastFMAuth, c.Listen,
+		c.Mixtape, c.NavidromeAuth, c.Playlist, c.SpotifyAuth, c.SyncEvent, c.Track,
+		c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -275,10 +289,14 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Artist.mutate(ctx, m)
 	case *ArtistImageMutation:
 		return c.ArtistImage.mutate(ctx, m)
+	case *DJMutation:
+		return c.DJ.mutate(ctx, m)
 	case *LastFMAuthMutation:
 		return c.LastFMAuth.mutate(ctx, m)
 	case *ListenMutation:
 		return c.Listen.mutate(ctx, m)
+	case *MixtapeMutation:
+		return c.Mixtape.mutate(ctx, m)
 	case *NavidromeAuthMutation:
 		return c.NavidromeAuth.mutate(ctx, m)
 	case *PlaylistMutation:
@@ -461,6 +479,22 @@ func (c *AlbumClient) QueryImages(_m *Album) *AlbumImageQuery {
 			sqlgraph.From(album.Table, album.FieldID, id),
 			sqlgraph.To(albumimage.Table, albumimage.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, album.ImagesTable, album.ImagesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryListens queries the listens edge of a Album.
+func (c *AlbumClient) QueryListens(_m *Album) *ListenQuery {
+	query := (&ListenClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(album.Table, album.FieldID, id),
+			sqlgraph.To(listen.Table, listen.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, album.ListensTable, album.ListensColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -814,6 +848,22 @@ func (c *ArtistClient) QueryImages(_m *Artist) *ArtistImageQuery {
 	return query
 }
 
+// QueryListens queries the listens edge of a Artist.
+func (c *ArtistClient) QueryListens(_m *Artist) *ListenQuery {
+	query := (&ListenClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(artist.Table, artist.FieldID, id),
+			sqlgraph.To(listen.Table, listen.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, artist.ListensTable, artist.ListensColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *ArtistClient) Hooks() []Hook {
 	return c.hooks.Artist
@@ -985,6 +1035,171 @@ func (c *ArtistImageClient) mutate(ctx context.Context, m *ArtistImageMutation) 
 		return (&ArtistImageDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ArtistImage mutation op: %q", m.Op())
+	}
+}
+
+// DJClient is a client for the DJ schema.
+type DJClient struct {
+	config
+}
+
+// NewDJClient returns a client for the DJ from the given config.
+func NewDJClient(c config) *DJClient {
+	return &DJClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `dj.Hooks(f(g(h())))`.
+func (c *DJClient) Use(hooks ...Hook) {
+	c.hooks.DJ = append(c.hooks.DJ, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `dj.Intercept(f(g(h())))`.
+func (c *DJClient) Intercept(interceptors ...Interceptor) {
+	c.inters.DJ = append(c.inters.DJ, interceptors...)
+}
+
+// Create returns a builder for creating a DJ entity.
+func (c *DJClient) Create() *DJCreate {
+	mutation := newDJMutation(c.config, OpCreate)
+	return &DJCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of DJ entities.
+func (c *DJClient) CreateBulk(builders ...*DJCreate) *DJCreateBulk {
+	return &DJCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *DJClient) MapCreateBulk(slice any, setFunc func(*DJCreate, int)) *DJCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &DJCreateBulk{err: fmt.Errorf("calling to DJClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*DJCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &DJCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for DJ.
+func (c *DJClient) Update() *DJUpdate {
+	mutation := newDJMutation(c.config, OpUpdate)
+	return &DJUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *DJClient) UpdateOne(_m *DJ) *DJUpdateOne {
+	mutation := newDJMutation(c.config, OpUpdateOne, withDJ(_m))
+	return &DJUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *DJClient) UpdateOneID(id int) *DJUpdateOne {
+	mutation := newDJMutation(c.config, OpUpdateOne, withDJID(id))
+	return &DJUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for DJ.
+func (c *DJClient) Delete() *DJDelete {
+	mutation := newDJMutation(c.config, OpDelete)
+	return &DJDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *DJClient) DeleteOne(_m *DJ) *DJDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *DJClient) DeleteOneID(id int) *DJDeleteOne {
+	builder := c.Delete().Where(dj.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &DJDeleteOne{builder}
+}
+
+// Query returns a query builder for DJ.
+func (c *DJClient) Query() *DJQuery {
+	return &DJQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeDJ},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a DJ entity by its id.
+func (c *DJClient) Get(ctx context.Context, id int) (*DJ, error) {
+	return c.Query().Where(dj.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *DJClient) GetX(ctx context.Context, id int) *DJ {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a DJ.
+func (c *DJClient) QueryUser(_m *DJ) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(dj.Table, dj.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, dj.UserTable, dj.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMixtapes queries the mixtapes edge of a DJ.
+func (c *DJClient) QueryMixtapes(_m *DJ) *MixtapeQuery {
+	query := (&MixtapeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(dj.Table, dj.FieldID, id),
+			sqlgraph.To(mixtape.Table, mixtape.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, dj.MixtapesTable, dj.MixtapesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *DJClient) Hooks() []Hook {
+	return c.hooks.DJ
+}
+
+// Interceptors returns the client interceptors.
+func (c *DJClient) Interceptors() []Interceptor {
+	return c.inters.DJ
+}
+
+func (c *DJClient) mutate(ctx context.Context, m *DJMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&DJCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&DJUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&DJUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&DJDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown DJ mutation op: %q", m.Op())
 	}
 }
 
@@ -1261,6 +1476,54 @@ func (c *ListenClient) QueryUser(_m *Listen) *UserQuery {
 	return query
 }
 
+// QueryArtist queries the artist edge of a Listen.
+func (c *ListenClient) QueryArtist(_m *Listen) *ArtistQuery {
+	query := (&ArtistClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(listen.Table, listen.FieldID, id),
+			sqlgraph.To(artist.Table, artist.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, listen.ArtistTable, listen.ArtistColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAlbum queries the album edge of a Listen.
+func (c *ListenClient) QueryAlbum(_m *Listen) *AlbumQuery {
+	query := (&AlbumClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(listen.Table, listen.FieldID, id),
+			sqlgraph.To(album.Table, album.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, listen.AlbumTable, listen.AlbumColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTrack queries the track edge of a Listen.
+func (c *ListenClient) QueryTrack(_m *Listen) *TrackQuery {
+	query := (&TrackClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(listen.Table, listen.FieldID, id),
+			sqlgraph.To(track.Table, track.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, listen.TrackTable, listen.TrackColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *ListenClient) Hooks() []Hook {
 	return c.hooks.Listen
@@ -1283,6 +1546,171 @@ func (c *ListenClient) mutate(ctx context.Context, m *ListenMutation) (Value, er
 		return (&ListenDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Listen mutation op: %q", m.Op())
+	}
+}
+
+// MixtapeClient is a client for the Mixtape schema.
+type MixtapeClient struct {
+	config
+}
+
+// NewMixtapeClient returns a client for the Mixtape from the given config.
+func NewMixtapeClient(c config) *MixtapeClient {
+	return &MixtapeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mixtape.Hooks(f(g(h())))`.
+func (c *MixtapeClient) Use(hooks ...Hook) {
+	c.hooks.Mixtape = append(c.hooks.Mixtape, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `mixtape.Intercept(f(g(h())))`.
+func (c *MixtapeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Mixtape = append(c.inters.Mixtape, interceptors...)
+}
+
+// Create returns a builder for creating a Mixtape entity.
+func (c *MixtapeClient) Create() *MixtapeCreate {
+	mutation := newMixtapeMutation(c.config, OpCreate)
+	return &MixtapeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Mixtape entities.
+func (c *MixtapeClient) CreateBulk(builders ...*MixtapeCreate) *MixtapeCreateBulk {
+	return &MixtapeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MixtapeClient) MapCreateBulk(slice any, setFunc func(*MixtapeCreate, int)) *MixtapeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MixtapeCreateBulk{err: fmt.Errorf("calling to MixtapeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MixtapeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MixtapeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Mixtape.
+func (c *MixtapeClient) Update() *MixtapeUpdate {
+	mutation := newMixtapeMutation(c.config, OpUpdate)
+	return &MixtapeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MixtapeClient) UpdateOne(_m *Mixtape) *MixtapeUpdateOne {
+	mutation := newMixtapeMutation(c.config, OpUpdateOne, withMixtape(_m))
+	return &MixtapeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MixtapeClient) UpdateOneID(id int) *MixtapeUpdateOne {
+	mutation := newMixtapeMutation(c.config, OpUpdateOne, withMixtapeID(id))
+	return &MixtapeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Mixtape.
+func (c *MixtapeClient) Delete() *MixtapeDelete {
+	mutation := newMixtapeMutation(c.config, OpDelete)
+	return &MixtapeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MixtapeClient) DeleteOne(_m *Mixtape) *MixtapeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MixtapeClient) DeleteOneID(id int) *MixtapeDeleteOne {
+	builder := c.Delete().Where(mixtape.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MixtapeDeleteOne{builder}
+}
+
+// Query returns a query builder for Mixtape.
+func (c *MixtapeClient) Query() *MixtapeQuery {
+	return &MixtapeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMixtape},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Mixtape entity by its id.
+func (c *MixtapeClient) Get(ctx context.Context, id int) (*Mixtape, error) {
+	return c.Query().Where(mixtape.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MixtapeClient) GetX(ctx context.Context, id int) *Mixtape {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a Mixtape.
+func (c *MixtapeClient) QueryUser(_m *Mixtape) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mixtape.Table, mixtape.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, mixtape.UserTable, mixtape.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryDj queries the dj edge of a Mixtape.
+func (c *MixtapeClient) QueryDj(_m *Mixtape) *DJQuery {
+	query := (&DJClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(mixtape.Table, mixtape.FieldID, id),
+			sqlgraph.To(dj.Table, dj.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, mixtape.DjTable, mixtape.DjColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MixtapeClient) Hooks() []Hook {
+	return c.hooks.Mixtape
+}
+
+// Interceptors returns the client interceptors.
+func (c *MixtapeClient) Interceptors() []Interceptor {
+	return c.inters.Mixtape
+}
+
+func (c *MixtapeClient) mutate(ctx context.Context, m *MixtapeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MixtapeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MixtapeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MixtapeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MixtapeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Mixtape mutation op: %q", m.Op())
 	}
 }
 
@@ -2022,6 +2450,22 @@ func (c *TrackClient) QueryAlbum(_m *Track) *AlbumQuery {
 	return query
 }
 
+// QueryListens queries the listens edge of a Track.
+func (c *TrackClient) QueryListens(_m *Track) *ListenQuery {
+	query := (&ListenClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(track.Table, track.FieldID, id),
+			sqlgraph.To(listen.Table, listen.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, track.ListensTable, track.ListensColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *TrackClient) Hooks() []Hook {
 	return c.hooks.Track
@@ -2283,6 +2727,38 @@ func (c *UserClient) QueryAlbums(_m *User) *AlbumQuery {
 	return query
 }
 
+// QueryDjs queries the djs edge of a User.
+func (c *UserClient) QueryDjs(_m *User) *DJQuery {
+	query := (&DJClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(dj.Table, dj.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.DjsTable, user.DjsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMixtapes queries the mixtapes edge of a User.
+func (c *UserClient) QueryMixtapes(_m *User) *MixtapeQuery {
+	query := (&MixtapeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(mixtape.Table, mixtape.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.MixtapesTable, user.MixtapesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *UserClient) Hooks() []Hook {
 	return c.hooks.User
@@ -2311,11 +2787,11 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Album, AlbumImage, Artist, ArtistImage, LastFMAuth, Listen, NavidromeAuth,
-		Playlist, SpotifyAuth, SyncEvent, Track, User []ent.Hook
+		Album, AlbumImage, Artist, ArtistImage, DJ, LastFMAuth, Listen, Mixtape,
+		NavidromeAuth, Playlist, SpotifyAuth, SyncEvent, Track, User []ent.Hook
 	}
 	inters struct {
-		Album, AlbumImage, Artist, ArtistImage, LastFMAuth, Listen, NavidromeAuth,
-		Playlist, SpotifyAuth, SyncEvent, Track, User []ent.Interceptor
+		Album, AlbumImage, Artist, ArtistImage, DJ, LastFMAuth, Listen, Mixtape,
+		NavidromeAuth, Playlist, SpotifyAuth, SyncEvent, Track, User []ent.Interceptor
 	}
 )

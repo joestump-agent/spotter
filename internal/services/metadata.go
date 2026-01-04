@@ -127,6 +127,14 @@ func (s *MetadataService) SyncAll(ctx context.Context, u *ent.User) error {
 		// Continue with enrichment for existing entries
 	}
 
+	// Step 1.5: Match listens to library entities
+	matchedCount, err := s.MatchListens(ctx, refreshedUser)
+	if err != nil {
+		s.Logger.Error("failed to match listens", "error", err)
+	} else {
+		s.Logger.Info("matched listens to library", "count", matchedCount)
+	}
+
 	// Step 2: Enrich artists
 	artistCount, err := s.EnrichArtists(ctx, refreshedUser)
 	if err != nil {
@@ -1050,6 +1058,15 @@ func (s *MetadataService) downloadArtistImage(ctx context.Context, u *ent.User, 
 	filename := fmt.Sprintf("%s_%d%s", img.ImageType.String(), img.ID, ext)
 	localPath := filepath.Join(artistDir, filename)
 
+	// Check if file already exists on disk
+	if _, err := os.Stat(localPath); err == nil {
+		// File exists, just update database without downloading again
+		_, err := s.Client.ArtistImage.UpdateOne(img).
+			SetLocalPath(localPath).
+			Save(ctx)
+		return err
+	}
+
 	// Download image
 	if err := s.downloadFile(ctx, img.URL, localPath); err != nil {
 		return err
@@ -1095,6 +1112,15 @@ func (s *MetadataService) downloadAlbumImage(ctx context.Context, u *ent.User, i
 	ext := getImageExtension(img.URL)
 	filename := fmt.Sprintf("%s_%d%s", img.ImageType.String(), img.ID, ext)
 	localPath := filepath.Join(albumDir, filename)
+
+	// Check if file already exists on disk
+	if _, err := os.Stat(localPath); err == nil {
+		// File exists, just update database without downloading again
+		_, err := s.Client.AlbumImage.UpdateOne(img).
+			SetLocalPath(localPath).
+			Save(ctx)
+		return err
+	}
 
 	// Download image
 	if err := s.downloadFile(ctx, img.URL, localPath); err != nil {
@@ -1176,6 +1202,145 @@ func (s *MetadataService) EnrichNewListens(ctx context.Context, u *ent.User, art
 		"album", albumName,
 		"track", trackName,
 		"added", added)
+}
+
+// MatchListens links listens to their corresponding artist, album, and track entities.
+// This should be called after BuildCatalog to establish the relationships.
+func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, error) {
+	s.Logger.Info("matching listens to library entities", "username", u.Username)
+
+	// Get all listens for the user that don't have linked entities
+	listens, err := s.Client.Listen.Query().
+		Where(listen.HasUserWith(user.ID(u.ID))).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query listens: %w", err)
+	}
+
+	matchedCount := 0
+
+	for _, l := range listens {
+		updated := false
+
+		// Match artist
+		if l.ArtistName != "" {
+			art, err := s.Client.Artist.Query().
+				Where(
+					artist.HasUserWith(user.ID(u.ID)),
+					artist.Name(l.ArtistName),
+				).
+				Only(ctx)
+			if err == nil {
+				// Check if already linked by querying the edge
+				hasArtist, _ := s.Client.Listen.Query().
+					Where(listen.ID(l.ID)).
+					QueryArtist().
+					Exist(ctx)
+				if !hasArtist {
+					_, err = l.Update().SetArtist(art).Save(ctx)
+					if err != nil {
+						s.Logger.Warn("failed to link listen to artist", "listen_id", l.ID, "artist", l.ArtistName, "error", err)
+					} else {
+						updated = true
+					}
+				}
+			}
+		}
+
+		// Match album
+		if l.AlbumName != "" && l.ArtistName != "" {
+			// Find the artist first
+			art, err := s.Client.Artist.Query().
+				Where(
+					artist.HasUserWith(user.ID(u.ID)),
+					artist.Name(l.ArtistName),
+				).
+				Only(ctx)
+			if err == nil {
+				alb, err := s.Client.Album.Query().
+					Where(
+						album.HasUserWith(user.ID(u.ID)),
+						album.HasArtistWith(artist.ID(art.ID)),
+						album.Name(l.AlbumName),
+					).
+					Only(ctx)
+				if err == nil {
+					// Check if already linked
+					hasAlbum, _ := s.Client.Listen.Query().
+						Where(listen.ID(l.ID)).
+						QueryAlbum().
+						Exist(ctx)
+					if !hasAlbum {
+						_, err = l.Update().SetAlbum(alb).Save(ctx)
+						if err != nil {
+							s.Logger.Warn("failed to link listen to album", "listen_id", l.ID, "album", l.AlbumName, "error", err)
+						} else {
+							updated = true
+						}
+					}
+				}
+			}
+		}
+
+		// Match track
+		if l.TrackName != "" && l.ArtistName != "" {
+			art, err := s.Client.Artist.Query().
+				Where(
+					artist.HasUserWith(user.ID(u.ID)),
+					artist.Name(l.ArtistName),
+				).
+				Only(ctx)
+			if err == nil {
+				query := s.Client.Track.Query().
+					Where(
+						track.Name(l.TrackName),
+						track.HasArtistWith(artist.ID(art.ID)),
+					)
+
+				// If we have an album name, also match on that for more precision
+				if l.AlbumName != "" {
+					alb, albErr := s.Client.Album.Query().
+						Where(
+							album.HasUserWith(user.ID(u.ID)),
+							album.HasArtistWith(artist.ID(art.ID)),
+							album.Name(l.AlbumName),
+						).
+						Only(ctx)
+					if albErr == nil {
+						query = query.Where(track.HasAlbumWith(album.ID(alb.ID)))
+					}
+				}
+
+				trk, err := query.Only(ctx)
+				if err == nil {
+					// Check if already linked
+					hasTrack, _ := s.Client.Listen.Query().
+						Where(listen.ID(l.ID)).
+						QueryTrack().
+						Exist(ctx)
+					if !hasTrack {
+						_, err = l.Update().SetTrack(trk).Save(ctx)
+						if err != nil {
+							s.Logger.Warn("failed to link listen to track", "listen_id", l.ID, "track", l.TrackName, "error", err)
+						} else {
+							updated = true
+						}
+					}
+				}
+			}
+		}
+
+		if updated {
+			matchedCount++
+		}
+	}
+
+	s.Logger.Info("listen matching completed",
+		"username", u.Username,
+		"total_listens", len(listens),
+		"matched", matchedCount)
+
+	return matchedCount, nil
 }
 
 // Helper functions

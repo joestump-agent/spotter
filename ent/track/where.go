@@ -1446,6 +1446,29 @@ func HasAlbumWith(preds ...predicate.Album) predicate.Track {
 	})
 }
 
+// HasListens applies the HasEdge predicate on the "listens" edge.
+func HasListens() predicate.Track {
+	return predicate.Track(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ListensTable, ListensColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasListensWith applies the HasEdge predicate on the "listens" edge with a given conditions (other predicates).
+func HasListensWith(preds ...predicate.Listen) predicate.Track {
+	return predicate.Track(func(s *sql.Selector) {
+		step := newListensStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Track) predicate.Track {
 	return predicate.Track(sql.AndPredicates(predicates...))

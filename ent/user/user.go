@@ -42,6 +42,10 @@ const (
 	EdgeArtists = "artists"
 	// EdgeAlbums holds the string denoting the albums edge name in mutations.
 	EdgeAlbums = "albums"
+	// EdgeDjs holds the string denoting the djs edge name in mutations.
+	EdgeDjs = "djs"
+	// EdgeMixtapes holds the string denoting the mixtapes edge name in mutations.
+	EdgeMixtapes = "mixtapes"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 	// SpotifyAuthTable is the table that holds the spotify_auth relation/edge.
@@ -100,6 +104,20 @@ const (
 	AlbumsInverseTable = "albums"
 	// AlbumsColumn is the table column denoting the albums relation/edge.
 	AlbumsColumn = "user_albums"
+	// DjsTable is the table that holds the djs relation/edge.
+	DjsTable = "djs"
+	// DjsInverseTable is the table name for the DJ entity.
+	// It exists in this package in order to avoid circular dependency with the "dj" package.
+	DjsInverseTable = "djs"
+	// DjsColumn is the table column denoting the djs relation/edge.
+	DjsColumn = "user_djs"
+	// MixtapesTable is the table that holds the mixtapes relation/edge.
+	MixtapesTable = "mixtapes"
+	// MixtapesInverseTable is the table name for the Mixtape entity.
+	// It exists in this package in order to avoid circular dependency with the "mixtape" package.
+	MixtapesInverseTable = "mixtapes"
+	// MixtapesColumn is the table column denoting the mixtapes relation/edge.
+	MixtapesColumn = "user_mixtapes"
 )
 
 // Columns holds all SQL columns for user fields.
@@ -260,6 +278,34 @@ func ByAlbums(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAlbumsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByDjsCount orders the results by djs count.
+func ByDjsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newDjsStep(), opts...)
+	}
+}
+
+// ByDjs orders the results by djs terms.
+func ByDjs(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newDjsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByMixtapesCount orders the results by mixtapes count.
+func ByMixtapesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newMixtapesStep(), opts...)
+	}
+}
+
+// ByMixtapes orders the results by mixtapes terms.
+func ByMixtapes(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newMixtapesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newSpotifyAuthStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -314,5 +360,19 @@ func newAlbumsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AlbumsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, AlbumsTable, AlbumsColumn),
+	)
+}
+func newDjsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(DjsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, DjsTable, DjsColumn),
+	)
+}
+func newMixtapesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(MixtapesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, MixtapesTable, MixtapesColumn),
 	)
 }

@@ -32,6 +32,16 @@ func (Listen) Edges() []ent.Edge {
 			Ref("listens").
 			Unique().
 			Required(),
+		// Optional edges to matched library entities
+		edge.From("artist", Artist.Type).
+			Ref("listens").
+			Unique(),
+		edge.From("album", Album.Type).
+			Ref("listens").
+			Unique(),
+		edge.From("track", Track.Type).
+			Ref("listens").
+			Unique(),
 	}
 }
 

@@ -107,6 +107,7 @@ func (Track) Edges() []ent.Edge {
 		edge.From("album", Album.Type).
 			Ref("tracks").
 			Unique(),
+		edge.To("listens", Listen.Type),
 	}
 }
 

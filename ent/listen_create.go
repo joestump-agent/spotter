@@ -6,7 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"spotter/ent/album"
+	"spotter/ent/artist"
 	"spotter/ent/listen"
+	"spotter/ent/track"
 	"spotter/ent/user"
 	"time"
 
@@ -74,6 +77,63 @@ func (_c *ListenCreate) SetUserID(id int) *ListenCreate {
 // SetUser sets the "user" edge to the User entity.
 func (_c *ListenCreate) SetUser(v *User) *ListenCreate {
 	return _c.SetUserID(v.ID)
+}
+
+// SetArtistID sets the "artist" edge to the Artist entity by ID.
+func (_c *ListenCreate) SetArtistID(id int) *ListenCreate {
+	_c.mutation.SetArtistID(id)
+	return _c
+}
+
+// SetNillableArtistID sets the "artist" edge to the Artist entity by ID if the given value is not nil.
+func (_c *ListenCreate) SetNillableArtistID(id *int) *ListenCreate {
+	if id != nil {
+		_c = _c.SetArtistID(*id)
+	}
+	return _c
+}
+
+// SetArtist sets the "artist" edge to the Artist entity.
+func (_c *ListenCreate) SetArtist(v *Artist) *ListenCreate {
+	return _c.SetArtistID(v.ID)
+}
+
+// SetAlbumID sets the "album" edge to the Album entity by ID.
+func (_c *ListenCreate) SetAlbumID(id int) *ListenCreate {
+	_c.mutation.SetAlbumID(id)
+	return _c
+}
+
+// SetNillableAlbumID sets the "album" edge to the Album entity by ID if the given value is not nil.
+func (_c *ListenCreate) SetNillableAlbumID(id *int) *ListenCreate {
+	if id != nil {
+		_c = _c.SetAlbumID(*id)
+	}
+	return _c
+}
+
+// SetAlbum sets the "album" edge to the Album entity.
+func (_c *ListenCreate) SetAlbum(v *Album) *ListenCreate {
+	return _c.SetAlbumID(v.ID)
+}
+
+// SetTrackID sets the "track" edge to the Track entity by ID.
+func (_c *ListenCreate) SetTrackID(id int) *ListenCreate {
+	_c.mutation.SetTrackID(id)
+	return _c
+}
+
+// SetNillableTrackID sets the "track" edge to the Track entity by ID if the given value is not nil.
+func (_c *ListenCreate) SetNillableTrackID(id *int) *ListenCreate {
+	if id != nil {
+		_c = _c.SetTrackID(*id)
+	}
+	return _c
+}
+
+// SetTrack sets the "track" edge to the Track entity.
+func (_c *ListenCreate) SetTrack(v *Track) *ListenCreate {
+	return _c.SetTrackID(v.ID)
 }
 
 // Mutation returns the ListenMutation object of the builder.
@@ -193,6 +253,57 @@ func (_c *ListenCreate) createSpec() (*Listen, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.user_listens = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ArtistIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.ArtistTable,
+			Columns: []string{listen.ArtistColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.artist_listens = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AlbumIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.AlbumTable,
+			Columns: []string{listen.AlbumColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.album_listens = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.TrackIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.TrackTable,
+			Columns: []string{listen.TrackColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(track.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.track_listens = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

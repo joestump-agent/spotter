@@ -6,8 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"spotter/ent/album"
+	"spotter/ent/artist"
 	"spotter/ent/listen"
 	"spotter/ent/predicate"
+	"spotter/ent/track"
 	"spotter/ent/user"
 	"time"
 
@@ -130,6 +133,63 @@ func (_u *ListenUpdate) SetUser(v *User) *ListenUpdate {
 	return _u.SetUserID(v.ID)
 }
 
+// SetArtistID sets the "artist" edge to the Artist entity by ID.
+func (_u *ListenUpdate) SetArtistID(id int) *ListenUpdate {
+	_u.mutation.SetArtistID(id)
+	return _u
+}
+
+// SetNillableArtistID sets the "artist" edge to the Artist entity by ID if the given value is not nil.
+func (_u *ListenUpdate) SetNillableArtistID(id *int) *ListenUpdate {
+	if id != nil {
+		_u = _u.SetArtistID(*id)
+	}
+	return _u
+}
+
+// SetArtist sets the "artist" edge to the Artist entity.
+func (_u *ListenUpdate) SetArtist(v *Artist) *ListenUpdate {
+	return _u.SetArtistID(v.ID)
+}
+
+// SetAlbumID sets the "album" edge to the Album entity by ID.
+func (_u *ListenUpdate) SetAlbumID(id int) *ListenUpdate {
+	_u.mutation.SetAlbumID(id)
+	return _u
+}
+
+// SetNillableAlbumID sets the "album" edge to the Album entity by ID if the given value is not nil.
+func (_u *ListenUpdate) SetNillableAlbumID(id *int) *ListenUpdate {
+	if id != nil {
+		_u = _u.SetAlbumID(*id)
+	}
+	return _u
+}
+
+// SetAlbum sets the "album" edge to the Album entity.
+func (_u *ListenUpdate) SetAlbum(v *Album) *ListenUpdate {
+	return _u.SetAlbumID(v.ID)
+}
+
+// SetTrackID sets the "track" edge to the Track entity by ID.
+func (_u *ListenUpdate) SetTrackID(id int) *ListenUpdate {
+	_u.mutation.SetTrackID(id)
+	return _u
+}
+
+// SetNillableTrackID sets the "track" edge to the Track entity by ID if the given value is not nil.
+func (_u *ListenUpdate) SetNillableTrackID(id *int) *ListenUpdate {
+	if id != nil {
+		_u = _u.SetTrackID(*id)
+	}
+	return _u
+}
+
+// SetTrack sets the "track" edge to the Track entity.
+func (_u *ListenUpdate) SetTrack(v *Track) *ListenUpdate {
+	return _u.SetTrackID(v.ID)
+}
+
 // Mutation returns the ListenMutation object of the builder.
 func (_u *ListenUpdate) Mutation() *ListenMutation {
 	return _u.mutation
@@ -138,6 +198,24 @@ func (_u *ListenUpdate) Mutation() *ListenMutation {
 // ClearUser clears the "user" edge to the User entity.
 func (_u *ListenUpdate) ClearUser() *ListenUpdate {
 	_u.mutation.ClearUser()
+	return _u
+}
+
+// ClearArtist clears the "artist" edge to the Artist entity.
+func (_u *ListenUpdate) ClearArtist() *ListenUpdate {
+	_u.mutation.ClearArtist()
+	return _u
+}
+
+// ClearAlbum clears the "album" edge to the Album entity.
+func (_u *ListenUpdate) ClearAlbum() *ListenUpdate {
+	_u.mutation.ClearAlbum()
+	return _u
+}
+
+// ClearTrack clears the "track" edge to the Track entity.
+func (_u *ListenUpdate) ClearTrack() *ListenUpdate {
+	_u.mutation.ClearTrack()
 	return _u
 }
 
@@ -231,6 +309,93 @@ func (_u *ListenUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ArtistCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.ArtistTable,
+			Columns: []string{listen.ArtistColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ArtistIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.ArtistTable,
+			Columns: []string{listen.ArtistColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AlbumCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.AlbumTable,
+			Columns: []string{listen.AlbumColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AlbumIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.AlbumTable,
+			Columns: []string{listen.AlbumColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TrackCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.TrackTable,
+			Columns: []string{listen.TrackColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(track.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TrackIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.TrackTable,
+			Columns: []string{listen.TrackColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(track.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -359,6 +524,63 @@ func (_u *ListenUpdateOne) SetUser(v *User) *ListenUpdateOne {
 	return _u.SetUserID(v.ID)
 }
 
+// SetArtistID sets the "artist" edge to the Artist entity by ID.
+func (_u *ListenUpdateOne) SetArtistID(id int) *ListenUpdateOne {
+	_u.mutation.SetArtistID(id)
+	return _u
+}
+
+// SetNillableArtistID sets the "artist" edge to the Artist entity by ID if the given value is not nil.
+func (_u *ListenUpdateOne) SetNillableArtistID(id *int) *ListenUpdateOne {
+	if id != nil {
+		_u = _u.SetArtistID(*id)
+	}
+	return _u
+}
+
+// SetArtist sets the "artist" edge to the Artist entity.
+func (_u *ListenUpdateOne) SetArtist(v *Artist) *ListenUpdateOne {
+	return _u.SetArtistID(v.ID)
+}
+
+// SetAlbumID sets the "album" edge to the Album entity by ID.
+func (_u *ListenUpdateOne) SetAlbumID(id int) *ListenUpdateOne {
+	_u.mutation.SetAlbumID(id)
+	return _u
+}
+
+// SetNillableAlbumID sets the "album" edge to the Album entity by ID if the given value is not nil.
+func (_u *ListenUpdateOne) SetNillableAlbumID(id *int) *ListenUpdateOne {
+	if id != nil {
+		_u = _u.SetAlbumID(*id)
+	}
+	return _u
+}
+
+// SetAlbum sets the "album" edge to the Album entity.
+func (_u *ListenUpdateOne) SetAlbum(v *Album) *ListenUpdateOne {
+	return _u.SetAlbumID(v.ID)
+}
+
+// SetTrackID sets the "track" edge to the Track entity by ID.
+func (_u *ListenUpdateOne) SetTrackID(id int) *ListenUpdateOne {
+	_u.mutation.SetTrackID(id)
+	return _u
+}
+
+// SetNillableTrackID sets the "track" edge to the Track entity by ID if the given value is not nil.
+func (_u *ListenUpdateOne) SetNillableTrackID(id *int) *ListenUpdateOne {
+	if id != nil {
+		_u = _u.SetTrackID(*id)
+	}
+	return _u
+}
+
+// SetTrack sets the "track" edge to the Track entity.
+func (_u *ListenUpdateOne) SetTrack(v *Track) *ListenUpdateOne {
+	return _u.SetTrackID(v.ID)
+}
+
 // Mutation returns the ListenMutation object of the builder.
 func (_u *ListenUpdateOne) Mutation() *ListenMutation {
 	return _u.mutation
@@ -367,6 +589,24 @@ func (_u *ListenUpdateOne) Mutation() *ListenMutation {
 // ClearUser clears the "user" edge to the User entity.
 func (_u *ListenUpdateOne) ClearUser() *ListenUpdateOne {
 	_u.mutation.ClearUser()
+	return _u
+}
+
+// ClearArtist clears the "artist" edge to the Artist entity.
+func (_u *ListenUpdateOne) ClearArtist() *ListenUpdateOne {
+	_u.mutation.ClearArtist()
+	return _u
+}
+
+// ClearAlbum clears the "album" edge to the Album entity.
+func (_u *ListenUpdateOne) ClearAlbum() *ListenUpdateOne {
+	_u.mutation.ClearAlbum()
+	return _u
+}
+
+// ClearTrack clears the "track" edge to the Track entity.
+func (_u *ListenUpdateOne) ClearTrack() *ListenUpdateOne {
+	_u.mutation.ClearTrack()
 	return _u
 }
 
@@ -490,6 +730,93 @@ func (_u *ListenUpdateOne) sqlSave(ctx context.Context) (_node *Listen, err erro
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ArtistCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.ArtistTable,
+			Columns: []string{listen.ArtistColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ArtistIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.ArtistTable,
+			Columns: []string{listen.ArtistColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(artist.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AlbumCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.AlbumTable,
+			Columns: []string{listen.AlbumColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AlbumIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.AlbumTable,
+			Columns: []string{listen.AlbumColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(album.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TrackCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.TrackTable,
+			Columns: []string{listen.TrackColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(track.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TrackIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   listen.TrackTable,
+			Columns: []string{listen.TrackColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(track.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

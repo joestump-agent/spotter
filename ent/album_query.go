@@ -10,6 +10,7 @@ import (
 	"spotter/ent/album"
 	"spotter/ent/albumimage"
 	"spotter/ent/artist"
+	"spotter/ent/listen"
 	"spotter/ent/predicate"
 	"spotter/ent/track"
 	"spotter/ent/user"
@@ -23,15 +24,16 @@ import (
 // AlbumQuery is the builder for querying Album entities.
 type AlbumQuery struct {
 	config
-	ctx        *QueryContext
-	order      []album.OrderOption
-	inters     []Interceptor
-	predicates []predicate.Album
-	withUser   *UserQuery
-	withArtist *ArtistQuery
-	withTracks *TrackQuery
-	withImages *AlbumImageQuery
-	withFKs    bool
+	ctx         *QueryContext
+	order       []album.OrderOption
+	inters      []Interceptor
+	predicates  []predicate.Album
+	withUser    *UserQuery
+	withArtist  *ArtistQuery
+	withTracks  *TrackQuery
+	withImages  *AlbumImageQuery
+	withListens *ListenQuery
+	withFKs     bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -149,6 +151,28 @@ func (_q *AlbumQuery) QueryImages() *AlbumImageQuery {
 			sqlgraph.From(album.Table, album.FieldID, selector),
 			sqlgraph.To(albumimage.Table, albumimage.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, album.ImagesTable, album.ImagesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryListens chains the current query on the "listens" edge.
+func (_q *AlbumQuery) QueryListens() *ListenQuery {
+	query := (&ListenClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(album.Table, album.FieldID, selector),
+			sqlgraph.To(listen.Table, listen.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, album.ListensTable, album.ListensColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -343,15 +367,16 @@ func (_q *AlbumQuery) Clone() *AlbumQuery {
 		return nil
 	}
 	return &AlbumQuery{
-		config:     _q.config,
-		ctx:        _q.ctx.Clone(),
-		order:      append([]album.OrderOption{}, _q.order...),
-		inters:     append([]Interceptor{}, _q.inters...),
-		predicates: append([]predicate.Album{}, _q.predicates...),
-		withUser:   _q.withUser.Clone(),
-		withArtist: _q.withArtist.Clone(),
-		withTracks: _q.withTracks.Clone(),
-		withImages: _q.withImages.Clone(),
+		config:      _q.config,
+		ctx:         _q.ctx.Clone(),
+		order:       append([]album.OrderOption{}, _q.order...),
+		inters:      append([]Interceptor{}, _q.inters...),
+		predicates:  append([]predicate.Album{}, _q.predicates...),
+		withUser:    _q.withUser.Clone(),
+		withArtist:  _q.withArtist.Clone(),
+		withTracks:  _q.withTracks.Clone(),
+		withImages:  _q.withImages.Clone(),
+		withListens: _q.withListens.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -399,6 +424,17 @@ func (_q *AlbumQuery) WithImages(opts ...func(*AlbumImageQuery)) *AlbumQuery {
 		opt(query)
 	}
 	_q.withImages = query
+	return _q
+}
+
+// WithListens tells the query-builder to eager-load the nodes that are connected to
+// the "listens" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AlbumQuery) WithListens(opts ...func(*ListenQuery)) *AlbumQuery {
+	query := (&ListenClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withListens = query
 	return _q
 }
 
@@ -481,11 +517,12 @@ func (_q *AlbumQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Album,
 		nodes       = []*Album{}
 		withFKs     = _q.withFKs
 		_spec       = _q.querySpec()
-		loadedTypes = [4]bool{
+		loadedTypes = [5]bool{
 			_q.withUser != nil,
 			_q.withArtist != nil,
 			_q.withTracks != nil,
 			_q.withImages != nil,
+			_q.withListens != nil,
 		}
 	)
 	if _q.withUser != nil || _q.withArtist != nil {
@@ -535,6 +572,13 @@ func (_q *AlbumQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Album,
 		if err := _q.loadImages(ctx, query, nodes,
 			func(n *Album) { n.Edges.Images = []*AlbumImage{} },
 			func(n *Album, e *AlbumImage) { n.Edges.Images = append(n.Edges.Images, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withListens; query != nil {
+		if err := _q.loadListens(ctx, query, nodes,
+			func(n *Album) { n.Edges.Listens = []*Listen{} },
+			func(n *Album, e *Listen) { n.Edges.Listens = append(n.Edges.Listens, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -662,6 +706,37 @@ func (_q *AlbumQuery) loadImages(ctx context.Context, query *AlbumImageQuery, no
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "album_images" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *AlbumQuery) loadListens(ctx context.Context, query *ListenQuery, nodes []*Album, init func(*Album), assign func(*Album, *Listen)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int]*Album)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	query.withFKs = true
+	query.Where(predicate.Listen(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(album.ListensColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.album_listens
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "album_listens" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "album_listens" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

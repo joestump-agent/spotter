@@ -83,39 +83,6 @@ func (h *Handler) PostPreferencesAppearance(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *Handler) PreferencesAI(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
-	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-
-	h.Render(w, r, preferences.AIPrompt(u, h.Config))
-}
-
-func (h *Handler) PostPreferencesAI(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
-	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-
-	systemPrompt := r.FormValue("system_prompt")
-
-	err := h.Client.User.UpdateOneID(u.ID).
-		SetSystemPrompt(systemPrompt).
-		Exec(r.Context())
-
-	if err != nil {
-		h.Logger.Error("failed to update AI prompt", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("HX-Trigger", "preferences-saved")
-	w.WriteHeader(http.StatusOK)
-}
-
 func (h *Handler) PreferencesProviders(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {

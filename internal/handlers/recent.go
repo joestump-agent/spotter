@@ -41,6 +41,9 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 
 	listens, err := h.Client.Listen.Query().
 		Where(listen.HasUserWith(user.ID(u.ID))).
+		WithArtist().
+		WithAlbum().
+		WithTrack().
 		Order(ent.Desc(listen.FieldPlayedAt)).
 		Limit(pageSize).
 		Offset(offset).

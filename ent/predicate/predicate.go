@@ -18,11 +18,17 @@ type Artist func(*sql.Selector)
 // ArtistImage is the predicate function for artistimage builders.
 type ArtistImage func(*sql.Selector)
 
+// DJ is the predicate function for dj builders.
+type DJ func(*sql.Selector)
+
 // LastFMAuth is the predicate function for lastfmauth builders.
 type LastFMAuth func(*sql.Selector)
 
 // Listen is the predicate function for listen builders.
 type Listen func(*sql.Selector)
+
+// Mixtape is the predicate function for mixtape builders.
+type Mixtape func(*sql.Selector)
 
 // NavidromeAuth is the predicate function for navidromeauth builders.
 type NavidromeAuth func(*sql.Selector)

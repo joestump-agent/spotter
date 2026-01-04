@@ -6,8 +6,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"spotter/ent/album"
+	"spotter/ent/artist"
 	"spotter/ent/listen"
 	"spotter/ent/predicate"
+	"spotter/ent/track"
 	"spotter/ent/user"
 
 	"entgo.io/ent"
@@ -24,6 +27,9 @@ type ListenQuery struct {
 	inters     []Interceptor
 	predicates []predicate.Listen
 	withUser   *UserQuery
+	withArtist *ArtistQuery
+	withAlbum  *AlbumQuery
+	withTrack  *TrackQuery
 	withFKs    bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -76,6 +82,72 @@ func (_q *ListenQuery) QueryUser() *UserQuery {
 			sqlgraph.From(listen.Table, listen.FieldID, selector),
 			sqlgraph.To(user.Table, user.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, listen.UserTable, listen.UserColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryArtist chains the current query on the "artist" edge.
+func (_q *ListenQuery) QueryArtist() *ArtistQuery {
+	query := (&ArtistClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(listen.Table, listen.FieldID, selector),
+			sqlgraph.To(artist.Table, artist.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, listen.ArtistTable, listen.ArtistColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAlbum chains the current query on the "album" edge.
+func (_q *ListenQuery) QueryAlbum() *AlbumQuery {
+	query := (&AlbumClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(listen.Table, listen.FieldID, selector),
+			sqlgraph.To(album.Table, album.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, listen.AlbumTable, listen.AlbumColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryTrack chains the current query on the "track" edge.
+func (_q *ListenQuery) QueryTrack() *TrackQuery {
+	query := (&TrackClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(listen.Table, listen.FieldID, selector),
+			sqlgraph.To(track.Table, track.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, listen.TrackTable, listen.TrackColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -276,6 +348,9 @@ func (_q *ListenQuery) Clone() *ListenQuery {
 		inters:     append([]Interceptor{}, _q.inters...),
 		predicates: append([]predicate.Listen{}, _q.predicates...),
 		withUser:   _q.withUser.Clone(),
+		withArtist: _q.withArtist.Clone(),
+		withAlbum:  _q.withAlbum.Clone(),
+		withTrack:  _q.withTrack.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -290,6 +365,39 @@ func (_q *ListenQuery) WithUser(opts ...func(*UserQuery)) *ListenQuery {
 		opt(query)
 	}
 	_q.withUser = query
+	return _q
+}
+
+// WithArtist tells the query-builder to eager-load the nodes that are connected to
+// the "artist" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *ListenQuery) WithArtist(opts ...func(*ArtistQuery)) *ListenQuery {
+	query := (&ArtistClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withArtist = query
+	return _q
+}
+
+// WithAlbum tells the query-builder to eager-load the nodes that are connected to
+// the "album" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *ListenQuery) WithAlbum(opts ...func(*AlbumQuery)) *ListenQuery {
+	query := (&AlbumClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAlbum = query
+	return _q
+}
+
+// WithTrack tells the query-builder to eager-load the nodes that are connected to
+// the "track" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *ListenQuery) WithTrack(opts ...func(*TrackQuery)) *ListenQuery {
+	query := (&TrackClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withTrack = query
 	return _q
 }
 
@@ -372,11 +480,14 @@ func (_q *ListenQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Liste
 		nodes       = []*Listen{}
 		withFKs     = _q.withFKs
 		_spec       = _q.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [4]bool{
 			_q.withUser != nil,
+			_q.withArtist != nil,
+			_q.withAlbum != nil,
+			_q.withTrack != nil,
 		}
 	)
-	if _q.withUser != nil {
+	if _q.withUser != nil || _q.withArtist != nil || _q.withAlbum != nil || _q.withTrack != nil {
 		withFKs = true
 	}
 	if withFKs {
@@ -403,6 +514,24 @@ func (_q *ListenQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Liste
 	if query := _q.withUser; query != nil {
 		if err := _q.loadUser(ctx, query, nodes, nil,
 			func(n *Listen, e *User) { n.Edges.User = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withArtist; query != nil {
+		if err := _q.loadArtist(ctx, query, nodes, nil,
+			func(n *Listen, e *Artist) { n.Edges.Artist = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAlbum; query != nil {
+		if err := _q.loadAlbum(ctx, query, nodes, nil,
+			func(n *Listen, e *Album) { n.Edges.Album = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withTrack; query != nil {
+		if err := _q.loadTrack(ctx, query, nodes, nil,
+			func(n *Listen, e *Track) { n.Edges.Track = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -434,6 +563,102 @@ func (_q *ListenQuery) loadUser(ctx context.Context, query *UserQuery, nodes []*
 		nodes, ok := nodeids[n.ID]
 		if !ok {
 			return fmt.Errorf(`unexpected foreign-key "user_listens" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *ListenQuery) loadArtist(ctx context.Context, query *ArtistQuery, nodes []*Listen, init func(*Listen), assign func(*Listen, *Artist)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*Listen)
+	for i := range nodes {
+		if nodes[i].artist_listens == nil {
+			continue
+		}
+		fk := *nodes[i].artist_listens
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(artist.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "artist_listens" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *ListenQuery) loadAlbum(ctx context.Context, query *AlbumQuery, nodes []*Listen, init func(*Listen), assign func(*Listen, *Album)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*Listen)
+	for i := range nodes {
+		if nodes[i].album_listens == nil {
+			continue
+		}
+		fk := *nodes[i].album_listens
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(album.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "album_listens" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *ListenQuery) loadTrack(ctx context.Context, query *TrackQuery, nodes []*Listen, init func(*Listen), assign func(*Listen, *Track)) error {
+	ids := make([]int, 0, len(nodes))
+	nodeids := make(map[int][]*Listen)
+	for i := range nodes {
+		if nodes[i].track_listens == nil {
+			continue
+		}
+		fk := *nodes[i].track_listens
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(track.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "track_listens" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)

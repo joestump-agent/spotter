@@ -50,6 +50,8 @@ const (
 	EdgeTracks = "tracks"
 	// EdgeImages holds the string denoting the images edge name in mutations.
 	EdgeImages = "images"
+	// EdgeListens holds the string denoting the listens edge name in mutations.
+	EdgeListens = "listens"
 	// Table holds the table name of the artist in the database.
 	Table = "artists"
 	// UserTable is the table that holds the user relation/edge.
@@ -80,6 +82,13 @@ const (
 	ImagesInverseTable = "artist_images"
 	// ImagesColumn is the table column denoting the images relation/edge.
 	ImagesColumn = "artist_images"
+	// ListensTable is the table that holds the listens relation/edge.
+	ListensTable = "listens"
+	// ListensInverseTable is the table name for the Listen entity.
+	// It exists in this package in order to avoid circular dependency with the "listen" package.
+	ListensInverseTable = "listens"
+	// ListensColumn is the table column denoting the listens relation/edge.
+	ListensColumn = "artist_listens"
 )
 
 // Columns holds all SQL columns for artist fields.
@@ -249,6 +258,20 @@ func ByImages(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newImagesStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByListensCount orders the results by listens count.
+func ByListensCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newListensStep(), opts...)
+	}
+}
+
+// ByListens orders the results by listens terms.
+func ByListens(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newListensStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -275,5 +298,12 @@ func newImagesStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ImagesInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, ImagesTable, ImagesColumn),
+	)
+}
+func newListensStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ListensInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ListensTable, ListensColumn),
 	)
 }

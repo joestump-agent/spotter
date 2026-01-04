@@ -46,5 +46,8 @@ func (User) Edges() []ent.Edge {
 		// Catalog edges for metadata enrichment
 		edge.To("artists", Artist.Type),
 		edge.To("albums", Album.Type),
+		// Vibes system edges
+		edge.To("djs", DJ.Type),
+		edge.To("mixtapes", Mixtape.Type),
 	}
 }
