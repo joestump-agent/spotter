@@ -508,9 +508,19 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 			Description: "Enrich artist, album, and track metadata from external sources",
 		},
 		{
+			ID:          "sync-artist-images",
+			Name:        "Sync All Artist Images",
+			Description: "Re-fetch artist images from all connected providers",
+		},
+		{
+			ID:          "sync-album-images",
+			Name:        "Sync All Album Art",
+			Description: "Re-fetch album artwork from all connected providers",
+		},
+		{
 			ID:          "reset-data",
 			Name:        "Reset All Data",
-			Description: "Delete all listens, playlists, and catalog data, then re-sync",
+			Description: "Delete all listens, playlists, catalog data, and metadata, then re-sync",
 		},
 		{
 			ID:          "cleanup",
@@ -557,6 +567,32 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 		tasks[2].LastRanAt = &lastMetadata.CreatedAt
 	}
 
+	// Get last artist image sync event
+	lastArtistImages, _ := h.Client.SyncEvent.Query().
+		Where(
+			syncevent.HasUserWith(user.ID(u.ID)),
+			syncevent.EventTypeEQ(syncevent.EventTypeImageDownloaded),
+			syncevent.MessageContains("artist"),
+		).
+		Order(ent.Desc(syncevent.FieldCreatedAt)).
+		First(ctx)
+	if lastArtistImages != nil {
+		tasks[3].LastRanAt = &lastArtistImages.CreatedAt
+	}
+
+	// Get last album image sync event
+	lastAlbumImages, _ := h.Client.SyncEvent.Query().
+		Where(
+			syncevent.HasUserWith(user.ID(u.ID)),
+			syncevent.EventTypeEQ(syncevent.EventTypeImageDownloaded),
+			syncevent.MessageContains("album"),
+		).
+		Order(ent.Desc(syncevent.FieldCreatedAt)).
+		First(ctx)
+	if lastAlbumImages != nil {
+		tasks[4].LastRanAt = &lastAlbumImages.CreatedAt
+	}
+
 	// Get last data_reset event
 	lastReset, _ := h.Client.SyncEvent.Query().
 		Where(
@@ -566,7 +602,7 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 		Order(ent.Desc(syncevent.FieldCreatedAt)).
 		First(ctx)
 	if lastReset != nil {
-		tasks[3].LastRanAt = &lastReset.CreatedAt
+		tasks[5].LastRanAt = &lastReset.CreatedAt
 	}
 
 	// Get last cleanup_completed event
@@ -578,7 +614,7 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 		Order(ent.Desc(syncevent.FieldCreatedAt)).
 		First(ctx)
 	if lastCleanup != nil {
-		tasks[4].LastRanAt = &lastCleanup.CreatedAt
+		tasks[6].LastRanAt = &lastCleanup.CreatedAt
 	}
 
 	return tasks
@@ -670,6 +706,120 @@ func (h *Handler) TaskEnrichMetadata(w http.ResponseWriter, r *http.Request) {
 		if err := h.MetadataSvc.SyncAll(context.Background(), u); err != nil {
 			h.Logger.Error("failed to run metadata enrichment", "error", err)
 		}
+	}()
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// TaskSyncArtistImages triggers a sync of all artist images
+func (h *Handler) TaskSyncArtistImages(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	if h.MetadataSvc == nil {
+		h.Bus.Publish(u.ID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Error",
+				Message:  "Metadata service is not configured",
+				IconType: "error",
+			},
+		})
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	h.Bus.Publish(u.ID, events.Event{
+		Type: events.EventTypeNotification,
+		Payload: events.NotificationPayload{
+			Title:    "Task Started",
+			Message:  "Syncing all artist images in the background...",
+			IconType: "info",
+		},
+	})
+
+	go func() {
+		count, err := h.MetadataSvc.SyncAllArtistImages(context.Background(), u)
+		if err != nil {
+			h.Logger.Error("failed to sync artist images", "error", err)
+			h.Bus.Publish(u.ID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "Failed to sync artist images",
+					IconType: "error",
+				},
+			})
+			return
+		}
+		h.Bus.Publish(u.ID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Sync Complete",
+				Message:  fmt.Sprintf("Synced images for %d artists", count),
+				IconType: "success",
+			},
+		})
+	}()
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// TaskSyncAlbumImages triggers a sync of all album images
+func (h *Handler) TaskSyncAlbumImages(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	if h.MetadataSvc == nil {
+		h.Bus.Publish(u.ID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Error",
+				Message:  "Metadata service is not configured",
+				IconType: "error",
+			},
+		})
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	h.Bus.Publish(u.ID, events.Event{
+		Type: events.EventTypeNotification,
+		Payload: events.NotificationPayload{
+			Title:    "Task Started",
+			Message:  "Syncing all album artwork in the background...",
+			IconType: "info",
+		},
+	})
+
+	go func() {
+		count, err := h.MetadataSvc.SyncAllAlbumImages(context.Background(), u)
+		if err != nil {
+			h.Logger.Error("failed to sync album images", "error", err)
+			h.Bus.Publish(u.ID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "Failed to sync album artwork",
+					IconType: "error",
+				},
+			})
+			return
+		}
+		h.Bus.Publish(u.ID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Sync Complete",
+				Message:  fmt.Sprintf("Synced artwork for %d albums", count),
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)

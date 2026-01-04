@@ -664,7 +664,123 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 	return enrichedCount, nil
 }
 
-// enrichAlbum runs all enrichers on a single album.
+// SyncAllArtistImages re-fetches images for all artists from all enrichers.
+// This forces a refresh of artist images regardless of when they were last enriched.
+func (s *MetadataService) SyncAllArtistImages(ctx context.Context, u *ent.User) (int, error) {
+	s.Logger.Info("syncing all artist images", "username", u.Username)
+
+	enricherList, err := s.getActiveEnrichers(ctx, u)
+	if err != nil {
+		return 0, err
+	}
+
+	// Get all artists for the user
+	artists, err := s.Client.Artist.Query().
+		Where(artist.HasUserWith(user.ID(u.ID))).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query artists: %w", err)
+	}
+
+	s.Logger.Debug("found artists to sync images", "count", len(artists))
+
+	syncedCount := 0
+	for _, art := range artists {
+		imagesFound := false
+		for _, e := range enricherList {
+			artistEnricher, ok := e.(enrichers.ArtistEnricher)
+			if !ok {
+				continue
+			}
+
+			images, err := artistEnricher.GetArtistImages(ctx, art)
+			if err != nil {
+				s.Logger.Warn("failed to get artist images",
+					"enricher", e.Name(),
+					"artist", art.Name,
+					"error", err)
+				continue
+			}
+
+			if len(images) > 0 {
+				if err := s.saveArtistImages(ctx, art, images); err != nil {
+					s.Logger.Warn("failed to save artist images", "artist", art.Name, "error", err)
+				} else {
+					imagesFound = true
+				}
+			}
+		}
+		if imagesFound {
+			syncedCount++
+		}
+	}
+
+	s.logEvent(ctx, u, syncevent.EventTypeImageDownloaded, "metadata",
+		fmt.Sprintf("Synced images for %d artists", syncedCount),
+		map[string]interface{}{"artists_synced": syncedCount})
+
+	return syncedCount, nil
+}
+
+// SyncAllAlbumImages re-fetches images for all albums from all enrichers.
+// This forces a refresh of album images regardless of when they were last enriched.
+func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (int, error) {
+	s.Logger.Info("syncing all album images", "username", u.Username)
+
+	enricherList, err := s.getActiveEnrichers(ctx, u)
+	if err != nil {
+		return 0, err
+	}
+
+	// Get all albums for the user with their artists
+	albums, err := s.Client.Album.Query().
+		Where(album.HasUserWith(user.ID(u.ID))).
+		WithArtist().
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query albums: %w", err)
+	}
+
+	s.Logger.Debug("found albums to sync images", "count", len(albums))
+
+	syncedCount := 0
+	for _, alb := range albums {
+		imagesFound := false
+		for _, e := range enricherList {
+			albumEnricher, ok := e.(enrichers.AlbumEnricher)
+			if !ok {
+				continue
+			}
+
+			images, err := albumEnricher.GetAlbumImages(ctx, alb)
+			if err != nil {
+				s.Logger.Warn("failed to get album images",
+					"enricher", e.Name(),
+					"album", alb.Name,
+					"error", err)
+				continue
+			}
+
+			if len(images) > 0 {
+				if err := s.saveAlbumImages(ctx, alb, images); err != nil {
+					s.Logger.Warn("failed to save album images", "album", alb.Name, "error", err)
+				} else {
+					imagesFound = true
+				}
+			}
+		}
+		if imagesFound {
+			syncedCount++
+		}
+	}
+
+	s.logEvent(ctx, u, syncevent.EventTypeImageDownloaded, "metadata",
+		fmt.Sprintf("Synced images for %d albums", syncedCount),
+		map[string]interface{}{"albums_synced": syncedCount})
+
+	return syncedCount, nil
+}
+
 func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent.Album, enricherList []enrichers.Enricher) error {
 	s.Logger.Debug("enriching album", "name", alb.Name)
 
@@ -1047,15 +1163,15 @@ func (s *MetadataService) downloadArtistImage(ctx context.Context, u *ent.User, 
 		return nil
 	}
 
-	// Create directory for artist
-	artistDir := filepath.Join(baseDir, "artists", sanitizeFilename(img.Edges.Artist.Name))
+	// Create directory for artists
+	artistDir := filepath.Join(baseDir, "artists")
 	if err := os.MkdirAll(artistDir, 0755); err != nil {
 		return err
 	}
 
-	// Determine filename
+	// Determine filename using artist ID and image type (e.g., 123-hero.png)
 	ext := getImageExtension(img.URL)
-	filename := fmt.Sprintf("%s_%d%s", img.ImageType.String(), img.ID, ext)
+	filename := fmt.Sprintf("%d-%s%s", img.Edges.Artist.ID, img.ImageType.String(), ext)
 	localPath := filepath.Join(artistDir, filename)
 
 	// Check if file already exists on disk
@@ -1098,19 +1214,15 @@ func (s *MetadataService) downloadAlbumImage(ctx context.Context, u *ent.User, i
 		return nil
 	}
 
-	// Create directory for album
-	artistName := "unknown"
-	if img.Edges.Album != nil && img.Edges.Album.Edges.Artist != nil {
-		artistName = img.Edges.Album.Edges.Artist.Name
-	}
-	albumDir := filepath.Join(baseDir, "albums", sanitizeFilename(artistName), sanitizeFilename(img.Edges.Album.Name))
+	// Create directory for albums
+	albumDir := filepath.Join(baseDir, "albums")
 	if err := os.MkdirAll(albumDir, 0755); err != nil {
 		return err
 	}
 
-	// Determine filename
+	// Determine filename using album ID and image type (e.g., 456-cover.png)
 	ext := getImageExtension(img.URL)
-	filename := fmt.Sprintf("%s_%d%s", img.ImageType.String(), img.ID, ext)
+	filename := fmt.Sprintf("%d-%s%s", img.Edges.Album.ID, img.ImageType.String(), ext)
 	localPath := filepath.Join(albumDir, filename)
 
 	// Check if file already exists on disk

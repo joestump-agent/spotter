@@ -8,19 +8,12 @@ Spotter is an AI-powered playlist generator for Navidrome. It aggregates your li
 *   **Playlist Management**: View and sync playlists from all connected services.
 *   **Navidrome Integration**: Log in using your existing Navidrome credentials.
 *   **External Service Support**: Connect your Spotify and Last.fm accounts to import history and improve recommendations.
+*   **Metadata Enrichment**: Automatically enriches artist, album, and track metadata from MusicBrainz, Fanart.tv, Spotify, Last.fm, and more.
 *   **Real-time Updates**: Server-Sent Events (SSE) push new listens and sync notifications to the UI automatically.
 *   **Retro-Themed UI**: Custom-designed themes featuring a warm 1970s music cabinet aesthetic (light mode) and an 1980s cyberpunk vibe (dark mode).
 *   **AI-Powered**: Customizable AI system prompts for personalized playlist generation.
 *   **Pluggable Architecture**: Easily extensible sync framework for adding more music providers.
 *   **Background Sync**: Configurable automatic synchronization of listening history and playlists.
-</text>
-
-<old_text line=72>
-### Sync Configuration
-
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `SPOTTER_SYNC_INTERVAL` | How often to sync data from providers (Go duration format). | `5m` |
 
 ## Getting Started
 
@@ -34,7 +27,7 @@ Spotter is an AI-powered playlist generator for Navidrome. It aggregates your li
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/spotter.git
+    git clone https://github.com/joestump/spotter.git
     cd spotter
     ```
 
@@ -82,6 +75,13 @@ Spotter is configured using environment variables. You can set these in your she
 | :--- | :--- | :--- |
 | `SPOTTER_SYNC_INTERVAL` | How often to sync data from providers (Go duration format). | `5m` |
 
+### Theme Configuration
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SPOTTER_THEME_AVAILABLE` | Comma-separated list of available DaisyUI theme names. | `light,dark,cupcake` |
+| `SPOTTER_THEME_DEFAULT` | Default theme for new users. | `dark` |
+
 ### Provider Configuration
 
 | Variable | Description | Default |
@@ -89,28 +89,179 @@ Spotter is configured using environment variables. You can set these in your she
 | `SPOTTER_NAVIDROME_BASE_URL` | **Required.** The URL of your Navidrome instance. | *None* |
 | `SPOTTER_SPOTIFY_CLIENT_ID` | Spotify Client ID for API access. | *None* |
 | `SPOTTER_SPOTIFY_CLIENT_SECRET` | Spotify Client Secret. | *None* |
-| `SPOTTER_SPOTIFY_REDIRECT_URL` | OAuth callback URL for Spotify. | `http://localhost:8080/auth/spotify/callback` |
+| `SPOTTER_SPOTIFY_REDIRECT_URL` | OAuth callback URL for Spotify. | `http://127.0.0.1:8080/auth/spotify/callback` |
 | `SPOTTER_LASTFM_API_KEY` | Last.fm API Key. | *None* |
-| `SPOTTER_LASTFM_SHARED_SECRET`| Last.fm Shared Secret. | *None* |
+| `SPOTTER_LASTFM_SHARED_SECRET` | Last.fm Shared Secret. | *None* |
 | `SPOTTER_LASTFM_REDIRECT_URL` | Callback URL for Last.fm auth. | *None* |
 
-### Example `.env`
+### Metadata Enrichment Configuration
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SPOTTER_METADATA_ENABLED` | Enable/disable metadata enrichment. | `true` |
+| `SPOTTER_METADATA_INTERVAL` | How often to run metadata enrichment (Go duration format). | `1h` |
+| `SPOTTER_METADATA_ORDER` | Comma-separated enricher priority order. | `musicbrainz,navidrome,spotify,lastfm,fanart` |
+
+#### MusicBrainz Configuration
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SPOTTER_METADATA_MUSICBRAINZ_USER_AGENT` | User-Agent string for MusicBrainz API requests (required by their API). | `Spotter/1.0.0 (https://github.com/joestump/spotter)` |
+
+#### Fanart.tv Configuration
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SPOTTER_METADATA_FANART_API_KEY` | Fanart.tv personal API key for fetching artist/album artwork. | *None* |
+
+#### Image Download Configuration
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SPOTTER_METADATA_IMAGES_DOWNLOAD` | Whether to download images locally. | `true` |
+| `SPOTTER_METADATA_IMAGES_DIRECTORY` | Directory to store downloaded images. | `./data/images` |
+| `SPOTTER_METADATA_IMAGES_MAX_WIDTH` | Maximum image width (for resizing). | `1000` |
+| `SPOTTER_METADATA_IMAGES_MAX_HEIGHT` | Maximum image height (for resizing). | `1000` |
+
+## Obtaining API Keys
+
+Spotter integrates with several external services for listening history sync and metadata enrichment. Here's how to obtain API keys for each service:
+
+### Spotify (Optional)
+
+Spotify integration enables syncing your recent listening history and enriching metadata with Spotify's extensive database.
+
+1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+2. Log in with your Spotify account
+3. Click **Create App**
+4. Fill in the app details:
+   - **App name**: Spotter (or any name you prefer)
+   - **App description**: Personal music tracking app
+   - **Redirect URI**: `http://localhost:8080/auth/spotify/callback` (or your production URL)
+   - Check the **Web API** checkbox
+5. Click **Save**
+6. On your app's dashboard, click **Settings**
+7. Copy the **Client ID** and **Client Secret**
 
 ```bash
+SPOTTER_SPOTIFY_CLIENT_ID=your_client_id_here
+SPOTTER_SPOTIFY_CLIENT_SECRET=your_client_secret_here
+SPOTTER_SPOTIFY_REDIRECT_URL=http://localhost:8080/auth/spotify/callback
+```
+
+### Last.fm (Optional)
+
+Last.fm integration enables syncing your scrobble history and enriching metadata with Last.fm's community-driven database.
+
+1. Go to [Last.fm API Account Creation](https://www.last.fm/api/account/create)
+2. Log in with your Last.fm account (or create one)
+3. Fill in the application form:
+   - **Application name**: Spotter
+   - **Application description**: Personal music tracking app
+   - **Application homepage**: (optional, can leave blank or use your URL)
+   - **Callback URL**: `http://localhost:8080/auth/lastfm/callback` (or your production URL)
+4. Click **Submit**
+5. You'll receive an **API Key** and **Shared Secret**
+
+```bash
+SPOTTER_LASTFM_API_KEY=your_api_key_here
+SPOTTER_LASTFM_SHARED_SECRET=your_shared_secret_here
+SPOTTER_LASTFM_REDIRECT_URL=http://localhost:8080/auth/lastfm/callback
+```
+
+### MusicBrainz (No API Key Required)
+
+MusicBrainz is a free, open music encyclopedia that provides metadata enrichment. No API key is required, but you **must** provide a proper User-Agent string that identifies your application.
+
+According to [MusicBrainz API requirements](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting), your User-Agent should include:
+- Application name
+- Version
+- Contact URL or email
+
+```bash
+SPOTTER_METADATA_MUSICBRAINZ_USER_AGENT="Spotter/1.0.0 (https://github.com/joestump/spotter)"
+```
+
+### Fanart.tv (Optional)
+
+Fanart.tv provides high-quality artist images, album artwork, and other media artwork.
+
+1. Go to [Fanart.tv](https://fanart.tv/)
+2. Create an account or log in
+3. Go to your [API page](https://fanart.tv/get-an-api-key/)
+4. You'll see your **Personal API Key** (also called "api_key")
+
+```bash
+SPOTTER_METADATA_FANART_API_KEY=your_api_key_here
+```
+
+> **Note**: Fanart.tv has a free tier with rate limits. For personal use, this is typically sufficient.
+
+### Example `.env` File
+
+Here's a complete example `.env` file with all configuration options:
+
+```bash
+# ===================
 # Required
+# ===================
 SPOTTER_NAVIDROME_BASE_URL=https://music.example.com
 
-# Optional - Sync Configuration
-SPOTTER_SYNC_INTERVAL=10m
+# ===================
+# Server Configuration
+# ===================
+SPOTTER_SERVER_PORT=8080
+SPOTTER_SERVER_HOST=0.0.0.0
 
-# Optional - Spotify Integration
-SPOTTER_SPOTIFY_CLIENT_ID=your_spotify_id
-SPOTTER_SPOTIFY_CLIENT_SECRET=your_spotify_secret
+# ===================
+# Database Configuration
+# ===================
+SPOTTER_DATABASE_DRIVER=sqlite3
+SPOTTER_DATABASE_SOURCE=file:spotter.db?cache=shared&_fk=1
+
+# ===================
+# Sync Configuration
+# ===================
+SPOTTER_SYNC_INTERVAL=5m
+
+# ===================
+# Theme Configuration
+# ===================
+SPOTTER_THEME_AVAILABLE=light,dark,cupcake
+SPOTTER_THEME_DEFAULT=dark
+
+# ===================
+# Spotify Integration (Optional)
+# ===================
+SPOTTER_SPOTIFY_CLIENT_ID=your_spotify_client_id
+SPOTTER_SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 SPOTTER_SPOTIFY_REDIRECT_URL=http://localhost:8080/auth/spotify/callback
 
-# Optional - Last.fm Integration
-SPOTTER_LASTFM_API_KEY=your_lastfm_key
-SPOTTER_LASTFM_SHARED_SECRET=your_lastfm_secret
+# ===================
+# Last.fm Integration (Optional)
+# ===================
+SPOTTER_LASTFM_API_KEY=your_lastfm_api_key
+SPOTTER_LASTFM_SHARED_SECRET=your_lastfm_shared_secret
+SPOTTER_LASTFM_REDIRECT_URL=http://localhost:8080/auth/lastfm/callback
+
+# ===================
+# Metadata Enrichment
+# ===================
+SPOTTER_METADATA_ENABLED=true
+SPOTTER_METADATA_INTERVAL=1h
+SPOTTER_METADATA_ORDER=musicbrainz,navidrome,spotify,lastfm,fanart
+
+# MusicBrainz (User-Agent required, no API key needed)
+SPOTTER_METADATA_MUSICBRAINZ_USER_AGENT=Spotter/1.0.0 (https://github.com/joestump/spotter)
+
+# Fanart.tv (Optional - for high-quality artwork)
+SPOTTER_METADATA_FANART_API_KEY=your_fanart_api_key
+
+# Image Download Settings
+SPOTTER_METADATA_IMAGES_DOWNLOAD=true
+SPOTTER_METADATA_IMAGES_DIRECTORY=./data/images
+SPOTTER_METADATA_IMAGES_MAX_WIDTH=1000
+SPOTTER_METADATA_IMAGES_MAX_HEIGHT=1000
 ```
 
 ## Development
@@ -129,7 +280,6 @@ If you make changes to the Tailwind classes in `.templ` files, regenerate the CS
 
 ```bash
 make css
-```
 # Or watch for changes
 npm run watch:css
 ```
@@ -142,6 +292,7 @@ npm run watch:css
 *   **Styling**: `DaisyUI` + `Tailwind CSS` with custom retro themes and `@iconify/tailwind` for icons.
 *   **Background Jobs**: Configurable periodic sync for all connected providers.
 *   **Real-time**: Event Bus + SSE for push notifications and live updates.
+*   **Metadata Enrichment**: Pluggable enricher system that aggregates data from multiple sources (MusicBrainz, Spotify, Last.fm, Fanart.tv, Navidrome).
 
 ## User Features
 
@@ -193,6 +344,18 @@ The dark theme channels the neon-soaked, digital future imagined in 1980s cyberp
 *   **Navidrome**: Automatically connected via your login credentials. View last sync time.
 *   **Spotify**: Optional OAuth integration. Connect/disconnect from Preferences. View last sync time.
 *   **Last.fm**: Optional OAuth integration. Connect/disconnect from Preferences. View last sync time and username.
+
+### Background Tasks
+
+From the Preferences > Tasks page, you can manually run or monitor:
+
+*   **Sync All Listens**: Pull recent listening history from all connected providers
+*   **Sync All Playlists**: Pull playlist data from all connected providers
+*   **Run Metadata Enricher**: Enrich artist, album, and track metadata from external sources
+*   **Sync All Artist Images**: Re-fetch artist images from all connected providers
+*   **Sync All Album Art**: Re-fetch album artwork from all connected providers
+*   **Reset All Data**: Delete all data and re-sync from scratch
+*   **Clear Caches & Cleanup**: Delete old events and perform maintenance tasks
 
 ### Real-time Features
 

@@ -73,7 +73,19 @@ clean: ## Remove build artifacts
 	rm -f ./static/css/output.css
 	rm -f coverage.out coverage.html
 	rm -rf tmp/
+	rm -f build-errors.log
 	@echo "✓ Clean complete"
+
+clean-all: clean ## Remove all generated files (ent, node_modules, cached images)
+	@echo "Cleaning all generated files..."
+	rm -rf node_modules/
+	rm -rf data/images/
+	find ent/ -type f ! -path 'ent/schema/*' ! -name 'generate.go' -delete 2>/dev/null || true
+	find ent/ -type d -empty -delete 2>/dev/null || true
+	@echo "✓ Full clean complete"
+
+regenerate: clean-all deps generate ## Clean all and regenerate from scratch
+	@echo "✓ Regeneration complete"
 
 docker-build: ## Build Docker image
 	@echo "Building Docker image..."

@@ -78,25 +78,45 @@ templ Index(listens []*ent.Listen, currentPage int, totalPages int, cfg *config.
 	}
 }
 
+func hasArtistMatch(listen *ent.Listen) bool {
+	return listen.Edges.Artist != nil
+}
+
+func hasAlbumMatch(listen *ent.Listen) bool {
+	return listen.Edges.Album != nil
+}
+
+func hasTrackMatch(listen *ent.Listen) bool {
+	return listen.Edges.Track != nil
+}
+
 func getArtistURL(listen *ent.Listen) string {
 	if listen.Edges.Artist != nil {
 		return fmt.Sprintf("/library/artist/%d", listen.Edges.Artist.ID)
 	}
-	return fmt.Sprintf("/library/artists?search=%s", listen.ArtistName)
+	return ""
 }
 
 func getAlbumURL(listen *ent.Listen) string {
 	if listen.Edges.Album != nil {
 		return fmt.Sprintf("/library/album/%d", listen.Edges.Album.ID)
 	}
-	return fmt.Sprintf("/library/albums?search=%s", listen.AlbumName)
+	return ""
 }
 
 func getTrackURL(listen *ent.Listen) string {
 	if listen.Edges.Track != nil {
 		return fmt.Sprintf("/library/track/%d", listen.Edges.Track.ID)
 	}
-	return fmt.Sprintf("/library/tracks?search=%s", listen.TrackName)
+	return ""
+}
+
+templ matchIcon() {
+	<span class="icon-[heroicons--check-circle-solid] w-4 h-4 text-success" title="Matched with metadata"></span>
+}
+
+templ unmatchedIcon() {
+	<span class="icon-[heroicons--question-mark-circle] w-4 h-4 text-base-content/30" title="Not yet matched"></span>
 }
 
 templ ListenRow(listen *ent.Listen) {
@@ -127,31 +147,55 @@ templ ListenRow(listen *ent.Listen) {
 			</time>
 		</td>
 		<td>
-			<a
-				href={ templ.URL(getArtistURL(listen)) }
-				class="text-sm hover:text-primary hover:underline"
-				hx-boost="true"
-			>
-				{ listen.ArtistName }
-			</a>
+			<div class="flex items-center gap-1.5">
+				if hasArtistMatch(listen) {
+					@matchIcon()
+					<a
+						href={ templ.URL(getArtistURL(listen)) }
+						class="text-sm hover:text-primary hover:underline"
+						hx-boost="true"
+					>
+						{ listen.ArtistName }
+					</a>
+				} else {
+					@unmatchedIcon()
+					<span class="text-sm text-base-content/60">{ listen.ArtistName }</span>
+				}
+			</div>
 		</td>
 		<td>
-			<a
-				href={ templ.URL(getAlbumURL(listen)) }
-				class="text-sm text-base-content/60 hover:text-secondary hover:underline"
-				hx-boost="true"
-			>
-				{ listen.AlbumName }
-			</a>
+			<div class="flex items-center gap-1.5">
+				if hasAlbumMatch(listen) {
+					@matchIcon()
+					<a
+						href={ templ.URL(getAlbumURL(listen)) }
+						class="text-sm hover:text-secondary hover:underline"
+						hx-boost="true"
+					>
+						{ listen.AlbumName }
+					</a>
+				} else {
+					@unmatchedIcon()
+					<span class="text-sm text-base-content/60">{ listen.AlbumName }</span>
+				}
+			</div>
 		</td>
 		<td>
-			<a
-				href={ templ.URL(getTrackURL(listen)) }
-				class="font-medium hover:text-accent hover:underline"
-				hx-boost="true"
-			>
-				{ listen.TrackName }
-			</a>
+			<div class="flex items-center gap-1.5">
+				if hasTrackMatch(listen) {
+					@matchIcon()
+					<a
+						href={ templ.URL(getTrackURL(listen)) }
+						class="font-medium hover:text-accent hover:underline"
+						hx-boost="true"
+					>
+						{ listen.TrackName }
+					</a>
+				} else {
+					@unmatchedIcon()
+					<span class="font-medium text-base-content/60">{ listen.TrackName }</span>
+				}
+			</div>
 		</td>
 	</tr>
 }

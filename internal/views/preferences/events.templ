@@ -286,10 +286,11 @@ templ Tasks(user *ent.User, tasks []types.Task, events []*ent.SyncEvent, selecte
 				<ul class="list-disc list-inside mb-4 text-base-content/80">
 					<li>Listening history</li>
 					<li>Playlists</li>
-					<li>Artist catalog</li>
-					<li>Album catalog</li>
+					<li>Artist catalog and metadata</li>
+					<li>Album catalog and metadata</li>
 					<li>Track metadata</li>
-					<li>Downloaded images</li>
+					<li>Downloaded images and artwork</li>
+					<li>All enriched data (MusicBrainz IDs, Spotify IDs, bios, etc.)</li>
 				</ul>
 				<p class="text-sm text-base-content/60">
 					After deletion, data will be re-synced from your connected providers. This action cannot be undone.
@@ -360,6 +361,26 @@ templ taskButton(taskID string, taskName string) {
 		<button
 			class="btn btn-primary btn-sm"
 			hx-post="/preferences/tasks/enrich-metadata"
+			hx-swap="none"
+		>
+			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
+			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
+			Run
+		</button>
+	} else if taskID == "sync-artist-images" {
+		<button
+			class="btn btn-primary btn-sm"
+			hx-post="/preferences/tasks/sync-artist-images"
+			hx-swap="none"
+		>
+			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
+			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
+			Run
+		</button>
+	} else if taskID == "sync-album-images" {
+		<button
+			class="btn btn-primary btn-sm"
+			hx-post="/preferences/tasks/sync-album-images"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>

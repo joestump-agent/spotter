@@ -179,6 +179,8 @@ func main() {
 		r.Post("/preferences/tasks/sync-listens", h.TaskSyncListens)
 		r.Post("/preferences/tasks/sync-playlists", h.TaskSyncPlaylists)
 		r.Post("/preferences/tasks/enrich-metadata", h.TaskEnrichMetadata)
+		r.Post("/preferences/tasks/sync-artist-images", h.TaskSyncArtistImages)
+		r.Post("/preferences/tasks/sync-album-images", h.TaskSyncAlbumImages)
 		r.Post("/preferences/tasks/reset", h.TaskResetData)
 		r.Post("/preferences/tasks/cleanup", h.TaskCleanup)
 
