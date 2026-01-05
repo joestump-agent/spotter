@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"spotter/ent"
 	"spotter/internal/config"
@@ -268,6 +269,27 @@ func TestEnrichArtist_MockAPI(t *testing.T) {
 	assert.Equal(t, "Test bio", data.AIBiography)
 	assert.Contains(t, data.AITags, "tag1")
 	assert.Contains(t, data.AITags, "tag2")
+}
+
+func TestEnrichArtist_SkipRecentlyEnriched(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.OpenAI.APIKey = "test-key"
+	cfg.Metadata.AI.PromptsDirectory = "./nonexistent"
+
+	factory := New(nil, cfg)
+	enricher, err := factory(context.Background(), nil)
+	require.NoError(t, err)
+
+	recent := time.Now().Add(-24 * time.Hour)
+	artist := &ent.Artist{
+		Name:             "Test Artist",
+		LastAiEnrichedAt: &recent,
+	}
+
+	artistEnricher := enricher.(enrichers.ArtistEnricher)
+	data, err := artistEnricher.EnrichArtist(context.Background(), artist)
+	assert.NoError(t, err)
+	assert.Nil(t, data)
 }
 
 func TestEnrichAlbum_MockAPI(t *testing.T) {

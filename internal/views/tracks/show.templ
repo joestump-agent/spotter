@@ -171,7 +171,7 @@ func processTags(track *ent.Track) []TagInfo {
 	return result
 }
 
-templ Show(track *ent.Track, stats *TrackStats, cfg *config.Config, currentTimeframe string) {
+templ Show(track *ent.Track, playlists []*ent.Playlist, stats *TrackStats, cfg *config.Config, currentTimeframe string) {
 	@layouts.Dashboard(fmt.Sprintf("%s | Tracks | Spotter", track.Name), cfg, "/library/track") {
 		<!-- AI Regenerate Modal -->
 		<dialog id="ai-regenerate-modal" class="modal">
@@ -341,6 +341,20 @@ templ Show(track *ent.Track, stats *TrackStats, cfg *config.Config, currentTimef
 			<!-- AI Summary Card -->
 			@components.AISummaryCard(track.AiSummary, "AI Insights")
 		</div>
+		<!-- Playlists containing this Track -->
+		if len(playlists) > 0 {
+			<div class="mb-8">
+				<h3 class="text-2xl font-bold mb-6 flex items-center gap-2">
+					<span class="icon-[heroicons--queue-list] w-6 h-6"></span>
+					In Playlists
+				</h3>
+				<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+					for _, pl := range playlists {
+						@components.PlaylistTile(pl, "Includes this track")
+					}
+				</div>
+			</div>
+		}
 	}
 }
 

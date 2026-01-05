@@ -9,6 +9,8 @@ import (
 	"spotter/ent"
 	"spotter/ent/artist"
 	"spotter/ent/listen"
+	"spotter/ent/playlist"
+	"spotter/ent/playlisttrack"
 	"spotter/ent/track"
 	"spotter/ent/user"
 	"spotter/internal/enrichers"
@@ -68,10 +70,13 @@ func (h *Handler) TrackShow(w http.ResponseWriter, r *http.Request) {
 		timeframe = "30d"
 	}
 
+	// Get playlists containing this track
+	playlists := h.getPlaylistsWithTrack(r.Context(), u.ID, trackID)
+
 	// Get stats
 	stats := h.getTrackStats(r.Context(), u.ID, t, timeframe)
 
-	h.Render(w, r, tracks.Show(t, stats, h.Config, timeframe))
+	h.Render(w, r, tracks.Show(t, playlists, stats, h.Config, timeframe))
 }
 
 func (h *Handler) TrackChart(w http.ResponseWriter, r *http.Request) {
@@ -118,6 +123,22 @@ func (h *Handler) TrackChart(w http.ResponseWriter, r *http.Request) {
 
 	data := h.getProviderHistory(r.Context(), u.ID, artistName, albumName, t.Name, timeframe)
 	h.Render(w, r, tracks.ProviderHistoryChartContent(trackID, data))
+}
+
+func (h *Handler) getPlaylistsWithTrack(ctx context.Context, userID int, trackID int) []*ent.Playlist {
+	playlists, err := h.Client.Playlist.Query().
+		Where(
+			playlist.HasUserWith(user.ID(userID)),
+			playlist.HasTracksWith(
+				playlisttrack.HasTrackWith(track.ID(trackID)),
+			),
+		).
+		All(ctx)
+	if err != nil {
+		h.Logger.Error("failed to get playlists for track", "error", err)
+		return nil
+	}
+	return playlists
 }
 
 func (h *Handler) getTrackStats(ctx context.Context, userID int, t *ent.Track, timeframe string) *tracks.TrackStats {

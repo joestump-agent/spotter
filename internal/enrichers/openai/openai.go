@@ -470,6 +470,12 @@ func deduplicateTags(newTags, existingTags []string, maxTags int) []string {
 
 // EnrichArtist fetches AI-generated metadata for an artist.
 func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enrichers.ArtistData, error) {
+	// Check if we've enriched this artist recently (within 30 days)
+	if artist.LastAiEnrichedAt != nil && time.Since(*artist.LastAiEnrichedAt) < 30*24*time.Hour {
+		e.logger.Debug("skipping AI enrichment for artist (recently enriched)", "name", artist.Name, "last_enriched", artist.LastAiEnrichedAt)
+		return nil, nil
+	}
+
 	e.logger.Info("AI enricher called for artist", "name", artist.Name, "id", artist.ID)
 
 	// Build template data

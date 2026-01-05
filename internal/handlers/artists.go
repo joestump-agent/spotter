@@ -12,6 +12,7 @@ import (
 	"spotter/ent/artist"
 	"spotter/ent/listen"
 	"spotter/ent/playlist"
+	"spotter/ent/playlisttrack"
 	"spotter/ent/track"
 	"spotter/ent/user"
 	"spotter/internal/enrichers"
@@ -72,7 +73,7 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get playlists containing this artist
-	playlists := h.getPlaylistsWithArtist(r.Context(), u.ID, a.Name)
+	playlists := h.getPlaylistsWithArtist(r.Context(), u.ID, a.ID)
 
 	// Get stats
 	stats := h.getArtistStats(r.Context(), u.ID, a.Name, timeframe)
@@ -259,37 +260,36 @@ func (h *Handler) getTopTracksForArtist(ctx context.Context, userID int, artistN
 	return topTracks
 }
 
-func (h *Handler) getPlaylistsWithArtist(ctx context.Context, userID int, artistName string) []artists.PlaylistWithArtist {
-	// Get listens for this artist to find which playlists contain them
-	// Since playlists don't have direct track associations, we'll match by source
-	// This is a simplified approach - in reality you'd need playlist track data
-
-	pls, err := h.Client.Playlist.Query().
-		Where(playlist.HasUserWith(user.ID(userID))).
+func (h *Handler) getPlaylistsWithArtist(ctx context.Context, userID int, artistID int) []artists.PlaylistWithArtist {
+	// Find playlists that contain tracks by this artist
+	playlists, err := h.Client.Playlist.Query().
+		Where(
+			playlist.HasUserWith(user.ID(userID)),
+			playlist.HasTracksWith(
+				playlisttrack.HasTrackWith(
+					track.HasArtistWith(artist.ID(artistID)),
+				),
+			),
+		).
+		WithTracks(func(q *ent.PlaylistTrackQuery) {
+			q.Where(
+				playlisttrack.HasTrackWith(
+					track.HasArtistWith(artist.ID(artistID)),
+				),
+			)
+		}).
 		All(ctx)
 	if err != nil {
 		h.Logger.Error("failed to get playlists", "error", err)
 		return nil
 	}
 
-	// For now, return empty as we don't have playlist-track associations
-	// This would need enhancement with actual playlist track data
-	result := make([]artists.PlaylistWithArtist, 0)
-	for _, pl := range pls {
-		// Count listens for this artist from this playlist's source
-		count, _ := h.Client.Listen.Query().
-			Where(
-				listen.HasUserWith(user.ID(userID)),
-				listen.ArtistName(artistName),
-				listen.Source(pl.Source),
-			).
-			Count(ctx)
-		if count > 0 {
-			result = append(result, artists.PlaylistWithArtist{
-				Playlist:   pl,
-				TrackCount: count,
-			})
-		}
+	result := make([]artists.PlaylistWithArtist, 0, len(playlists))
+	for _, pl := range playlists {
+		result = append(result, artists.PlaylistWithArtist{
+			Playlist:   pl,
+			TrackCount: len(pl.Edges.Tracks),
+		})
 	}
 
 	return result
