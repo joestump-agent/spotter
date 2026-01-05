@@ -473,6 +473,12 @@ func (h *Handler) PreferencesTasks(w http.ResponseWriter, r *http.Request) {
 		syncevent.EventTypePlaylistSkipped,
 		syncevent.EventTypeSyncCompleted,
 		syncevent.EventTypeSyncFailed,
+		// Playlist sync events (to Navidrome)
+		syncevent.EventTypePlaylistSyncStarted,
+		syncevent.EventTypePlaylistSyncCompleted,
+		syncevent.EventTypePlaylistSyncFailed,
+		syncevent.EventTypePlaylistSyncRemoved,
+		// Metadata enrichment events
 		syncevent.EventTypeMetadataStarted,
 		syncevent.EventTypeMetadataCompleted,
 		syncevent.EventTypeMetadataFailed,

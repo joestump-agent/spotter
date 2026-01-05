@@ -1,6 +1,7 @@
 # Binaries
 bin/
 spotter-server
+server
 *.exe
 *.test
 *.out

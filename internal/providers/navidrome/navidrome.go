@@ -31,6 +31,7 @@ type Provider struct {
 var _ providers.HistoryFetcher = (*Provider)(nil)
 var _ providers.PlaylistManager = (*Provider)(nil)
 var _ providers.Authenticator = (*Provider)(nil)
+var _ providers.PlaylistSyncer = (*Provider)(nil)
 
 // New returns a factory that creates Navidrome providers for a given user.
 func New(logger *slog.Logger, cfg *config.Config) providers.Factory {
@@ -542,13 +543,361 @@ func (p *Provider) getPlaylistTracks(ctx context.Context, playlistID string) (tr
 func (p *Provider) CreatePlaylist(ctx context.Context, name, description string, tracks []providers.Track) error {
 	p.logger.Info("creating playlist on navidrome", "username", p.user.Username, "name", name, "track_count", len(tracks))
 
-	if len(tracks) == 0 {
-		return fmt.Errorf("cannot create empty playlist")
+	// Use SyncPlaylist for consistency
+	_, err := p.SyncPlaylist(ctx, providers.SyncPlaylistRequest{
+		Name:        name,
+		Description: description,
+		Tracks:      tracks,
+	})
+	return err
+}
+
+// SyncPlaylist creates or updates a playlist on Navidrome from external data.
+// Returns the remote playlist ID created/updated on Navidrome.
+func (p *Provider) SyncPlaylist(ctx context.Context, playlist providers.SyncPlaylistRequest) (string, error) {
+	p.logger.Info("syncing playlist to navidrome",
+		"username", p.user.Username,
+		"name", playlist.Name,
+		"track_count", len(playlist.Tracks))
+
+	// Generate Auth Parameters
+	salt := generateSalt()
+	token := generateToken(p.auth.Password, salt)
+
+	params := url.Values{}
+	params.Set("u", p.user.Username)
+	params.Set("t", token)
+	params.Set("s", salt)
+	params.Set("v", "1.16.1")
+	params.Set("c", "spotter")
+	params.Set("f", "json")
+	params.Set("name", playlist.Name)
+
+	// Add track IDs (songId parameter can be repeated)
+	trackIDs := make([]string, 0, len(playlist.Tracks))
+	for _, track := range playlist.Tracks {
+		if track.ID != "" {
+			params.Add("songId", track.ID)
+			trackIDs = append(trackIDs, track.ID)
+		}
 	}
 
-	// TODO: Implement actual Navidrome API call
-	// Subsonic API: createPlaylist
+	p.logger.Debug("creating playlist with track IDs",
+		"playlist_name", playlist.Name,
+		"track_id_count", len(trackIDs))
 
+	baseURL := strings.TrimSuffix(p.config.Navidrome.BaseURL, "/")
+	apiURL := fmt.Sprintf("%s/rest/createPlaylist.view?%s", baseURL, params.Encode())
+
+	p.logger.Debug("calling navidrome API",
+		"endpoint", "createPlaylist.view",
+		"base_url", baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		p.logger.Error("failed to create HTTP request",
+			"error", err)
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.logger.Error("failed to execute HTTP request",
+			"error", err)
+		return "", fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	p.logger.Debug("received navidrome API response",
+		"status_code", resp.StatusCode,
+		"status", resp.Status)
+
+	if resp.StatusCode != http.StatusOK {
+		p.logger.Error("navidrome API returned non-OK status",
+			"status_code", resp.StatusCode,
+			"status", resp.Status)
+		return "", fmt.Errorf("navidrome API returned status: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		SubsonicResponse struct {
+			Status string `json:"status"`
+			Error  struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+			Playlist struct {
+				ID string `json:"id"`
+			} `json:"playlist"`
+		} `json:"subsonic-response"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.SubsonicResponse.Status == "failed" {
+		p.logger.Error("navidrome API returned error",
+			"error_code", result.SubsonicResponse.Error.Code,
+			"error_message", result.SubsonicResponse.Error.Message)
+		return "", fmt.Errorf("navidrome API error: %s", result.SubsonicResponse.Error.Message)
+	}
+
+	playlistID := result.SubsonicResponse.Playlist.ID
+	p.logger.Info("created playlist on navidrome",
+		"playlist_id", playlistID,
+		"name", playlist.Name,
+		"track_count", len(trackIDs))
+
+	// Update playlist with description if provided
+	if playlist.Description != "" {
+		if err := p.updatePlaylistMetadata(ctx, playlistID, playlist.Name, playlist.Description); err != nil {
+			p.logger.Warn("failed to update playlist description", "error", err)
+		}
+	}
+
+	return playlistID, nil
+}
+
+// updatePlaylistMetadata updates the name and comment of an existing playlist.
+func (p *Provider) updatePlaylistMetadata(ctx context.Context, playlistID, name, comment string) error {
+	salt := generateSalt()
+	token := generateToken(p.auth.Password, salt)
+
+	params := url.Values{}
+	params.Set("u", p.user.Username)
+	params.Set("t", token)
+	params.Set("s", salt)
+	params.Set("v", "1.16.1")
+	params.Set("c", "spotter")
+	params.Set("f", "json")
+	params.Set("playlistId", playlistID)
+	params.Set("name", name)
+	params.Set("comment", comment)
+
+	baseURL := strings.TrimSuffix(p.config.Navidrome.BaseURL, "/")
+	apiURL := fmt.Sprintf("%s/rest/updatePlaylist.view?%s", baseURL, params.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("navidrome API returned status: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		SubsonicResponse struct {
+			Status string `json:"status"`
+			Error  struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"subsonic-response"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.SubsonicResponse.Status == "failed" {
+		return fmt.Errorf("navidrome API error: %s", result.SubsonicResponse.Error.Message)
+	}
+
+	return nil
+}
+
+// DeletePlaylist removes a playlist from Navidrome.
+func (p *Provider) DeletePlaylist(ctx context.Context, remotePlaylistID string) error {
+	p.logger.Info("deleting playlist from navidrome",
+		"username", p.user.Username,
+		"playlist_id", remotePlaylistID)
+
+	salt := generateSalt()
+	token := generateToken(p.auth.Password, salt)
+
+	params := url.Values{}
+	params.Set("u", p.user.Username)
+	params.Set("t", token)
+	params.Set("s", salt)
+	params.Set("v", "1.16.1")
+	params.Set("c", "spotter")
+	params.Set("f", "json")
+	params.Set("id", remotePlaylistID)
+
+	baseURL := strings.TrimSuffix(p.config.Navidrome.BaseURL, "/")
+	apiURL := fmt.Sprintf("%s/rest/deletePlaylist.view?%s", baseURL, params.Encode())
+
+	p.logger.Debug("calling navidrome API",
+		"endpoint", "deletePlaylist.view",
+		"playlist_id", remotePlaylistID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		p.logger.Error("failed to create HTTP request",
+			"error", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.logger.Error("failed to execute HTTP request",
+			"error", err)
+		return fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	p.logger.Debug("received navidrome API response",
+		"status_code", resp.StatusCode,
+		"status", resp.Status)
+
+	if resp.StatusCode != http.StatusOK {
+		p.logger.Error("navidrome API returned non-OK status",
+			"status_code", resp.StatusCode)
+		return fmt.Errorf("navidrome API returned status: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		SubsonicResponse struct {
+			Status string `json:"status"`
+			Error  struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"subsonic-response"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.SubsonicResponse.Status == "failed" {
+		p.logger.Error("navidrome API returned error",
+			"error_code", result.SubsonicResponse.Error.Code,
+			"error_message", result.SubsonicResponse.Error.Message)
+		return fmt.Errorf("navidrome API error: %s", result.SubsonicResponse.Error.Message)
+	}
+
+	p.logger.Info("deleted playlist from navidrome successfully",
+		"playlist_id", remotePlaylistID)
+	return nil
+}
+
+// UpdatePlaylistTracks replaces all tracks in a playlist.
+func (p *Provider) UpdatePlaylistTracks(ctx context.Context, remotePlaylistID string, tracks []providers.Track) error {
+	p.logger.Info("updating playlist tracks on navidrome",
+		"username", p.user.Username,
+		"playlist_id", remotePlaylistID,
+		"new_track_count", len(tracks))
+
+	// The Subsonic API updatePlaylist can add/remove tracks
+	// To replace all tracks, we need to:
+	// 1. Get current tracks
+	// 2. Remove all existing tracks
+	// 3. Add all new tracks
+
+	// First, get current tracks to know their indices
+	currentTracks, _, _ := p.getPlaylistTracks(ctx, remotePlaylistID)
+
+	p.logger.Debug("fetched current playlist tracks",
+		"playlist_id", remotePlaylistID,
+		"current_track_count", len(currentTracks))
+
+	salt := generateSalt()
+	token := generateToken(p.auth.Password, salt)
+
+	params := url.Values{}
+	params.Set("u", p.user.Username)
+	params.Set("t", token)
+	params.Set("s", salt)
+	params.Set("v", "1.16.1")
+	params.Set("c", "spotter")
+	params.Set("f", "json")
+	params.Set("playlistId", remotePlaylistID)
+
+	// Remove existing tracks by index (0-based, remove from end to start to avoid index shifting)
+	for i := len(currentTracks) - 1; i >= 0; i-- {
+		params.Add("songIndexToRemove", fmt.Sprintf("%d", i))
+	}
+
+	// Add new tracks
+	newTrackIDs := make([]string, 0, len(tracks))
+	for _, track := range tracks {
+		if track.ID != "" {
+			params.Add("songIdToAdd", track.ID)
+			newTrackIDs = append(newTrackIDs, track.ID)
+		}
+	}
+
+	p.logger.Debug("prepared playlist update",
+		"playlist_id", remotePlaylistID,
+		"tracks_to_remove", len(currentTracks),
+		"tracks_to_add", len(newTrackIDs))
+
+	baseURL := strings.TrimSuffix(p.config.Navidrome.BaseURL, "/")
+	apiURL := fmt.Sprintf("%s/rest/updatePlaylist.view?%s", baseURL, params.Encode())
+
+	p.logger.Debug("calling navidrome API",
+		"endpoint", "updatePlaylist.view",
+		"playlist_id", remotePlaylistID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		p.logger.Error("failed to create HTTP request",
+			"error", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.logger.Error("failed to execute HTTP request",
+			"error", err)
+		return fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	p.logger.Debug("received navidrome API response",
+		"status_code", resp.StatusCode,
+		"status", resp.Status)
+
+	if resp.StatusCode != http.StatusOK {
+		p.logger.Error("navidrome API returned non-OK status",
+			"status_code", resp.StatusCode)
+		return fmt.Errorf("navidrome API returned status: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		SubsonicResponse struct {
+			Status string `json:"status"`
+			Error  struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"subsonic-response"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.SubsonicResponse.Status == "failed" {
+		p.logger.Error("navidrome API returned error",
+			"error_code", result.SubsonicResponse.Error.Code,
+			"error_message", result.SubsonicResponse.Error.Message)
+		return fmt.Errorf("navidrome API error: %s", result.SubsonicResponse.Error.Message)
+	}
+
+	p.logger.Info("updated playlist tracks on navidrome",
+		"playlist_id", remotePlaylistID,
+		"old_track_count", len(currentTracks),
+		"new_track_count", len(newTrackIDs))
 	return nil
 }
 

@@ -76,6 +76,100 @@ Spotter is configured using environment variables. You can set these in your she
 | :--- | :--- | :--- |
 | `SPOTTER_SYNC_INTERVAL` | How often to sync data from providers (Go duration format). | `5m` |
 
+### Playlist Sync Configuration
+
+Spotter can sync playlists from external sources (Spotify, Last.fm) to your Navidrome library.
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SPOTTER_PLAYLIST_SYNC_SYNC_INTERVAL` | How often to sync enabled playlists to Navidrome (Go duration format). | `1h` |
+| `SPOTTER_PLAYLIST_SYNC_DELETE_ON_UNSYNC` | Delete Navidrome playlist when sync is disabled. | `false` |
+| `SPOTTER_PLAYLIST_SYNC_MIN_MATCH_CONFIDENCE` | Minimum confidence for fuzzy track matching (0.0-1.0). | `0.8` |
+| `SPOTTER_PLAYLIST_SYNC_INCLUDE_UNMATCHED_TRACKS` | Include unmatched tracks as placeholders. | `false` |
+
+#### How Playlist Syncing Works
+
+1. Navigate to any non-Navidrome playlist (e.g., from Spotify or Last.fm)
+2. Toggle "Sync to Navidrome" to enable syncing
+3. Spotter will:
+   - Match tracks from the source playlist to your Navidrome library
+   - Create a playlist in Navidrome with the matched tracks
+   - Periodically update the playlist when the source changes
+
+#### Track Matching
+
+Tracks are matched using the following strategies (in order of priority):
+1. **ISRC Match**: If available, matches by International Standard Recording Code
+2. **Exact Match**: Matches by exact track name and artist (case-insensitive)
+3. **Fuzzy Match**: Matches similar track names with configurable confidence threshold
+
+Tracks that cannot be matched to your Navidrome library will be skipped (or included as placeholders if configured).
+
+#### Sync Status UI
+
+The playlist detail page displays a dropdown button showing the current sync state. Detailed sync information (last synced timestamp, progress bar, and match statistics) is consolidated within the dropdown menu to provide a cleaner header experience. The UI uses a unified **5-state logic** defined in `sync_status.templ`:
+
+| State | Label | Color | Condition |
+| :--- | :--- | :--- | :--- |
+| **Error** | "Sync Error" | Red | `SyncError != ""` |
+| **Pending** | "Syncing..." | Blue | `SyncEnabled == true` AND `NavidromeID == ""` (initial sync in progress) |
+| **Neutral** | "Not Synced" / "Sync Disabled" | Gray | `TotalTracks == 0` (nothing to sync) OR `SyncEnabled == false` |
+| **Success** | "Fully Synced" | Green | `MatchedTracks == TotalTracks` AND `TotalTracks > 0` |
+| **Warning** | "Partial Sync" | Orange | `MatchedTracks < TotalTracks` (includes 0 matches when sync has completed) |
+
+**Important:** The Warning state includes the case where 0 tracks are matched but the sync process has completed (i.e., `NavidromeID` is set). This distinguishes between "sync in progress" (Pending/Blue) and "sync completed but nothing matched" (Warning/Orange).
+
+When the dropdown menu is expanded, users can see:
+- Last synced timestamp with timeago formatting
+- A compact progress bar showing track match statistics
+- Available sync actions (Sync Now, Rebuild, Disable)
+
+The progress bar automatically polls for updates every 5 seconds **only** while in the "Pending" state. Polling stops once a final state (Success, Warning, or Error) is reached.
+
+#### Sync Events
+
+Playlist sync operations are logged to the `sync_events` table for auditing and debugging. Event types include:
+- `playlist_sync_started` - Sync operation initiated
+- `playlist_sync_completed` - Sync completed successfully (includes track match stats)
+- `playlist_sync_failed` - Sync failed with error details
+- `playlist_sync_removed` - Playlist was removed from Navidrome
+
+#### Playlist Sync API
+
+Spotter provides endpoints for managing playlist sync:
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/playlists/{id}/toggle-sync` | POST | Enables or disables sync to Navidrome |
+| `/playlists/{id}/sync` | POST | Triggers an immediate async sync to Navidrome |
+| `/playlists/{id}/rebuild-sync` | POST | Deletes Navidrome playlist and re-syncs from scratch |
+| `/playlists/{id}/sync-status` | GET | Returns current sync status as JSON |
+| `/playlists/{id}/sync-progress` | GET | Returns sync progress bar component (for HTMX polling) |
+| `/playlists/{id}/debug-sync` | POST | Triggers synchronous sync and returns detailed results |
+
+Example debug sync response:
+```json
+{
+  "playlist_id": 5,
+  "playlist_name": "Discover Weekly",
+  "source": "spotify",
+  "success": true,
+  "navidrome_playlist_id": "abc123",
+  "matched_track_count": 25,
+  "total_track_count": 30,
+  "duration_ms": 1250
+}
+```
+
+#### UI Notifications
+
+Toast notifications appear in the UI during sync operations:
+- **Info**: "Syncing Playlist" - when sync starts
+- **Success**: "Playlist Synced" - with track match count
+- **Error**: "Playlist Sync Failed" - with error message
+- **Warning**: "Rebuilding Playlist" - when rebuild starts
+- **Info**: "Playlist Removed" - when unsynced from Navidrome
+
 ### Theme Configuration
 
 | Variable | Description | Default |

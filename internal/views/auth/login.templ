@@ -16,7 +16,6 @@ templ Login(navidromeURL string) {
 							</div>
 							<h1 class="text-4xl font-bold text-primary tracking-wide">Spotter</h1>
 						</div>
-
 						<form class="space-y-4" hx-post="/login" hx-target="body">
 							<div class="form-control">
 								<label class="label" for="username">
@@ -33,7 +32,6 @@ templ Login(navidromeURL string) {
 									autofocus
 								/>
 							</div>
-
 							<div class="form-control">
 								<label class="label" for="password">
 									<span class="label-text font-medium">Password</span>
@@ -48,7 +46,6 @@ templ Login(navidromeURL string) {
 									class="input input-bordered w-full"
 								/>
 							</div>
-
 							<div class="form-control mt-6">
 								<button type="submit" class="btn btn-primary w-full gap-2">
 									<span class="icon-[heroicons--arrow-right-on-rectangle] w-5 h-5"></span>
@@ -56,9 +53,7 @@ templ Login(navidromeURL string) {
 								</button>
 							</div>
 						</form>
-
 						<div class="divider"></div>
-
 						<div class="alert alert-info">
 							<span class="icon-[heroicons--information-circle] w-5 h-5 flex-shrink-0 self-start mt-0.5"></span>
 							<div class="text-sm">

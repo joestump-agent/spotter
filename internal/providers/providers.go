@@ -25,6 +25,7 @@ type Track struct {
 	DurationMs int
 	PlayedAt   time.Time // When the track was listened to (UTC)
 	URL        string    // Deep link to the track
+	ISRC       string    // International Standard Recording Code (for matching)
 }
 
 // Playlist represents a collection of tracks.
@@ -61,6 +62,27 @@ type PlaylistManager interface {
 	GetPlaylists(ctx context.Context) ([]Playlist, error)
 	// CreatePlaylist creates a new playlist with the given tracks.
 	CreatePlaylist(ctx context.Context, name, description string, tracks []Track) error
+}
+
+// SyncPlaylistRequest contains the data needed to sync a playlist to a provider.
+type SyncPlaylistRequest struct {
+	Name        string  // Playlist name
+	Description string  // Playlist description
+	ImageURL    string  // Optional: URL to cover art
+	Tracks      []Track // Tracks to include in the playlist
+}
+
+// PlaylistSyncer is implemented by providers that can receive playlists from other sources.
+// This is separate from PlaylistManager which reads playlists FROM a provider.
+type PlaylistSyncer interface {
+	Provider
+	// SyncPlaylist creates or updates a playlist on this provider from external data.
+	// Returns the remote playlist ID created/updated on this provider.
+	SyncPlaylist(ctx context.Context, playlist SyncPlaylistRequest) (string, error)
+	// DeletePlaylist removes a playlist from this provider.
+	DeletePlaylist(ctx context.Context, remotePlaylistID string) error
+	// UpdatePlaylistTracks replaces all tracks in a playlist.
+	UpdatePlaylistTracks(ctx context.Context, remotePlaylistID string, tracks []Track) error
 }
 
 // AuthConfig contains the configuration needed to start an OAuth flow.

@@ -23,6 +23,10 @@ func showGetOrDefault(value, defaultVal string) string {
 	return value
 }
 
+func isNavidromeOwned(playlist *ent.Playlist) bool {
+	return playlist.Source == "navidrome"
+}
+
 templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *config.Config) {
 	@layouts.Dashboard(fmt.Sprintf("%s | Playlists | Spotter", playlist.Name), cfg, "/playlists") {
 		<!-- Hero Section -->
@@ -55,7 +59,6 @@ templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *confi
 						<!-- Playlist Details -->
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-3 mb-2">
-								<span class="badge badge-outline badge-lg">Playlist</span>
 								@providerBadge(playlist.Source)
 							</div>
 							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ playlist.Name }</h1>
@@ -77,16 +80,20 @@ templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *confi
 									<span class="font-semibold">{ formatNumber(playlist.UniqueAlbums) }</span> albums
 								</div>
 							</div>
-							<!-- External Link -->
-							<div class="flex flex-wrap gap-2">
-								if playlist.ExternalURL != "" {
-									@components.ExternalLinkBadge(
-										fmt.Sprintf("Open in %s", capitalizeFirst(playlist.Source)),
-										playlist.ExternalURL,
-										components.ProviderIcon(playlist.Source),
-										components.ProviderBadgeClass(playlist.Source),
-									)
-								}
+							<!-- Playlist Menu Bar -->
+							<div class="flex flex-wrap items-center gap-4">
+								@components.PlaylistMenuBar(components.PlaylistMenuConfig{
+									PlaylistID:       playlist.ID,
+									PlaylistName:     playlist.Name,
+									Source:           playlist.Source,
+									SyncToNavidrome:  playlist.SyncToNavidrome,
+									NavidromeID:      playlist.NavidromePlaylistID,
+									IsNavidromeOwned: isNavidromeOwned(playlist),
+									LastSyncedAt:     playlist.LastSyncedAt,
+									MatchedTracks:    playlist.MatchedTrackCount,
+									TotalTracks:      playlist.TrackCount,
+									SyncError:        playlist.SyncError,
+								})
 							</div>
 						</div>
 					</div>
@@ -142,6 +149,8 @@ templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *confi
 						{Label: "Track Count", Value: formatNumber(playlist.TrackCount)},
 						{Label: "Unique Artists", Value: formatNumber(playlist.UniqueArtists)},
 						{Label: "Unique Albums", Value: formatNumber(playlist.UniqueAlbums)},
+						{Label: "Sync to Navidrome", Value: formatSyncStatus(playlist)},
+						{Label: "Navidrome Playlist ID", Value: showGetOrDefault(playlist.NavidromePlaylistID, "N/A")},
 						{Label: "External URL", Value: showGetOrDefault(playlist.ExternalURL, "N/A"), Link: playlist.ExternalURL},
 						{Label: "Created", Value: showFormatDate(playlist.CreatedAt)},
 						{Label: "Updated", Value: showFormatDate(playlist.UpdatedAt)},
@@ -157,4 +166,14 @@ func capitalizeFirst(s string) string {
 		return s
 	}
 	return string(s[0]-32) + s[1:]
+}
+
+func formatSyncStatus(playlist *ent.Playlist) string {
+	if playlist.Source == "navidrome" {
+		return "Native"
+	}
+	if playlist.SyncToNavidrome {
+		return "Enabled"
+	}
+	return "Disabled"
 }

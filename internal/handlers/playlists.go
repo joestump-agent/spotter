@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"spotter/ent"
 	"spotter/ent/playlist"
@@ -11,6 +14,7 @@ import (
 	"spotter/internal/views/components"
 	"spotter/internal/views/playlists"
 
+	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -150,4 +154,613 @@ func (h *Handler) playlistTracksToRows(tracks []*ent.PlaylistTrack) []components
 		rows[i] = row
 	}
 	return rows
+}
+
+// TogglePlaylistSync toggles the Navidrome sync status of a playlist
+func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	h.Logger.Debug("toggle playlist sync requested",
+		"playlist_id", playlistID,
+		"user_id", u.ID,
+		"username", u.Username)
+
+	// Verify ownership and get current state
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get playlist for toggle sync",
+			"playlist_id", playlistID,
+			"error", err)
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	// Only allow toggling sync for non-Navidrome playlists
+	if pl.Source == "navidrome" {
+		h.Logger.Warn("attempted to toggle sync for Navidrome playlist",
+			"playlist_id", playlistID,
+			"playlist_name", pl.Name)
+		http.Error(w, "Cannot toggle sync for Navidrome playlists", http.StatusBadRequest)
+		return
+	}
+
+	newSyncState := !pl.SyncToNavidrome
+
+	updatedPlaylist, err := h.Client.Playlist.UpdateOne(pl).
+		SetSyncToNavidrome(newSyncState).
+		Save(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to toggle playlist sync",
+			"playlist_id", playlistID,
+			"error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	h.Logger.Info("toggled playlist sync",
+		"playlist_id", playlistID,
+		"playlist_name", pl.Name,
+		"source", pl.Source,
+		"sync_enabled", newSyncState,
+		"user", u.Username,
+	)
+
+	// Trigger sync or removal based on new state
+	// CRITICAL: Use a detached context with timeout since r.Context() is cancelled when response completes
+	if h.PlaylistSyncSvc != nil {
+		if newSyncState {
+			// Sync enabled - trigger immediate sync to Navidrome (async)
+			h.Logger.Debug("dispatching async sync to Navidrome",
+				"playlist_id", playlistID,
+				"playlist_name", pl.Name)
+
+			go func() {
+				// Use a new context with timeout since HTTP request context will be cancelled
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+
+				h.Logger.Debug("starting async playlist sync",
+					"playlist_id", playlistID)
+
+				if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, playlistID); err != nil {
+					h.Logger.Error("failed to sync playlist to Navidrome",
+						"playlist_id", playlistID,
+						"playlist_name", pl.Name,
+						"error", err)
+				} else {
+					h.Logger.Info("async playlist sync completed",
+						"playlist_id", playlistID,
+						"playlist_name", pl.Name)
+				}
+			}()
+		} else {
+			// Sync disabled - optionally remove from Navidrome (async)
+			h.Logger.Debug("dispatching async removal from Navidrome",
+				"playlist_id", playlistID,
+				"playlist_name", pl.Name)
+
+			go func() {
+				// Use a new context with timeout since HTTP request context will be cancelled
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				defer cancel()
+
+				h.Logger.Debug("starting async playlist removal",
+					"playlist_id", playlistID)
+
+				if err := h.PlaylistSyncSvc.RemovePlaylistFromNavidrome(ctx, playlistID); err != nil {
+					h.Logger.Error("failed to remove playlist from Navidrome",
+						"playlist_id", playlistID,
+						"playlist_name", pl.Name,
+						"error", err)
+				} else {
+					h.Logger.Info("async playlist removal completed",
+						"playlist_id", playlistID,
+						"playlist_name", pl.Name)
+				}
+			}()
+		}
+	} else {
+		h.Logger.Warn("PlaylistSyncSvc is nil, cannot sync playlist",
+			"playlist_id", playlistID)
+	}
+
+	// Return the updated sync dropdown component
+	h.renderPlaylistSyncDropdown(w, r, updatedPlaylist)
+}
+
+// DebugPlaylistSync performs a synchronous playlist sync and returns detailed results as JSON
+// This is useful for debugging sync issues without relying on async/UI feedback
+func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	h.Logger.Info("debug playlist sync requested",
+		"playlist_id", playlistID,
+		"user_id", u.ID,
+		"username", u.Username)
+
+	// Verify ownership
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get playlist for debug sync",
+			"playlist_id", playlistID,
+			"error", err)
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Playlist not found"})
+		return
+	}
+
+	// Check if sync service is available
+	if h.PlaylistSyncSvc == nil {
+		h.Logger.Error("PlaylistSyncSvc is nil")
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Playlist sync service not configured"})
+		return
+	}
+
+	// Use request context with extended timeout for debug endpoint
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+
+	startTime := time.Now()
+
+	// Perform synchronous sync
+	err = h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, playlistID)
+
+	duration := time.Since(startTime)
+
+	// Reload playlist to get updated state
+	updatedPl, _ := h.Client.Playlist.Query().
+		Where(playlist.ID(playlistID)).
+		Only(ctx)
+
+	response := map[string]interface{}{
+		"playlist_id":   playlistID,
+		"playlist_name": pl.Name,
+		"source":        pl.Source,
+		"duration_ms":   duration.Milliseconds(),
+		"sync_enabled":  pl.SyncToNavidrome,
+	}
+
+	if err != nil {
+		response["success"] = false
+		response["error"] = err.Error()
+		h.Logger.Error("debug playlist sync failed",
+			"playlist_id", playlistID,
+			"playlist_name", pl.Name,
+			"error", err,
+			"duration", duration)
+	} else {
+		response["success"] = true
+		if updatedPl != nil {
+			response["navidrome_playlist_id"] = updatedPl.NavidromePlaylistID
+			response["matched_track_count"] = updatedPl.MatchedTrackCount
+			response["total_track_count"] = updatedPl.TrackCount
+			response["last_synced_at"] = updatedPl.LastSyncedAt
+			if updatedPl.SyncError != "" {
+				response["sync_error"] = updatedPl.SyncError
+			}
+		}
+		h.Logger.Info("debug playlist sync completed",
+			"playlist_id", playlistID,
+			"playlist_name", pl.Name,
+			"duration", duration)
+	}
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+// GetPlaylistSyncProgress returns the sync progress bar component for HTMX polling.
+// GET /playlists/{id}/sync-progress
+func (h *Handler) GetPlaylistSyncProgress(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership and get current state
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	// Render the sync progress bar component
+	config := components.SyncStatusConfig{
+		EntityType:     "playlist",
+		EntityID:       pl.ID,
+		SyncEnabled:    pl.SyncToNavidrome,
+		LastSyncedAt:   pl.LastSyncedAt,
+		SyncError:      pl.SyncError,
+		TargetProvider: "navidrome",
+		MatchedTracks:  pl.MatchedTrackCount,
+		TotalTracks:    pl.TrackCount,
+		NavidromeID:    pl.NavidromePlaylistID,
+	}
+
+	component := components.SyncProgressBar(config)
+	templ.Handler(component).ServeHTTP(w, r)
+}
+
+// GetPlaylistSyncStatus returns the current sync status for a playlist as JSON
+func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership and get current state
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Playlist not found"})
+		return
+	}
+
+	response := map[string]interface{}{
+		"playlist_id":           pl.ID,
+		"playlist_name":         pl.Name,
+		"source":                pl.Source,
+		"sync_to_navidrome":     pl.SyncToNavidrome,
+		"navidrome_playlist_id": pl.NavidromePlaylistID,
+		"matched_track_count":   pl.MatchedTrackCount,
+		"total_track_count":     pl.TrackCount,
+		"last_synced_at":        pl.LastSyncedAt,
+		"sync_error":            pl.SyncError,
+	}
+
+	if pl.TrackCount > 0 {
+		response["match_percentage"] = float64(pl.MatchedTrackCount) / float64(pl.TrackCount) * 100
+	}
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+// respondJSON sends a JSON response with the given status code
+func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(data)
+}
+
+// SyncPlaylist triggers an immediate sync of a playlist to Navidrome.
+// POST /playlists/{id}/sync
+func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	h.Logger.Info("manual playlist sync requested",
+		"playlist_id", playlistID,
+		"user_id", u.ID,
+		"username", u.Username)
+
+	// Verify ownership and get current state
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get playlist for sync",
+			"playlist_id", playlistID,
+			"error", err)
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	// Only allow syncing non-Navidrome playlists with sync enabled
+	if pl.Source == "navidrome" {
+		h.Logger.Warn("attempted to sync Navidrome playlist",
+			"playlist_id", playlistID,
+			"playlist_name", pl.Name)
+		http.Error(w, "Cannot sync Navidrome playlists", http.StatusBadRequest)
+		return
+	}
+
+	if !pl.SyncToNavidrome {
+		h.Logger.Warn("attempted to sync playlist with sync disabled",
+			"playlist_id", playlistID,
+			"playlist_name", pl.Name)
+		http.Error(w, "Sync is not enabled for this playlist", http.StatusBadRequest)
+		return
+	}
+
+	// Trigger sync (async)
+	if h.PlaylistSyncSvc != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			h.Logger.Debug("starting async playlist sync",
+				"playlist_id", playlistID)
+
+			if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, playlistID); err != nil {
+				h.Logger.Error("manual playlist sync failed",
+					"playlist_id", playlistID,
+					"playlist_name", pl.Name,
+					"error", err)
+			} else {
+				h.Logger.Info("manual playlist sync completed",
+					"playlist_id", playlistID,
+					"playlist_name", pl.Name,
+					"duration", time.Since(startTime))
+			}
+		}()
+	} else {
+		h.Logger.Warn("PlaylistSyncSvc is nil, cannot sync playlist",
+			"playlist_id", playlistID)
+	}
+
+	// Reload playlist to get latest state
+	updatedPlaylist, err := h.Client.Playlist.Get(r.Context(), playlistID)
+	if err != nil {
+		h.Logger.Error("failed to reload playlist after sync trigger",
+			"playlist_id", playlistID,
+			"error", err)
+		// Still return something reasonable
+		updatedPlaylist = pl
+	}
+
+	h.Logger.Info("manual playlist sync triggered",
+		"playlist_id", playlistID,
+		"playlist_name", pl.Name,
+		"user", u.Username)
+
+	// Return the updated sync dropdown component
+	h.renderPlaylistSyncDropdown(w, r, updatedPlaylist)
+}
+
+// RebuildPlaylistSync clears and rebuilds the Navidrome playlist sync.
+// POST /playlists/{id}/rebuild-sync
+func (h *Handler) RebuildPlaylistSync(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	h.Logger.Info("playlist rebuild sync requested",
+		"playlist_id", playlistID,
+		"user_id", u.ID,
+		"username", u.Username)
+
+	// Verify ownership and get current state
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get playlist for rebuild",
+			"playlist_id", playlistID,
+			"error", err)
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	// Only allow rebuilding non-Navidrome playlists with sync enabled
+	if pl.Source == "navidrome" {
+		h.Logger.Warn("attempted to rebuild Navidrome playlist",
+			"playlist_id", playlistID,
+			"playlist_name", pl.Name)
+		http.Error(w, "Cannot rebuild Navidrome playlists", http.StatusBadRequest)
+		return
+	}
+
+	if !pl.SyncToNavidrome {
+		h.Logger.Warn("attempted to rebuild playlist with sync disabled",
+			"playlist_id", playlistID,
+			"playlist_name", pl.Name)
+		http.Error(w, "Sync is not enabled for this playlist", http.StatusBadRequest)
+		return
+	}
+
+	// Trigger rebuild (async)
+	if h.PlaylistSyncSvc != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			h.Logger.Debug("starting async playlist rebuild",
+				"playlist_id", playlistID)
+
+			if err := h.PlaylistSyncSvc.RebuildPlaylistSync(ctx, playlistID); err != nil {
+				h.Logger.Error("playlist rebuild failed",
+					"playlist_id", playlistID,
+					"playlist_name", pl.Name,
+					"error", err)
+			} else {
+				h.Logger.Info("playlist rebuild completed",
+					"playlist_id", playlistID,
+					"playlist_name", pl.Name,
+					"duration", time.Since(startTime))
+			}
+		}()
+	} else {
+		h.Logger.Warn("PlaylistSyncSvc is nil, cannot rebuild playlist",
+			"playlist_id", playlistID)
+	}
+
+	// Reload playlist to get latest state
+	updatedPlaylist, err := h.Client.Playlist.Get(r.Context(), playlistID)
+	if err != nil {
+		h.Logger.Error("failed to reload playlist after rebuild trigger",
+			"playlist_id", playlistID,
+			"error", err)
+		// Still return something reasonable
+		updatedPlaylist = pl
+	}
+
+	h.Logger.Info("playlist rebuild triggered",
+		"playlist_id", playlistID,
+		"playlist_name", pl.Name,
+		"user", u.Username)
+
+	// Return the updated sync dropdown component
+	h.renderPlaylistSyncDropdown(w, r, updatedPlaylist)
+}
+
+// renderPlaylistSyncDropdown renders the playlist sync dropdown component
+func (h *Handler) renderPlaylistSyncDropdown(w http.ResponseWriter, r *http.Request, pl *ent.Playlist) {
+	config := components.PlaylistSyncDropdownConfig{
+		PlaylistID:      pl.ID,
+		PlaylistName:    pl.Name,
+		Source:          pl.Source,
+		SyncToNavidrome: pl.SyncToNavidrome,
+		NavidromeID:     pl.NavidromePlaylistID,
+		LastSyncedAt:    pl.LastSyncedAt,
+		MatchedTracks:   pl.MatchedTrackCount,
+		TotalTracks:     pl.TrackCount,
+		SyncError:       pl.SyncError,
+	}
+
+	component := components.PlaylistSyncDropdown(config)
+	templ.Handler(component).ServeHTTP(w, r)
+}
+
+// PlaylistGenerateMetadata generates AI title and description for a playlist
+func (h *Handler) PlaylistGenerateMetadata(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	h.Logger.Info("generating AI metadata for playlist",
+		"playlist_id", playlistID,
+		"playlist_name", pl.Name,
+	)
+
+	// TODO: Implement actual AI metadata generation
+	// This will use the MetadataService to generate title/description based on tracks
+
+	w.Header().Set("HX-Trigger", "playlist-metadata-generated")
+	w.WriteHeader(http.StatusOK)
+}
+
+// PlaylistGenerateArtwork generates AI album art for a playlist
+func (h *Handler) PlaylistGenerateArtwork(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	h.Logger.Info("generating AI artwork for playlist",
+		"playlist_id", playlistID,
+		"playlist_name", pl.Name,
+	)
+
+	// TODO: Implement actual AI artwork generation
+	// This will use an image generation service to create cover art based on playlist themes
+
+	w.Header().Set("HX-Trigger", "playlist-artwork-generated")
+	w.WriteHeader(http.StatusOK)
 }

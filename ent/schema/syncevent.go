@@ -19,7 +19,7 @@ func (SyncEvent) Fields() []ent.Field {
 	return []ent.Field{
 		field.Enum("event_type").
 			Values(
-				// Sync events
+				// Sync events (from providers)
 				"sync_started",
 				"track_added",
 				"track_skipped",
@@ -27,6 +27,11 @@ func (SyncEvent) Fields() []ent.Field {
 				"playlist_skipped",
 				"sync_completed",
 				"sync_failed",
+				// Playlist sync events (to Navidrome)
+				"playlist_sync_started",
+				"playlist_sync_completed",
+				"playlist_sync_failed",
+				"playlist_sync_removed",
 				// Metadata enrichment events
 				"metadata_started",
 				"metadata_completed",

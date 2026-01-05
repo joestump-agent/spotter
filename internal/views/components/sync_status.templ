@@ -1,0 +1,391 @@
+package components
+
+import (
+	"fmt"
+	"time"
+)
+
+// SyncStatusConfig defines the configuration for sync status components.
+type SyncStatusConfig struct {
+	EntityType     string     // "playlist", "mixtape"
+	EntityID       int        // Database ID of the entity
+	SyncEnabled    bool       // Whether sync is enabled
+	LastSyncedAt   *time.Time // When the entity was last synced
+	SyncError      string     // Empty if no error
+	TargetProvider string     // e.g., "navidrome"
+	MatchedTracks  int        // Number of tracks matched
+	TotalTracks    int        // Total number of tracks
+	NavidromeID    string     // Remote ID in target provider (if synced)
+}
+
+// SyncState represents the current state of a sync operation.
+// This is the single source of truth for 5-state sync logic.
+type SyncState int
+
+const (
+	SyncStateNeutral SyncState = iota // Disabled or no tracks to sync
+	SyncStateSuccess                  // 100% match rate (MatchedTracks == TotalTracks > 0)
+	SyncStateWarning                  // Partial match (MatchedTracks < TotalTracks, including 0 matches)
+	SyncStateError                    // Sync error present
+	SyncStatePending                  // Sync in progress (enabled but no NavidromeID yet)
+)
+
+// getSyncState determines the sync state based on configuration.
+// This is the SINGLE SOURCE OF TRUTH for 5-state sync logic:
+//  1. Error (Red):    SyncError != ""
+//  2. Pending (Blue): SyncEnabled && NavidromeID == "" && SyncError == ""
+//  3. Neutral (Gray): TotalTracks == 0 (nothing to sync) OR SyncEnabled == false
+//  4. Success (Green): MatchedTracks == TotalTracks && TotalTracks > 0
+//  5. Warning (Orange): MatchedTracks < TotalTracks (includes 0 matches when sync completed)
+func getSyncState(config SyncStatusConfig) SyncState {
+	// State 1: Sync is disabled - neutral
+	if !config.SyncEnabled {
+		return SyncStateNeutral
+	}
+
+	// State 2: Error takes highest priority
+	if config.SyncError != "" {
+		return SyncStateError
+	}
+
+	// State 3: Pending - sync enabled but not yet completed (no NavidromeID)
+	if config.NavidromeID == "" {
+		return SyncStatePending
+	}
+
+	// At this point, sync is enabled, no error, and has a NavidromeID (sync completed)
+
+	// State 4: Neutral - no tracks to sync
+	if config.TotalTracks == 0 {
+		return SyncStateNeutral
+	}
+
+	// State 5: Success - all tracks matched
+	if config.MatchedTracks == config.TotalTracks {
+		return SyncStateSuccess
+	}
+
+	// State 6: Warning - partial match (including 0 matches when TotalTracks > 0)
+	// This catches MatchedTracks < TotalTracks, including MatchedTracks == 0
+	return SyncStateWarning
+}
+
+// formatRelativeTime formats a time as a relative string like "2 hours ago"
+func formatRelativeTime(t *time.Time) string {
+	if t == nil {
+		return "Never"
+	}
+
+	duration := time.Since(*t)
+	switch {
+	case duration < time.Minute:
+		return "Just now"
+	case duration < time.Hour:
+		minutes := int(duration.Minutes())
+		if minutes == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", minutes)
+	case duration < 24*time.Hour:
+		hours := int(duration.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	case duration < 7*24*time.Hour:
+		days := int(duration.Hours() / 24)
+		if days == 1 {
+			return "Yesterday"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	default:
+		return t.Local().Format("Jan 2, 2006")
+	}
+}
+
+// getMatchPercentage calculates the match percentage
+func getMatchPercentage(matched, total int) int {
+	if total == 0 {
+		return 0
+	}
+	return int(float64(matched) / float64(total) * 100)
+}
+
+// getProgressBarClass returns the appropriate progress class based on sync state.
+func getProgressBarClass(state SyncState) string {
+	switch state {
+	case SyncStateSuccess:
+		return "progress-success"
+	case SyncStateWarning:
+		return "progress-warning"
+	case SyncStateError:
+		return "progress-error"
+	case SyncStatePending:
+		return "progress-info"
+	default:
+		return "progress-info"
+	}
+}
+
+// getBadgeClass returns the appropriate badge class based on sync state.
+func getBadgeClass(state SyncState) string {
+	switch state {
+	case SyncStateSuccess:
+		return "badge-success"
+	case SyncStateWarning:
+		return "badge-warning"
+	case SyncStateError:
+		return "badge-error"
+	case SyncStatePending:
+		return "badge-info"
+	default:
+		return "badge-ghost"
+	}
+}
+
+// getIconClass returns the appropriate icon class based on sync state.
+func getIconClass(state SyncState) string {
+	switch state {
+	case SyncStateSuccess:
+		return "icon-[heroicons--check-circle]"
+	case SyncStateWarning:
+		return "icon-[heroicons--exclamation-triangle]"
+	case SyncStateError:
+		return "icon-[heroicons--exclamation-circle]"
+	case SyncStatePending:
+		return "icon-[heroicons--arrow-path]"
+	default:
+		return "icon-[heroicons--minus-circle]"
+	}
+}
+
+// getTextColorClass returns the appropriate text color class based on sync state.
+func getTextColorClass(state SyncState) string {
+	switch state {
+	case SyncStateSuccess:
+		return "text-success"
+	case SyncStateWarning:
+		return "text-warning"
+	case SyncStateError:
+		return "text-error"
+	case SyncStatePending:
+		return "text-info"
+	default:
+		return "text-base-content/60"
+	}
+}
+
+// getButtonClass returns the appropriate button class based on sync state.
+func getButtonClass(state SyncState) string {
+	switch state {
+	case SyncStateSuccess:
+		return "btn-success"
+	case SyncStateWarning:
+		return "btn-warning"
+	case SyncStateError:
+		return "btn-error"
+	case SyncStatePending:
+		return "btn-info"
+	default:
+		return "btn-ghost"
+	}
+}
+
+// getSyncStateLabel returns a human-readable label for the sync state.
+// Uses unified terminology: "Fully Synced", "Partial Sync", "Syncing...", "Sync Error"
+func getSyncStateLabel(state SyncState, config SyncStatusConfig) string {
+	switch state {
+	case SyncStateSuccess:
+		return "Fully Synced"
+	case SyncStateWarning:
+		return "Partial Sync"
+	case SyncStateError:
+		return "Sync Error"
+	case SyncStatePending:
+		return "Syncing..."
+	default:
+		if !config.SyncEnabled {
+			return "Sync Disabled"
+		}
+		return "Not Synced"
+	}
+}
+
+// isPending returns true if the sync is in a pending/in-progress state.
+func isPending(config SyncStatusConfig) bool {
+	return config.SyncEnabled && config.NavidromeID == "" && config.SyncError == ""
+}
+
+// SyncProgressBar renders a compact progress bar showing sync status.
+// Similar in style to the track popularity bar.
+// Note: The label shown here should match the dropdown button label for consistency.
+templ SyncProgressBar(config SyncStatusConfig) {
+	if config.SyncEnabled {
+		<div
+			id={ fmt.Sprintf("sync-progress-%s-%d", config.EntityType, config.EntityID) }
+			class="flex flex-col gap-1 w-full"
+			if isPending(config) {
+				hx-get={ fmt.Sprintf("/%ss/%d/sync-progress", config.EntityType, config.EntityID) }
+				hx-trigger="every 5s"
+				hx-swap="outerHTML"
+			}
+		>
+			@syncProgressBarContent(config)
+		</div>
+	}
+}
+
+// syncProgressBarContent renders the inner content of the progress bar (for HTMX updates).
+// Removed redundant status label - the track count is sufficient when displayed below dropdown.
+templ syncProgressBarContent(config SyncStatusConfig) {
+	<!-- Track count display -->
+	<div class="flex items-center justify-end text-xs">
+		if config.TotalTracks > 0 {
+			<span class="text-base-content/60">
+				{ fmt.Sprintf("%d/%d tracks", config.MatchedTracks, config.TotalTracks) }
+			</span>
+		} else {
+			<span class="text-base-content/60">0 tracks</span>
+		}
+	</div>
+	<!-- Progress bar -->
+	if config.TotalTracks > 0 {
+		<progress
+			class={ "progress h-2 w-full", getProgressBarClass(getSyncState(config)) }
+			value={ fmt.Sprintf("%d", config.MatchedTracks) }
+			max={ fmt.Sprintf("%d", config.TotalTracks) }
+		></progress>
+	} else {
+		<progress
+			class="progress h-2 w-full progress-info"
+			value="0"
+			max="100"
+		></progress>
+	}
+}
+
+// SyncStatusBadge renders a small badge indicating sync status.
+// Suitable for use in lists, tiles, and table rows.
+// Uses 5-state color logic: Success, Warning, Error, Pending, Neutral
+templ SyncStatusBadge(config SyncStatusConfig) {
+	if config.SyncEnabled {
+		<span
+			class={ "badge badge-sm gap-1", getBadgeClass(getSyncState(config)) }
+			if config.SyncError != "" {
+				title={ config.SyncError }
+			}
+		>
+			<span class={ getIconClass(getSyncState(config)), "w-3 h-3", templ.KV("animate-spin", isPending(config)) }></span>
+			{ getSyncStateLabel(getSyncState(config), config) }
+		</span>
+	}
+}
+
+// SyncStatusDetail renders a detailed sync status view with last sync time, errors, and match stats.
+// Suitable for entity detail pages.
+templ SyncStatusDetail(config SyncStatusConfig) {
+	<div
+		class="card bg-base-100 shadow-lg"
+		id={ fmt.Sprintf("sync-status-detail-%s-%d", config.EntityType, config.EntityID) }
+		if isPending(config) {
+			hx-get={ fmt.Sprintf("/%ss/%d/sync-status-detail", config.EntityType, config.EntityID) }
+			hx-trigger="every 5s"
+			hx-swap="outerHTML"
+		}
+	>
+		<div class="card-body">
+			<div class="flex items-center justify-between">
+				<h3 class="card-title text-base">
+					<span class="icon-[heroicons--arrow-path] w-5 h-5 text-primary"></span>
+					Sync Status
+				</h3>
+				@SyncStatusBadge(config)
+			</div>
+			<div class="divider my-2"></div>
+			<div class="grid grid-cols-2 gap-4 text-sm">
+				<!-- Sync Target -->
+				<div>
+					<span class="text-base-content/60">Target</span>
+					<p class="font-medium capitalize">{ config.TargetProvider }</p>
+				</div>
+				<!-- Status -->
+				<div>
+					<span class="text-base-content/60">Status</span>
+					<p class={ "font-medium", getTextColorClass(getSyncState(config)) }>
+						{ getSyncStateLabel(getSyncState(config), config) }
+					</p>
+				</div>
+				<!-- Last Synced -->
+				<div>
+					<span class="text-base-content/60">Last Synced</span>
+					<p class="font-medium">{ formatRelativeTime(config.LastSyncedAt) }</p>
+				</div>
+				<!-- Track Match Rate -->
+				<div>
+					<span class="text-base-content/60">Track Match Rate</span>
+					<p class="font-medium">
+						if config.TotalTracks > 0 {
+							{ fmt.Sprintf("%d/%d (%d%%)", config.MatchedTracks, config.TotalTracks, getMatchPercentage(config.MatchedTracks, config.TotalTracks)) }
+						} else {
+							N/A
+						}
+					</p>
+				</div>
+			</div>
+			<!-- Progress Bar for Match Rate -->
+			if config.TotalTracks > 0 && config.SyncEnabled {
+				<div class="mt-4">
+					<div class="flex justify-between text-xs text-base-content/60 mb-1">
+						<span>Matched Tracks</span>
+						<span>{ fmt.Sprintf("%d%%", getMatchPercentage(config.MatchedTracks, config.TotalTracks)) }</span>
+					</div>
+					<progress
+						class={ "progress w-full", getProgressBarClass(getSyncState(config)) }
+						value={ fmt.Sprintf("%d", config.MatchedTracks) }
+						max={ fmt.Sprintf("%d", config.TotalTracks) }
+					></progress>
+				</div>
+			}
+			<!-- Error Message -->
+			if config.SyncError != "" {
+				<div class="alert alert-error mt-4">
+					<span class="icon-[heroicons--exclamation-triangle] w-5 h-5"></span>
+					<div>
+						<h4 class="font-bold text-sm">Sync Failed</h4>
+						<p class="text-xs">{ config.SyncError }</p>
+					</div>
+				</div>
+			}
+			<!-- Remote ID Info -->
+			if config.NavidromeID != "" {
+				<div class="mt-4 text-xs text-base-content/50">
+					<span class="font-mono">{ config.TargetProvider } ID: { config.NavidromeID }</span>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+// SyncStatusInline renders a compact inline sync status indicator.
+// Suitable for use in table rows or compact lists.
+// Uses 5-state color logic: Success, Warning, Error, Pending, Neutral
+templ SyncStatusInline(config SyncStatusConfig) {
+	if config.SyncEnabled {
+		<div class="flex items-center gap-2">
+			<span
+				class="tooltip tooltip-left"
+				if config.SyncError != "" {
+					data-tip={ config.SyncError }
+				}
+				else
+				if config.NavidromeID != "" {
+					data-tip={ fmt.Sprintf("%s: %d/%d tracks (%d%%)", getSyncStateLabel(getSyncState(config), config), config.MatchedTracks, config.TotalTracks, getMatchPercentage(config.MatchedTracks, config.TotalTracks)) }
+				} else {
+					data-tip="Sync pending"
+				}
+			>
+				<span class={ getIconClass(getSyncState(config)), "w-4 h-4", getTextColorClass(getSyncState(config)), templ.KV("animate-spin", isPending(config)) }></span>
+			</span>
+		</div>
+	}
+}

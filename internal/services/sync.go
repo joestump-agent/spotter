@@ -480,13 +480,49 @@ func (s *Syncer) updateLastSyncedAt(ctx context.Context, u *ent.User, providerTy
 func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source providers.Type, playlists []providers.Playlist) (int, int, error) {
 	addedCount := 0
 	updatedCount := 0
+	skippedCount := 0
 	providerName := string(source)
+
+	// If importing from Navidrome, get all playlist IDs that are managed by Spotter
+	// (i.e., playlists synced from other sources to Navidrome)
+	spotterManagedNavidromeIDs := make(map[string]bool)
+	if source == providers.TypeNavidrome {
+		managedPlaylists, err := s.Client.Playlist.Query().
+			Where(
+				playlist.HasUserWith(user.ID(u.ID)),
+				playlist.NavidromePlaylistIDNEQ(""),
+				playlist.SyncToNavidrome(true),
+			).
+			All(ctx)
+		if err != nil {
+			s.Logger.Warn("failed to query Spotter-managed playlists", "error", err)
+		} else {
+			for _, mp := range managedPlaylists {
+				spotterManagedNavidromeIDs[mp.NavidromePlaylistID] = true
+			}
+			if len(spotterManagedNavidromeIDs) > 0 {
+				s.Logger.Debug("found Spotter-managed Navidrome playlists to exclude",
+					"count", len(spotterManagedNavidromeIDs))
+			}
+		}
+	}
 
 	for _, pl := range playlists {
 		if pl.Name == "" {
 			s.logEvent(ctx, u, syncevent.EventTypePlaylistSkipped, providerName,
 				"Skipped playlist with empty name",
 				map[string]interface{}{"playlist_id": pl.ID, "reason": "empty_name"})
+			continue
+		}
+
+		// Skip Navidrome playlists that are managed by Spotter (synced from other sources)
+		if source == providers.TypeNavidrome && spotterManagedNavidromeIDs[pl.ID] {
+			s.Logger.Debug("skipping Spotter-managed Navidrome playlist",
+				"playlist_id", pl.ID, "name", pl.Name)
+			s.logEvent(ctx, u, syncevent.EventTypePlaylistSkipped, providerName,
+				fmt.Sprintf("Skipped Spotter-managed playlist: %s", pl.Name),
+				map[string]interface{}{"playlist_id": pl.ID, "reason": "spotter_managed"})
+			skippedCount++
 			continue
 		}
 
@@ -557,6 +593,10 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 				s.Logger.Warn("failed to persist playlist tracks", "playlist", pl.Name, "error", err)
 			}
 		}
+	}
+	if skippedCount > 0 {
+		s.Logger.Info("skipped Spotter-managed playlists during import",
+			"provider", providerName, "skipped", skippedCount)
 	}
 	return addedCount, updatedCount, nil
 }

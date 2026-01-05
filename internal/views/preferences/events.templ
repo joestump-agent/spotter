@@ -34,6 +34,15 @@ func formatEventType(et syncevent.EventType) string {
 		return "Sync Completed"
 	case syncevent.EventTypeSyncFailed:
 		return "Sync Failed"
+	// Playlist sync events (to Navidrome)
+	case syncevent.EventTypePlaylistSyncStarted:
+		return "Playlist Sync Started"
+	case syncevent.EventTypePlaylistSyncCompleted:
+		return "Playlist Sync Completed"
+	case syncevent.EventTypePlaylistSyncFailed:
+		return "Playlist Sync Failed"
+	case syncevent.EventTypePlaylistSyncRemoved:
+		return "Playlist Sync Removed"
 	case syncevent.EventTypeMetadataStarted:
 		return "Metadata Started"
 	case syncevent.EventTypeMetadataCompleted:
@@ -84,16 +93,20 @@ func formatLidarrEvent(s string) string {
 
 func eventTypeClass(et syncevent.EventType) string {
 	switch et {
-	case syncevent.EventTypeSyncStarted, syncevent.EventTypeMetadataStarted, syncevent.EventTypeCleanupStarted:
+	case syncevent.EventTypeSyncStarted, syncevent.EventTypeMetadataStarted, syncevent.EventTypeCleanupStarted,
+		syncevent.EventTypePlaylistSyncStarted:
 		return "badge-info"
 	case syncevent.EventTypeTrackAdded, syncevent.EventTypePlaylistAdded, syncevent.EventTypeSyncCompleted,
 		syncevent.EventTypeMetadataCompleted, syncevent.EventTypeCleanupCompleted,
 		syncevent.EventTypeArtistEnriched, syncevent.EventTypeAlbumEnriched, syncevent.EventTypeTrackEnriched,
-		syncevent.EventTypeImageDownloaded, syncevent.EventTypeCatalogBuilt:
+		syncevent.EventTypeImageDownloaded, syncevent.EventTypeCatalogBuilt,
+		syncevent.EventTypePlaylistSyncCompleted:
 		return "badge-success"
-	case syncevent.EventTypeTrackSkipped, syncevent.EventTypePlaylistSkipped, syncevent.EventTypeDataReset:
+	case syncevent.EventTypeTrackSkipped, syncevent.EventTypePlaylistSkipped, syncevent.EventTypeDataReset,
+		syncevent.EventTypePlaylistSyncRemoved:
 		return "badge-warning"
-	case syncevent.EventTypeSyncFailed, syncevent.EventTypeMetadataFailed:
+	case syncevent.EventTypeSyncFailed, syncevent.EventTypeMetadataFailed,
+		syncevent.EventTypePlaylistSyncFailed:
 		return "badge-error"
 	default:
 		if len(string(et)) > 7 && string(et)[:7] == "lidarr_" {

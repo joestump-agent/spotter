@@ -1,0 +1,383 @@
+package components
+
+import (
+	"fmt"
+	"time"
+)
+
+// ActionButtonDropdownConfig defines the configuration for the dropdown button.
+// This is a reusable component for split-button dropdowns with actions.
+//
+// Example usage:
+//
+//	@ActionButtonDropdown(ActionButtonDropdownConfig{
+//		ID:           "playlist-sync-123",
+//		Label:        "Synced to Navidrome",
+//		IconClass:    "icon-[heroicons--check-circle]",
+//		ButtonClass:  "btn-success",
+//		IsEnabled:    true,
+//		LastActionAt: &lastSyncedAt,
+//		Actions: []DropdownAction{
+//			{Label: "Sync Now", IconClass: "icon-[heroicons--arrow-path]", HtmxPost: "/sync"},
+//		},
+//	})
+type ActionButtonDropdownConfig struct {
+	// Display
+	ID          string // Unique ID for the component (for HTMX targeting)
+	Label       string // Main button label (e.g., "Connected", "Synced")
+	IconClass   string // Icon class for main button
+	ButtonClass string // Tailwind class (e.g., "btn-success")
+	ButtonStyle string // Custom inline style (alternative to class)
+	Size        string // Button size: "sm", "md", "lg" (default: "md")
+
+	// State
+	IsEnabled       bool       // Whether the feature is active/connected
+	LastActionAt    *time.Time // Last sync/action timestamp (for timeago)
+	LastActionLabel string     // Label for last action (default: "Last synced")
+	StatusBadge     string     // Optional status badge text
+	StatusBadgeType string     // Badge type: "success", "warning", "error", "info"
+
+	// Actions (each action can have HTMX attrs, modal trigger, or href)
+	Actions []DropdownAction // List of dropdown menu actions
+
+	// Enable/Disable action (shown as button when disabled)
+	EnableLabel     string // Label for enable button (e.g., "Enable Sync", "Connect")
+	EnableIconClass string // Icon for enable button
+	EnableURL       string // URL to enable (e.g., POST to enable sync)
+	EnableHref      string // Href for enable (e.g., OAuth connect URL)
+	EnableHtmxPost  string // HTMX POST URL for enable action
+	EnableTarget    string // HTMX target for enable action
+
+	// Modal support for enable action
+	DisableModalID string          // Modal ID for disable confirmation
+	DisableModal   templ.Component // Modal content for disable action
+
+	// Menu customization
+	MenuHeader templ.Component // Optional header component to render at the top of the dropdown menu
+	MenuFooter templ.Component // Optional footer component to render at the bottom of the dropdown menu
+	MenuWidth  string          // Custom menu width class (default: "w-56")
+}
+
+// DropdownAction defines a single action in the dropdown menu.
+type DropdownAction struct {
+	Label       string // Action label
+	Description string // Optional description (smaller text)
+	IconClass   string // Icon class
+	IconColor   string // Icon color class (e.g., "text-warning")
+
+	// One of these should be set:
+	HtmxPost   string // HTMX POST URL
+	HtmxGet    string // HTMX GET URL
+	HtmxTarget string // HTMX swap target (default: none/swap-none)
+	ModalID    string // Modal ID to open
+	Href       string // Regular link
+
+	IsDivider  bool // If true, renders a divider instead of action
+	IsDisabled bool // Grayed out, non-interactive
+}
+
+// Helper function to format ISO time for timeago
+func formatISOTime(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+// Helper to generate modal onclick handler
+func modalClickHandler(id string) string {
+	return fmt.Sprintf("this.closest('details').removeAttribute('open'); document.getElementById('%s').showModal()", id)
+}
+
+// getSizeClass returns the button size class
+func getSizeClass(size string) string {
+	switch size {
+	case "sm":
+		return "btn-sm"
+	case "lg":
+		return "btn-lg"
+	default:
+		return ""
+	}
+}
+
+// getIconSizeClass returns the icon size class based on button size
+func getIconSizeClass(size string) string {
+	switch size {
+	case "sm":
+		return "w-4 h-4"
+	case "lg":
+		return "w-6 h-6"
+	default:
+		return "w-5 h-5"
+	}
+}
+
+// ActionButtonDropdown renders a split-button with dropdown menu for actions.
+// When enabled, shows a display button with dropdown chevron for actions.
+// When disabled, shows a simple enable button.
+templ ActionButtonDropdown(config ActionButtonDropdownConfig) {
+	<div id={ config.ID } class="action-button-dropdown">
+		if config.IsEnabled {
+			@actionButtonEnabled(config)
+		} else {
+			@actionButtonDisabled(config)
+		}
+		// Render any associated modal
+		if config.DisableModal != nil {
+			@config.DisableModal
+		}
+	</div>
+}
+
+// actionButtonEnabled renders the split-button when the feature is enabled
+templ actionButtonEnabled(config ActionButtonDropdownConfig) {
+	<div>
+		<div class="inline-flex items-stretch rounded-lg overflow-visible w-full">
+			// Main display button (non-interactive, shows current state)
+			if config.ButtonStyle != "" {
+				<div class={ "btn flex-1 gap-2 rounded-r-none pointer-events-none text-white border-r-white/30", getSizeClass(config.Size) } style={ config.ButtonStyle }>
+					if config.IconClass != "" {
+						<span class={ config.IconClass, getIconSizeClass(config.Size) }></span>
+					}
+					{ config.Label }
+					if config.StatusBadge != "" {
+						<span
+							class={
+								"badge badge-xs",
+								templ.KV("badge-success", config.StatusBadgeType == "success"),
+								templ.KV("badge-warning", config.StatusBadgeType == "warning"),
+								templ.KV("badge-error", config.StatusBadgeType == "error"),
+								templ.KV("badge-info", config.StatusBadgeType == "info" || config.StatusBadgeType == ""),
+							}
+						>{ config.StatusBadge }</span>
+					}
+				</div>
+				// Dropdown trigger
+				<details class="dropdown dropdown-end group">
+					<summary class={ "btn rounded-l-none border-l-0 list-none [&::-webkit-details-marker]:hidden text-white", getSizeClass(config.Size) } style={ config.ButtonStyle }>
+						<span class={ "icon-[heroicons--chevron-down] transition-transform duration-200 group-open:rotate-180", getIconSizeClass(config.Size) }></span>
+					</summary>
+					@dropdownMenu(config)
+				</details>
+			} else {
+				<div class={ "btn flex-1 gap-2 rounded-r-none pointer-events-none", config.ButtonClass, getSizeClass(config.Size) }>
+					if config.IconClass != "" {
+						<span class={ config.IconClass, getIconSizeClass(config.Size) }></span>
+					}
+					{ config.Label }
+					if config.StatusBadge != "" {
+						<span
+							class={
+								"badge badge-xs",
+								templ.KV("badge-success", config.StatusBadgeType == "success"),
+								templ.KV("badge-warning", config.StatusBadgeType == "warning"),
+								templ.KV("badge-error", config.StatusBadgeType == "error"),
+								templ.KV("badge-info", config.StatusBadgeType == "info" || config.StatusBadgeType == ""),
+							}
+						>{ config.StatusBadge }</span>
+					}
+				</div>
+				<div class="w-px bg-content/30"></div>
+				// Dropdown trigger
+				<details class="dropdown dropdown-end group">
+					<summary class={ "btn rounded-l-none border-l-0 list-none [&::-webkit-details-marker]:hidden", config.ButtonClass, getSizeClass(config.Size) }>
+						<span class={ "icon-[heroicons--chevron-down] transition-transform duration-200 group-open:rotate-180", getIconSizeClass(config.Size) }></span>
+					</summary>
+					@dropdownMenu(config)
+				</details>
+			}
+		</div>
+	</div>
+}
+
+// actionButtonDisabled renders the enable button when the feature is disabled
+templ actionButtonDisabled(config ActionButtonDropdownConfig) {
+	if config.EnableHref != "" {
+		// Regular link (e.g., OAuth flow)
+		if config.ButtonStyle != "" {
+			<a href={ templ.SafeURL(config.EnableHref) } class={ "btn w-full gap-2", getSizeClass(config.Size) } style={ config.ButtonStyle }>
+				if config.EnableIconClass != "" {
+					<span class={ config.EnableIconClass, getIconSizeClass(config.Size) }></span>
+				}
+				{ config.EnableLabel }
+			</a>
+		} else {
+			<a href={ templ.SafeURL(config.EnableHref) } class={ "btn w-full gap-2", config.ButtonClass, getSizeClass(config.Size) }>
+				if config.EnableIconClass != "" {
+					<span class={ config.EnableIconClass, getIconSizeClass(config.Size) }></span>
+				}
+				{ config.EnableLabel }
+			</a>
+		}
+	} else if config.EnableHtmxPost != "" {
+		// HTMX POST action
+		if config.ButtonStyle != "" {
+			<button
+				class={ "btn w-full gap-2", getSizeClass(config.Size) }
+				style={ config.ButtonStyle }
+				hx-post={ config.EnableHtmxPost }
+				if config.EnableTarget != "" {
+					hx-target={ config.EnableTarget }
+					hx-swap="outerHTML"
+				} else {
+					hx-swap="outerHTML"
+					hx-target="closest .action-button-dropdown"
+				}
+			>
+				if config.EnableIconClass != "" {
+					<span class={ config.EnableIconClass, getIconSizeClass(config.Size) }></span>
+				}
+				{ config.EnableLabel }
+			</button>
+		} else {
+			<button
+				class={ "btn w-full gap-2", config.ButtonClass, getSizeClass(config.Size) }
+				hx-post={ config.EnableHtmxPost }
+				if config.EnableTarget != "" {
+					hx-target={ config.EnableTarget }
+					hx-swap="outerHTML"
+				} else {
+					hx-swap="outerHTML"
+					hx-target="closest .action-button-dropdown"
+				}
+			>
+				if config.EnableIconClass != "" {
+					<span class={ config.EnableIconClass, getIconSizeClass(config.Size) }></span>
+				}
+				{ config.EnableLabel }
+			</button>
+		}
+	} else {
+		// No action configured - show disabled badge
+		<div class="badge badge-ghost badge-lg gap-2 w-full">
+			<span class="icon-[heroicons--x-circle] w-4 h-4"></span>
+			Not Connected
+		</div>
+	}
+}
+
+// getMenuWidth returns the menu width class, defaulting to w-56
+func getMenuWidth(width string) string {
+	if width == "" {
+		return "w-56"
+	}
+	return width
+}
+
+// dropdownMenu renders the dropdown menu with actions
+templ dropdownMenu(config ActionButtonDropdownConfig) {
+	<ul class={ "dropdown-content menu bg-base-100 rounded-box z-50 p-2 shadow-xl border border-base-300 mt-1", getMenuWidth(config.MenuWidth) }>
+		// Render the menu header if provided
+		if config.MenuHeader != nil {
+			@config.MenuHeader
+		}
+		for _, action := range config.Actions {
+			if action.IsDivider {
+				<div class="divider my-1"></div>
+			} else if action.IsDisabled {
+				<li class="disabled">
+					<span class="flex items-center gap-2 opacity-50 cursor-not-allowed">
+						if action.IconClass != "" {
+							<span class={ action.IconClass, "w-4 h-4", action.IconColor }></span>
+						}
+						<div class="flex flex-col items-start">
+							<span>{ action.Label }</span>
+							if action.Description != "" {
+								<span class="text-xs text-base-content/60">{ action.Description }</span>
+							}
+						</div>
+					</span>
+				</li>
+			} else {
+				<li>
+					@dropdownActionItem(action)
+				</li>
+			}
+		}
+		// Render the menu footer if provided
+		if config.MenuFooter != nil {
+			@config.MenuFooter
+		}
+	</ul>
+}
+
+// dropdownActionItem renders a single dropdown action item
+templ dropdownActionItem(action DropdownAction) {
+	if action.Href != "" {
+		// Regular link
+		<a href={ templ.SafeURL(action.Href) } class={ "flex items-center gap-2", action.IconColor }>
+			if action.IconClass != "" {
+				<span class={ action.IconClass, "w-4 h-4" }></span>
+			}
+			<div class="flex flex-col items-start">
+				<span>{ action.Label }</span>
+				if action.Description != "" {
+					<span class="text-xs text-base-content/60">{ action.Description }</span>
+				}
+			</div>
+		</a>
+	} else if action.ModalID != "" {
+		// Modal trigger
+		<button
+			class={ "flex items-center gap-2", action.IconColor }
+			{ templ.Attributes{"onclick": modalClickHandler(action.ModalID)}... }
+		>
+			if action.IconClass != "" {
+				<span class={ action.IconClass, "w-4 h-4" }></span>
+			}
+			<div class="flex flex-col items-start">
+				<span>{ action.Label }</span>
+				if action.Description != "" {
+					<span class="text-xs text-base-content/60">{ action.Description }</span>
+				}
+			</div>
+		</button>
+	} else if action.HtmxPost != "" {
+		// HTMX POST action
+		<button
+			hx-post={ action.HtmxPost }
+			if action.HtmxTarget != "" {
+				hx-target={ action.HtmxTarget }
+				hx-swap="outerHTML"
+			} else {
+				hx-swap="none"
+			}
+			class={ "flex items-center gap-2", action.IconColor }
+			onclick="this.closest('details').removeAttribute('open')"
+		>
+			if action.IconClass != "" {
+				<span class={ action.IconClass, "w-4 h-4" }></span>
+			}
+			<div class="flex flex-col items-start">
+				<span>{ action.Label }</span>
+				if action.Description != "" {
+					<span class="text-xs text-base-content/60">{ action.Description }</span>
+				}
+			</div>
+		</button>
+	} else if action.HtmxGet != "" {
+		// HTMX GET action
+		<button
+			hx-get={ action.HtmxGet }
+			if action.HtmxTarget != "" {
+				hx-target={ action.HtmxTarget }
+				hx-swap="outerHTML"
+			} else {
+				hx-swap="none"
+			}
+			class={ "flex items-center gap-2", action.IconColor }
+			onclick="this.closest('details').removeAttribute('open')"
+		>
+			if action.IconClass != "" {
+				<span class={ action.IconClass, "w-4 h-4" }></span>
+			}
+			<div class="flex flex-col items-start">
+				<span>{ action.Label }</span>
+				if action.Description != "" {
+					<span class="text-xs text-base-content/60">{ action.Description }</span>
+				}
+			</div>
+		</button>
+	}
+}

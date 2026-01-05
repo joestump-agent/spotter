@@ -36,6 +36,10 @@ func (PlaylistTrack) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Track duration in milliseconds from provider"),
+		field.String("isrc").
+			Optional().
+			Nillable().
+			Comment("International Standard Recording Code for track matching"),
 		field.String("url").
 			Optional().
 			Comment("Deep link to track on provider"),

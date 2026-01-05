@@ -1,0 +1,465 @@
+package services
+
+import (
+	"context"
+	"log/slog"
+	"strings"
+	"time"
+	"unicode"
+
+	"spotter/ent"
+	"spotter/ent/artist"
+	"spotter/ent/track"
+	"spotter/ent/user"
+	"spotter/internal/providers"
+)
+
+// MatchMethod describes how a track was matched.
+type MatchMethod string
+
+const (
+	MatchMethodNone  MatchMethod = "none"
+	MatchMethodISRC  MatchMethod = "isrc"
+	MatchMethodExact MatchMethod = "exact"
+	MatchMethodFuzzy MatchMethod = "fuzzy"
+)
+
+// MatchResult contains the result of matching a source track to the local library.
+type MatchResult struct {
+	SourceTrack      providers.Track
+	NavidromeTrackID string      // Empty if no match found
+	MatchConfidence  float64     // 0.0 to 1.0
+	MatchMethod      MatchMethod // "exact", "fuzzy", "isrc", "none"
+}
+
+// TrackMatcher matches source tracks from external providers to local Navidrome tracks.
+type TrackMatcher struct {
+	Client             *ent.Client
+	Logger             *slog.Logger
+	MinMatchConfidence float64 // Minimum confidence for fuzzy matching (0.0-1.0)
+}
+
+// NewTrackMatcher creates a new TrackMatcher with the specified minimum match confidence.
+func NewTrackMatcher(client *ent.Client, logger *slog.Logger, minConfidence float64) *TrackMatcher {
+	return &TrackMatcher{
+		Client:             client,
+		Logger:             logger,
+		MinMatchConfidence: minConfidence,
+	}
+}
+
+// MatchTracks attempts to find Navidrome track IDs for source tracks.
+// Uses multiple strategies: ISRC matching, exact name match, fuzzy matching.
+func (m *TrackMatcher) MatchTracks(ctx context.Context, userID int, tracks []providers.Track) ([]MatchResult, error) {
+	startTime := time.Now()
+	results := make([]MatchResult, len(tracks))
+
+	m.Logger.Info("starting track matching",
+		"user_id", userID,
+		"source_track_count", len(tracks),
+		"min_match_confidence", m.MinMatchConfidence)
+
+	// Get all tracks for this user's library (tracks that have a navidrome_id)
+	// FIX: Filter by user through the artist edge: Track -> Artist -> User
+	libraryTracks, err := m.Client.Track.Query().
+		Where(
+			track.NavidromeIDNotNil(),
+			track.HasArtistWith(artist.HasUserWith(user.ID(userID))),
+		).
+		WithArtist().
+		All(ctx)
+	if err != nil {
+		m.Logger.Error("failed to query library tracks",
+			"user_id", userID,
+			"error", err)
+		return nil, err
+	}
+
+	m.Logger.Debug("loaded library tracks for matching",
+		"user_id", userID,
+		"library_track_count", len(libraryTracks))
+
+	if len(libraryTracks) == 0 {
+		m.Logger.Warn("no tracks with navidrome_id found for user",
+			"user_id", userID,
+			"hint", "ensure Navidrome sync has run to populate navidrome_id on tracks")
+
+		// Return all results as unmatched
+		for i, sourceTrack := range tracks {
+			results[i] = MatchResult{
+				SourceTrack:     sourceTrack,
+				MatchConfidence: 0.0,
+				MatchMethod:     MatchMethodNone,
+			}
+		}
+		return results, nil
+	}
+
+	// Build lookup maps for efficient matching
+	isrcMap := make(map[string]*ent.Track)
+	exactMap := make(map[string]*ent.Track) // key: normalized "artist|title"
+
+	for _, t := range libraryTracks {
+		// ISRC map (if available)
+		if t.Isrc != nil && *t.Isrc != "" {
+			isrcKey := strings.ToLower(*t.Isrc)
+			isrcMap[isrcKey] = t
+		}
+
+		// Exact match map
+		artistName := ""
+		if t.Edges.Artist != nil {
+			artistName = t.Edges.Artist.Name
+		}
+		key := normalizeForMatch(artistName) + "|" + normalizeForMatch(t.Name)
+		exactMap[key] = t
+	}
+
+	m.Logger.Debug("built lookup maps",
+		"isrc_map_size", len(isrcMap),
+		"exact_map_size", len(exactMap))
+
+	// Track match statistics by method
+	matchStats := map[MatchMethod]int{
+		MatchMethodNone:  0,
+		MatchMethodISRC:  0,
+		MatchMethodExact: 0,
+		MatchMethodFuzzy: 0,
+	}
+
+	// Match each source track
+	for i, sourceTrack := range tracks {
+		result := MatchResult{
+			SourceTrack:     sourceTrack,
+			MatchConfidence: 0.0,
+			MatchMethod:     MatchMethodNone,
+		}
+
+		// Strategy 1: ISRC matching (highest confidence)
+		if sourceTrack.ISRC != "" {
+			isrcKey := strings.ToLower(sourceTrack.ISRC)
+			if matchedTrack, ok := isrcMap[isrcKey]; ok {
+				if matchedTrack.NavidromeID != nil {
+					result.NavidromeTrackID = *matchedTrack.NavidromeID
+					result.MatchConfidence = 1.0
+					result.MatchMethod = MatchMethodISRC
+					matchStats[MatchMethodISRC]++
+					results[i] = result
+
+					m.Logger.Debug("matched track by ISRC",
+						"source_artist", sourceTrack.Artist,
+						"source_title", sourceTrack.Name,
+						"isrc", sourceTrack.ISRC,
+						"navidrome_id", *matchedTrack.NavidromeID)
+					continue
+				}
+			}
+		}
+
+		// Strategy 2: Exact match (artist + title)
+		exactKey := normalizeForMatch(sourceTrack.Artist) + "|" + normalizeForMatch(sourceTrack.Name)
+		if matchedTrack, ok := exactMap[exactKey]; ok {
+			if matchedTrack.NavidromeID != nil {
+				result.NavidromeTrackID = *matchedTrack.NavidromeID
+				result.MatchConfidence = 1.0
+				result.MatchMethod = MatchMethodExact
+				matchStats[MatchMethodExact]++
+				results[i] = result
+
+				m.Logger.Debug("matched track by exact match",
+					"source_artist", sourceTrack.Artist,
+					"source_title", sourceTrack.Name,
+					"navidrome_id", *matchedTrack.NavidromeID)
+				continue
+			}
+		}
+
+		// Strategy 3: Fuzzy matching
+		bestMatch, confidence := m.findBestFuzzyMatch(sourceTrack, libraryTracks)
+		if bestMatch != nil && confidence >= m.MinMatchConfidence {
+			if bestMatch.NavidromeID != nil {
+				result.NavidromeTrackID = *bestMatch.NavidromeID
+				result.MatchConfidence = confidence
+				result.MatchMethod = MatchMethodFuzzy
+				matchStats[MatchMethodFuzzy]++
+
+				matchedArtist := ""
+				if bestMatch.Edges.Artist != nil {
+					matchedArtist = bestMatch.Edges.Artist.Name
+				}
+
+				m.Logger.Debug("matched track by fuzzy match",
+					"source_artist", sourceTrack.Artist,
+					"source_title", sourceTrack.Name,
+					"matched_artist", matchedArtist,
+					"matched_title", bestMatch.Name,
+					"confidence", confidence,
+					"navidrome_id", *bestMatch.NavidromeID)
+			}
+		} else {
+			matchStats[MatchMethodNone]++
+
+			m.Logger.Debug("no match found for track",
+				"source_artist", sourceTrack.Artist,
+				"source_title", sourceTrack.Name,
+				"best_confidence", confidence,
+				"min_required", m.MinMatchConfidence)
+		}
+
+		results[i] = result
+	}
+
+	// Log summary
+	matched := 0
+	for _, r := range results {
+		if r.NavidromeTrackID != "" {
+			matched++
+		}
+	}
+
+	duration := time.Since(startTime)
+	m.Logger.Info("track matching complete",
+		"user_id", userID,
+		"total_tracks", len(tracks),
+		"matched_tracks", matched,
+		"unmatched_tracks", len(tracks)-matched,
+		"match_rate", float64(matched)/float64(len(tracks))*100,
+		"matches_by_isrc", matchStats[MatchMethodISRC],
+		"matches_by_exact", matchStats[MatchMethodExact],
+		"matches_by_fuzzy", matchStats[MatchMethodFuzzy],
+		"duration_ms", duration.Milliseconds())
+
+	return results, nil
+}
+
+// findBestFuzzyMatch finds the best fuzzy match for a source track.
+func (m *TrackMatcher) findBestFuzzyMatch(source providers.Track, candidates []*ent.Track) (*ent.Track, float64) {
+	var bestMatch *ent.Track
+	bestScore := 0.0
+
+	sourceTitle := normalizeForMatch(source.Name)
+	sourceArtist := normalizeForMatch(source.Artist)
+
+	for _, candidate := range candidates {
+		if candidate.NavidromeID == nil {
+			continue
+		}
+
+		candidateTitle := normalizeForMatch(candidate.Name)
+		candidateArtist := ""
+		if candidate.Edges.Artist != nil {
+			candidateArtist = normalizeForMatch(candidate.Edges.Artist.Name)
+		}
+
+		// Calculate similarity scores
+		titleScore := similarity(sourceTitle, candidateTitle)
+		artistScore := similarity(sourceArtist, candidateArtist)
+
+		// Weighted average: title is more important
+		score := (titleScore * 0.6) + (artistScore * 0.4)
+
+		// Bonus for both being high confidence
+		if titleScore > 0.8 && artistScore > 0.8 {
+			score = (score + 0.1)
+			if score > 1.0 {
+				score = 1.0
+			}
+		}
+
+		if score > bestScore {
+			bestScore = score
+			bestMatch = candidate
+		}
+	}
+
+	return bestMatch, bestScore
+}
+
+// normalizeForMatch normalizes a string for comparison.
+func normalizeForMatch(s string) string {
+	// Convert to lowercase
+	s = strings.ToLower(s)
+
+	// Remove common suffixes that indicate versions
+	suffixes := []string{
+		"(remastered)",
+		"(remaster)",
+		"(deluxe)",
+		"(deluxe edition)",
+		"(bonus track)",
+		"(bonus tracks)",
+		"(radio edit)",
+		"(single version)",
+		"(album version)",
+		"(explicit)",
+		"(clean)",
+		"(live)",
+		"(acoustic)",
+		"(remix)",
+		"[remastered]",
+		"[remaster]",
+		"[deluxe]",
+		"[deluxe edition]",
+		"[bonus track]",
+		"[bonus tracks]",
+		"[radio edit]",
+		"[single version]",
+		"[album version]",
+		"[explicit]",
+		"[clean]",
+		"[live]",
+		"[acoustic]",
+		"[remix]",
+		" - remastered",
+		" - remaster",
+		" - deluxe",
+		" - live",
+		" - acoustic",
+	}
+
+	for _, suffix := range suffixes {
+		s = strings.TrimSuffix(s, suffix)
+	}
+
+	// Remove punctuation and extra whitespace
+	var result strings.Builder
+	lastWasSpace := false
+
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			result.WriteRune(r)
+			lastWasSpace = false
+		} else if unicode.IsSpace(r) && !lastWasSpace {
+			result.WriteRune(' ')
+			lastWasSpace = true
+		}
+	}
+
+	return strings.TrimSpace(result.String())
+}
+
+// similarity calculates the similarity between two strings using Levenshtein distance.
+// Returns a value between 0.0 (completely different) and 1.0 (identical).
+func similarity(a, b string) float64 {
+	if a == b {
+		return 1.0
+	}
+	if len(a) == 0 || len(b) == 0 {
+		return 0.0
+	}
+
+	// Calculate Levenshtein distance
+	distance := levenshtein(a, b)
+	maxLen := len(a)
+	if len(b) > maxLen {
+		maxLen = len(b)
+	}
+
+	return 1.0 - float64(distance)/float64(maxLen)
+}
+
+// levenshtein calculates the Levenshtein distance between two strings.
+func levenshtein(a, b string) int {
+	if len(a) == 0 {
+		return len(b)
+	}
+	if len(b) == 0 {
+		return len(a)
+	}
+
+	aRunes := []rune(a)
+	bRunes := []rune(b)
+
+	// Create distance matrix
+	d := make([][]int, len(aRunes)+1)
+	for i := range d {
+		d[i] = make([]int, len(bRunes)+1)
+	}
+
+	// Initialize first column
+	for i := 0; i <= len(aRunes); i++ {
+		d[i][0] = i
+	}
+
+	// Initialize first row
+	for j := 0; j <= len(bRunes); j++ {
+		d[0][j] = j
+	}
+
+	// Fill in the rest
+	for i := 1; i <= len(aRunes); i++ {
+		for j := 1; j <= len(bRunes); j++ {
+			cost := 1
+			if aRunes[i-1] == bRunes[j-1] {
+				cost = 0
+			}
+
+			d[i][j] = min(
+				d[i-1][j]+1,      // deletion
+				d[i][j-1]+1,      // insertion
+				d[i-1][j-1]+cost, // substitution
+			)
+		}
+	}
+
+	return d[len(aRunes)][len(bRunes)]
+}
+
+// GetUnmatchedTracks returns tracks that couldn't be matched to the library.
+func GetUnmatchedTracks(results []MatchResult) []MatchResult {
+	var unmatched []MatchResult
+	for _, r := range results {
+		if r.NavidromeTrackID == "" {
+			unmatched = append(unmatched, r)
+		}
+	}
+	return unmatched
+}
+
+// GetMatchedTracks returns tracks that were successfully matched.
+func GetMatchedTracks(results []MatchResult) []MatchResult {
+	var matched []MatchResult
+	for _, r := range results {
+		if r.NavidromeTrackID != "" {
+			matched = append(matched, r)
+		}
+	}
+	return matched
+}
+
+// MatchStats contains statistics about a matching operation.
+type MatchStats struct {
+	Total         int
+	Matched       int
+	Unmatched     int
+	ByMethod      map[MatchMethod]int
+	AvgConfidence float64
+}
+
+// GetMatchStats calculates statistics for a set of match results.
+func GetMatchStats(results []MatchResult) MatchStats {
+	stats := MatchStats{
+		Total:    len(results),
+		ByMethod: make(map[MatchMethod]int),
+	}
+
+	totalConfidence := 0.0
+	matchedCount := 0
+
+	for _, r := range results {
+		stats.ByMethod[r.MatchMethod]++
+		if r.NavidromeTrackID != "" {
+			stats.Matched++
+			totalConfidence += r.MatchConfidence
+			matchedCount++
+		} else {
+			stats.Unmatched++
+		}
+	}
+
+	if matchedCount > 0 {
+		stats.AvgConfidence = totalConfidence / float64(matchedCount)
+	}
+
+	return stats
+}

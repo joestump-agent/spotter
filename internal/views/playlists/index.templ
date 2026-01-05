@@ -2,9 +2,12 @@ package playlists
 
 import (
 	"fmt"
+	"sort"
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/views/components"
 	"spotter/internal/views/layouts"
+	"strings"
 	"time"
 )
 
@@ -18,6 +21,20 @@ func formatPlaylistTimeISO(t time.Time) string {
 
 func formatNumber(n int) string {
 	return fmt.Sprintf("%d", n)
+}
+
+func isNavidromeSource(source string) bool {
+	return source == "navidrome"
+}
+
+// sortPlaylistsByName returns a copy of playlists sorted alphabetically by name (case-insensitive)
+func sortPlaylistsByName(playlists []*ent.Playlist) []*ent.Playlist {
+	sorted := make([]*ent.Playlist, len(playlists))
+	copy(sorted, playlists)
+	sort.Slice(sorted, func(i, j int) bool {
+		return strings.ToLower(sorted[i].Name) < strings.ToLower(sorted[j].Name)
+	})
+	return sorted
 }
 
 templ providerBadge(source string) {
@@ -92,11 +109,12 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 										<th>Artists</th>
 										<th>Albums</th>
 										<th>Source</th>
+										<th>Sync</th>
 										<th>Last Updated</th>
 									</tr>
 								</thead>
 								<tbody>
-									for _, pl := range playlists {
+									for _, pl := range sortPlaylistsByName(playlists) {
 										<tr class="hover">
 											<td>
 												<div class="avatar">
@@ -142,6 +160,9 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 											<td>
 												@providerBadge(pl.Source)
 											</td>
+											<td>
+												@components.PlaylistSyncIndicator(pl.SyncToNavidrome, isNavidromeSource(pl.Source))
+											</td>
 											<td class="whitespace-nowrap">
 												<span class="timeago text-sm text-base-content/60" datetime={ formatPlaylistTimeISO(pl.UpdatedAt) } title={ formatPlaylistTime(pl.UpdatedAt) }>
 													{ formatPlaylistTime(pl.UpdatedAt) }
@@ -156,10 +177,10 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 				</div>
 				<!-- Tile View -->
 				<div id="tile-view" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-					for _, pl := range playlists {
+					for _, pl := range sortPlaylistsByName(playlists) {
 						<a href={ templ.URL(fmt.Sprintf("/playlists/%d", pl.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
 							<!-- Cover Art -->
-							<figure class="aspect-square bg-base-300">
+							<figure class="aspect-square bg-base-300 relative">
 								if pl.ImageURL != "" {
 									<img src={ pl.ImageURL } alt={ pl.Name } class="w-full h-full object-cover"/>
 								} else {
@@ -167,6 +188,15 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 										<span class="icon-[heroicons--queue-list] w-16 h-16 text-base-content/20"></span>
 									</div>
 								}
+								<!-- Sync indicator overlay -->
+								@components.PlaylistSyncBadge(components.PlaylistSyncBadgeConfig{
+									SyncToNavidrome:  pl.SyncToNavidrome,
+									IsNavidromeOwned: isNavidromeSource(pl.Source),
+									NavidromeID:      pl.NavidromePlaylistID,
+									MatchedTracks:    pl.MatchedTrackCount,
+									TotalTracks:      pl.TrackCount,
+									SyncError:        pl.SyncError,
+								})
 							</figure>
 							<div class="card-body p-4">
 								<!-- Title & Provider -->

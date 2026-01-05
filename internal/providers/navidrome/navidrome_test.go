@@ -337,3 +337,432 @@ func TestPlaylistStatsDeduplication(t *testing.T) {
 	assert.Equal(t, 3, len(artists), "Should have 3 unique artists")
 	assert.Equal(t, 2, len(albums), "Should have 2 unique albums")
 }
+
+func TestProviderImplementsPlaylistSyncer(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = "http://localhost:4533"
+
+	user := &ent.User{
+		Username: "testuser",
+		Edges: ent.UserEdges{
+			NavidromeAuth: &ent.NavidromeAuth{
+				Password: "password123",
+			},
+		},
+	}
+
+	factory := navidrome.New(logger, cfg)
+	provider, err := factory(context.Background(), user)
+	assert.NoError(t, err)
+	assert.NotNil(t, provider)
+
+	// Check that provider implements PlaylistSyncer
+	_, ok := provider.(providers.PlaylistSyncer)
+	assert.True(t, ok, "Provider should implement PlaylistSyncer")
+}
+
+func TestSyncPlaylist_Create(t *testing.T) {
+	// Mock Navidrome Server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify standard parameters
+		q := r.URL.Query()
+		if q.Get("u") != "testuser" {
+			http.Error(w, "invalid user", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		// Response for createPlaylist
+		if r.URL.Path == "/rest/createPlaylist.view" {
+			// Verify expected parameters
+			name := q.Get("name")
+			assert.NotEmpty(t, name, "Playlist name should be provided")
+
+			// Check song IDs are present
+			songIDs := q["songId"]
+			assert.Len(t, songIDs, 2, "Should have 2 song IDs")
+
+			resp := `{
+				"subsonic-response": {
+					"status": "ok",
+					"playlist": {
+						"id": "new-playlist-123"
+					}
+				}
+			}`
+			io.WriteString(w, resp)
+			return
+		}
+
+		// Response for updatePlaylist (for setting description)
+		if r.URL.Path == "/rest/updatePlaylist.view" {
+			resp := `{
+				"subsonic-response": {
+					"status": "ok"
+				}
+			}`
+			io.WriteString(w, resp)
+			return
+		}
+
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	// Setup Config
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+
+	// Setup User & Auth
+	user := &ent.User{
+		Username: "testuser",
+		Edges: ent.UserEdges{
+			NavidromeAuth: &ent.NavidromeAuth{
+				Password: "password123",
+			},
+		},
+	}
+
+	// Create Provider
+	factory := navidrome.New(logger, cfg)
+	provider, err := factory(context.Background(), user)
+	assert.NoError(t, err)
+	assert.NotNil(t, provider)
+
+	// Test SyncPlaylist
+	syncer, ok := provider.(providers.PlaylistSyncer)
+	assert.True(t, ok, "Provider should implement PlaylistSyncer")
+
+	playlistID, err := syncer.SyncPlaylist(context.Background(), providers.SyncPlaylistRequest{
+		Name:        "Test Sync Playlist",
+		Description: "A synced playlist",
+		Tracks: []providers.Track{
+			{ID: "track-1", Name: "Song One", Artist: "Artist A"},
+			{ID: "track-2", Name: "Song Two", Artist: "Artist B"},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "new-playlist-123", playlistID)
+}
+
+func TestDeletePlaylist_Success(t *testing.T) {
+	deleteCalled := false
+
+	// Mock Navidrome Server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("u") != "testuser" {
+			http.Error(w, "invalid user", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		// Response for deletePlaylist
+		if r.URL.Path == "/rest/deletePlaylist.view" {
+			deleteCalled = true
+			playlistID := q.Get("id")
+			assert.Equal(t, "playlist-to-delete", playlistID)
+
+			resp := `{
+				"subsonic-response": {
+					"status": "ok"
+				}
+			}`
+			io.WriteString(w, resp)
+			return
+		}
+
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	// Setup Config
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+
+	// Setup User & Auth
+	user := &ent.User{
+		Username: "testuser",
+		Edges: ent.UserEdges{
+			NavidromeAuth: &ent.NavidromeAuth{
+				Password: "password123",
+			},
+		},
+	}
+
+	// Create Provider
+	factory := navidrome.New(logger, cfg)
+	provider, err := factory(context.Background(), user)
+	assert.NoError(t, err)
+
+	// Test DeletePlaylist
+	syncer, ok := provider.(providers.PlaylistSyncer)
+	assert.True(t, ok)
+
+	err = syncer.DeletePlaylist(context.Background(), "playlist-to-delete")
+	assert.NoError(t, err)
+	assert.True(t, deleteCalled, "Delete API should have been called")
+}
+
+func TestDeletePlaylist_NotFound(t *testing.T) {
+	// Mock Navidrome Server that returns error
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.URL.Path == "/rest/deletePlaylist.view" {
+			resp := `{
+				"subsonic-response": {
+					"status": "failed",
+					"error": {
+						"code": 70,
+						"message": "Playlist not found"
+					}
+				}
+			}`
+			io.WriteString(w, resp)
+			return
+		}
+
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	// Setup Config
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+
+	// Setup User & Auth
+	user := &ent.User{
+		Username: "testuser",
+		Edges: ent.UserEdges{
+			NavidromeAuth: &ent.NavidromeAuth{
+				Password: "password123",
+			},
+		},
+	}
+
+	// Create Provider
+	factory := navidrome.New(logger, cfg)
+	provider, err := factory(context.Background(), user)
+	assert.NoError(t, err)
+
+	// Test DeletePlaylist with non-existent playlist
+	syncer, ok := provider.(providers.PlaylistSyncer)
+	assert.True(t, ok)
+
+	err = syncer.DeletePlaylist(context.Background(), "non-existent-playlist")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Playlist not found")
+}
+
+func TestUpdatePlaylistTracks_Success(t *testing.T) {
+	updateCalled := false
+	var removedIndices []string
+	var addedSongIDs []string
+
+	// Mock Navidrome Server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("u") != "testuser" {
+			http.Error(w, "invalid user", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		// Response for getPlaylist (to get current tracks)
+		if r.URL.Path == "/rest/getPlaylist.view" {
+			resp := `{
+				"subsonic-response": {
+					"status": "ok",
+					"playlist": {
+						"id": "existing-playlist",
+						"name": "Existing Playlist",
+						"entry": [
+							{"id": "old-track-1", "title": "Old Song 1", "artist": "Old Artist"},
+							{"id": "old-track-2", "title": "Old Song 2", "artist": "Old Artist"}
+						]
+					}
+				}
+			}`
+			io.WriteString(w, resp)
+			return
+		}
+
+		// Response for updatePlaylist
+		if r.URL.Path == "/rest/updatePlaylist.view" {
+			updateCalled = true
+			removedIndices = q["songIndexToRemove"]
+			addedSongIDs = q["songIdToAdd"]
+
+			resp := `{
+				"subsonic-response": {
+					"status": "ok"
+				}
+			}`
+			io.WriteString(w, resp)
+			return
+		}
+
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	// Setup Config
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+
+	// Setup User & Auth
+	user := &ent.User{
+		Username: "testuser",
+		Edges: ent.UserEdges{
+			NavidromeAuth: &ent.NavidromeAuth{
+				Password: "password123",
+			},
+		},
+	}
+
+	// Create Provider
+	factory := navidrome.New(logger, cfg)
+	provider, err := factory(context.Background(), user)
+	assert.NoError(t, err)
+
+	// Test UpdatePlaylistTracks
+	syncer, ok := provider.(providers.PlaylistSyncer)
+	assert.True(t, ok)
+
+	newTracks := []providers.Track{
+		{ID: "new-track-1", Name: "New Song 1", Artist: "New Artist"},
+		{ID: "new-track-2", Name: "New Song 2", Artist: "New Artist"},
+		{ID: "new-track-3", Name: "New Song 3", Artist: "New Artist"},
+	}
+
+	err = syncer.UpdatePlaylistTracks(context.Background(), "existing-playlist", newTracks)
+	assert.NoError(t, err)
+	assert.True(t, updateCalled, "Update API should have been called")
+
+	// Should remove old tracks (indices 1 and 0, in reverse order)
+	assert.Len(t, removedIndices, 2, "Should remove 2 old tracks")
+
+	// Should add new tracks
+	assert.Len(t, addedSongIDs, 3, "Should add 3 new tracks")
+	assert.Contains(t, addedSongIDs, "new-track-1")
+	assert.Contains(t, addedSongIDs, "new-track-2")
+	assert.Contains(t, addedSongIDs, "new-track-3")
+}
+
+func TestSyncPlaylist_ApiError(t *testing.T) {
+	// Mock Navidrome Server that returns error
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.URL.Path == "/rest/createPlaylist.view" {
+			resp := `{
+				"subsonic-response": {
+					"status": "failed",
+					"error": {
+						"code": 50,
+						"message": "Permission denied"
+					}
+				}
+			}`
+			io.WriteString(w, resp)
+			return
+		}
+
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	// Setup Config
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+
+	// Setup User & Auth
+	user := &ent.User{
+		Username: "testuser",
+		Edges: ent.UserEdges{
+			NavidromeAuth: &ent.NavidromeAuth{
+				Password: "password123",
+			},
+		},
+	}
+
+	// Create Provider
+	factory := navidrome.New(logger, cfg)
+	provider, err := factory(context.Background(), user)
+	assert.NoError(t, err)
+
+	// Test SyncPlaylist with API error
+	syncer, ok := provider.(providers.PlaylistSyncer)
+	assert.True(t, ok)
+
+	_, err = syncer.SyncPlaylist(context.Background(), providers.SyncPlaylistRequest{
+		Name:   "Test Playlist",
+		Tracks: []providers.Track{{ID: "track-1"}},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Permission denied")
+}
+
+func TestSyncPlaylist_EmptyTracks(t *testing.T) {
+	// Mock Navidrome Server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.URL.Path == "/rest/createPlaylist.view" {
+			resp := `{
+				"subsonic-response": {
+					"status": "ok",
+					"playlist": {
+						"id": "empty-playlist-123"
+					}
+				}
+			}`
+			io.WriteString(w, resp)
+			return
+		}
+
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	// Setup Config
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+
+	// Setup User & Auth
+	user := &ent.User{
+		Username: "testuser",
+		Edges: ent.UserEdges{
+			NavidromeAuth: &ent.NavidromeAuth{
+				Password: "password123",
+			},
+		},
+	}
+
+	// Create Provider
+	factory := navidrome.New(logger, cfg)
+	provider, err := factory(context.Background(), user)
+	assert.NoError(t, err)
+
+	// Test SyncPlaylist with empty tracks
+	syncer, ok := provider.(providers.PlaylistSyncer)
+	assert.True(t, ok)
+
+	playlistID, err := syncer.SyncPlaylist(context.Background(), providers.SyncPlaylistRequest{
+		Name:   "Empty Playlist",
+		Tracks: []providers.Track{},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "empty-playlist-123", playlistID)
+}

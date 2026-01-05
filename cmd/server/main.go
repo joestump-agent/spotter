@@ -62,6 +62,10 @@ func main() {
 	syncer.Register(spotify.New(logger, cfg))
 	syncer.Register(lastfm.New(logger, cfg))
 
+	// Initialize Playlist Sync Service (for syncing playlists to Navidrome)
+	playlistSyncSvc := services.NewPlaylistSyncService(client, cfg, logger, bus)
+	playlistSyncSvc.Register(navidrome.New(logger, cfg))
+
 	// Initialize Metadata Service (for catalog enrichment)
 	metadataSvc := services.NewMetadataService(client, cfg, logger, bus)
 	metadataSvc.Register(enrichers.TypeLidarr, enricherLidarr.New(logger, cfg, client))
@@ -73,7 +77,7 @@ func main() {
 	metadataSvc.Register(enrichers.TypeOpenAI, enricherOpenai.New(logger, cfg))
 
 	// Initialize Handlers
-	h := handlers.New(client, cfg, logger, syncer, metadataSvc, bus)
+	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, bus)
 
 	// Background Sync Loop for listens/playlists
 	syncInterval, err := time.ParseDuration(cfg.Sync.Interval)
@@ -130,6 +134,37 @@ func main() {
 	} else {
 		logger.Info("metadata enrichment disabled")
 	}
+
+	// Background Playlist Sync Loop (for syncing playlists to Navidrome)
+	playlistSyncInterval, err := time.ParseDuration(cfg.PlaylistSync.SyncInterval)
+	if err != nil {
+		logger.Error("invalid playlist sync interval, using default 1h", "error", err, "value", cfg.PlaylistSync.SyncInterval)
+		playlistSyncInterval = 1 * time.Hour
+	}
+	logger.Info("playlist sync configured", "interval", playlistSyncInterval)
+
+	go func() {
+		// Initial delay to let the app start up
+		time.Sleep(1 * time.Minute)
+
+		ticker := time.NewTicker(playlistSyncInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			ctx := context.Background()
+			users, err := client.User.Query().All(ctx)
+			if err != nil {
+				logger.Error("failed to fetch users for playlist sync", "error", err)
+				continue
+			}
+			for _, u := range users {
+				go func(user *ent.User) {
+					if err := playlistSyncSvc.SyncAllEnabledPlaylists(ctx, user.ID); err != nil {
+						logger.Error("playlist sync failed", "username", user.Username, "error", err)
+					}
+				}(u)
+			}
+		}
+	}()
 
 	// Router setup
 	r := chi.NewRouter()
@@ -201,6 +236,14 @@ func main() {
 		r.Get("/playlists", h.Playlists)
 		r.Get("/playlists/{id}", h.PlaylistShow)
 		r.Get("/playlists/{id}.png", h.PlaylistImage)
+		r.Post("/playlists/{id}/toggle-sync", h.TogglePlaylistSync)
+		r.Post("/playlists/{id}/sync", h.SyncPlaylist)
+		r.Post("/playlists/{id}/rebuild-sync", h.RebuildPlaylistSync)
+		r.Get("/playlists/{id}/sync-status", h.GetPlaylistSyncStatus)
+		r.Get("/playlists/{id}/sync-progress", h.GetPlaylistSyncProgress)
+		r.Post("/playlists/{id}/debug-sync", h.DebugPlaylistSync)
+		r.Post("/playlists/{id}/ai/generate-metadata", h.PlaylistGenerateMetadata)
+		r.Post("/playlists/{id}/ai/generate-artwork", h.PlaylistGenerateArtwork)
 
 		// Vibes routes (DJs and Mixtapes)
 		r.Get("/vibes", h.VibesRedirect)

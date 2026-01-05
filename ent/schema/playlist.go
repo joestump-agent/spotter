@@ -39,6 +39,22 @@ func (Playlist) Fields() []ent.Field {
 		field.Int("unique_albums").
 			Default(0).
 			Comment("Number of unique albums in the playlist"),
+		field.Bool("sync_to_navidrome").
+			Default(false).
+			Comment("Whether to sync this playlist to Navidrome (only for non-Navidrome sources)"),
+		field.String("navidrome_playlist_id").
+			Optional().
+			Comment("The remote playlist ID in Navidrome if synced from another source"),
+		field.Time("last_synced_at").
+			Optional().
+			Nillable().
+			Comment("When the playlist was last synced to Navidrome"),
+		field.String("sync_error").
+			Optional().
+			Comment("Last sync error message, empty if successful"),
+		field.Int("matched_track_count").
+			Default(0).
+			Comment("Number of tracks successfully matched in Navidrome"),
 		field.Time("created_at").
 			Default(time.Now),
 		field.Time("updated_at").

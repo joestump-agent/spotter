@@ -1,21 +1,9 @@
 package components
 
-import (
-	"fmt"
-	"time"
-)
+import "time"
 
-func formatISO(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.UTC().Format(time.RFC3339)
-}
-
-func modalOnClick(id string) string {
-	return fmt.Sprintf("this.closest('details').removeAttribute('open'); document.getElementById('%s').showModal()", id)
-}
-
+// ProviderProps defines the properties for a provider tile.
+// This struct configures how a music provider connection is displayed.
 type ProviderProps struct {
 	Name                   string
 	Description            string
@@ -37,6 +25,54 @@ type ProviderProps struct {
 	DisconnectModalContent templ.Component
 }
 
+// buildProviderDropdownConfig converts ProviderProps to ActionButtonDropdownConfig
+func buildProviderDropdownConfig(props ProviderProps) ActionButtonDropdownConfig {
+	// Build the actions list
+	actions := []DropdownAction{
+		{
+			Label:     "Sync Now",
+			IconClass: "icon-[heroicons--arrow-path]",
+			HtmxPost:  props.SyncURL,
+		},
+		{
+			Label:     "Rebuild Data",
+			IconClass: "icon-[heroicons--trash]",
+			IconColor: "text-warning",
+			ModalID:   props.ModalIDRebuild,
+		},
+		{
+			IsDivider: true,
+		},
+		{
+			Label:     "Disconnect",
+			IconClass: "icon-[heroicons--arrow-right-on-rectangle]",
+			IconColor: "text-error",
+			ModalID:   props.ModalIDDisconnect,
+		},
+	}
+
+	// Build last action time pointer
+	var lastActionAt *time.Time
+	if !props.LastSyncedAt.IsZero() {
+		lastActionAt = &props.LastSyncedAt
+	}
+
+	return ActionButtonDropdownConfig{
+		ID:              props.Name + "-provider-dropdown",
+		Label:           props.DisplayName,
+		IconClass:       "icon-[heroicons--check-circle]",
+		ButtonClass:     props.ButtonClass,
+		ButtonStyle:     props.ButtonStyle,
+		IsEnabled:       props.IsConnected,
+		LastActionAt:    lastActionAt,
+		LastActionLabel: "Last synced",
+		Actions:         actions,
+		EnableLabel:     "Connect " + props.Name,
+		EnableIconClass: props.IconClass,
+		EnableHref:      props.ConnectURL,
+	}
+}
+
 templ ProviderTile(props ProviderProps) {
 	<div class="card bg-base-100 shadow-xl h-full flex flex-col">
 		<div class="card-body flex-1 flex flex-col">
@@ -53,127 +89,43 @@ templ ProviderTile(props ProviderProps) {
 			</p>
 			<div class="mt-4">
 				if props.IsConnected {
-					<div>
-						<div class="inline-flex items-stretch rounded-lg overflow-visible w-full">
-							if props.ButtonStyle != "" {
-								<div class="btn flex-1 gap-2 rounded-r-none pointer-events-none text-white border-r-white/30" style={ props.ButtonStyle }>
-									<span class="icon-[heroicons--check-circle] w-5 h-5"></span>
-									{ props.DisplayName }
-								</div>
-								<details class="dropdown dropdown-end group">
-									<summary class="btn rounded-l-none border-l-0 list-none [&::-webkit-details-marker]:hidden text-white" style={ props.ButtonStyle }>
-										<span class="icon-[heroicons--chevron-down] w-5 h-5 transition-transform duration-200 group-open:rotate-180"></span>
-									</summary>
-									<ul class="dropdown-content menu bg-base-100 rounded-box z-50 w-52 p-2 shadow-xl border border-base-300 mt-1">
-										<li>
-											<button
-												hx-post={ props.SyncURL }
-												hx-swap="none"
-												class="flex items-center gap-2"
-												onclick="this.closest('details').removeAttribute('open')"
-											>
-												<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
-												Sync Now
-											</button>
-										</li>
-										<li>
-											<button
-												{ templ.Attributes{"onclick": modalOnClick(props.ModalIDRebuild)}... }
-												class="flex items-center gap-2 text-warning"
-											>
-												<span class="icon-[heroicons--trash] w-4 h-4"></span>
-												Rebuild Data
-											</button>
-										</li>
-										<div class="divider my-1"></div>
-										<li>
-											<button
-												{ templ.Attributes{"onclick": modalOnClick(props.ModalIDDisconnect)}... }
-												class="flex items-center gap-2 text-error"
-											>
-												<span class="icon-[heroicons--arrow-right-on-rectangle] w-4 h-4"></span>
-												Disconnect
-											</button>
-										</li>
-									</ul>
-								</details>
-							} else {
-								<div class={ "btn flex-1 gap-2 rounded-r-none pointer-events-none " + props.ButtonClass }>
-									<span class="icon-[heroicons--check-circle] w-5 h-5"></span>
-									{ props.DisplayName }
-								</div>
-								<div class={ "w-px bg-content/30" }></div>
-								<details class="dropdown dropdown-end group">
-									<summary class={ "btn rounded-l-none border-l-0 list-none [&::-webkit-details-marker]:hidden " + props.ButtonClass }>
-										<span class="icon-[heroicons--chevron-down] w-5 h-5 transition-transform duration-200 group-open:rotate-180"></span>
-									</summary>
-									<ul class="dropdown-content menu bg-base-100 rounded-box z-50 w-52 p-2 shadow-xl border border-base-300 mt-1">
-										<li>
-											<button
-												hx-post={ props.SyncURL }
-												hx-swap="none"
-												class="flex items-center gap-2"
-												onclick="this.closest('details').removeAttribute('open')"
-											>
-												<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
-												Sync Now
-											</button>
-										</li>
-										<li>
-											<button
-												{ templ.Attributes{"onclick": modalOnClick(props.ModalIDRebuild)}... }
-												class="flex items-center gap-2 text-warning"
-											>
-												<span class="icon-[heroicons--trash] w-4 h-4"></span>
-												Rebuild Data
-											</button>
-										</li>
-										<div class="divider my-1"></div>
-										<li>
-											<button
-												{ templ.Attributes{"onclick": modalOnClick(props.ModalIDDisconnect)}... }
-												class="flex items-center gap-2 text-error"
-											>
-												<span class="icon-[heroicons--arrow-right-on-rectangle] w-4 h-4"></span>
-												Disconnect
-											</button>
-										</li>
-									</ul>
-								</details>
-							}
-						</div>
-						if !props.LastSyncedAt.IsZero() {
-							<div class="text-xs text-base-content/60 mt-2">
-								Last synced: <span class="timeago" datetime={ formatISO(props.LastSyncedAt) }>{ props.LastSyncedAt.Local().Format("Jan 02, 2006 at 3:04 PM") }</span>
-							</div>
-						} else {
-							<div class="text-xs text-base-content/60 mt-2">Never synced</div>
-						}
-					</div>
-					<!-- Render Modals -->
-					@props.RebuildModalContent
-					@props.DisconnectModalContent
+					@providerConnectedState(props)
 				} else {
-					if props.ConnectURL != "" {
-						if props.ButtonStyle != "" {
-							<a href={ templ.SafeURL(props.ConnectURL) } class="btn w-full gap-2" style={ props.ButtonStyle }>
-								<span class={ props.IconClass + " w-5 h-5" }></span>
-								Connect { props.Name }
-							</a>
-						} else {
-							<a href={ templ.SafeURL(props.ConnectURL) } class={ "btn w-full gap-2 " + props.ButtonClass }>
-								<span class={ props.IconClass + " w-5 h-5" }></span>
-								Connect { props.Name }
-							</a>
-						}
-					} else {
-						<div class="badge badge-ghost badge-lg gap-2 w-full">
-							<span class="icon-[heroicons--x-circle] w-4 h-4"></span>
-							Not Connected
-						</div>
-					}
+					@providerDisconnectedState(props)
 				}
 			</div>
 		</div>
 	</div>
+}
+
+// providerConnectedState renders the connected state with dropdown
+templ providerConnectedState(props ProviderProps) {
+	<div>
+		@ActionButtonDropdown(buildProviderDropdownConfig(props))
+	</div>
+	// Render Modals
+	@props.RebuildModalContent
+	@props.DisconnectModalContent
+}
+
+// providerDisconnectedState renders the disconnected state
+templ providerDisconnectedState(props ProviderProps) {
+	if props.ConnectURL != "" {
+		if props.ButtonStyle != "" {
+			<a href={ templ.SafeURL(props.ConnectURL) } class="btn w-full gap-2" style={ props.ButtonStyle }>
+				<span class={ props.IconClass + " w-5 h-5" }></span>
+				Connect { props.Name }
+			</a>
+		} else {
+			<a href={ templ.SafeURL(props.ConnectURL) } class={ "btn w-full gap-2 " + props.ButtonClass }>
+				<span class={ props.IconClass + " w-5 h-5" }></span>
+				Connect { props.Name }
+			</a>
+		}
+	} else {
+		<div class="badge badge-ghost badge-lg gap-2 w-full">
+			<span class="icon-[heroicons--x-circle] w-4 h-4"></span>
+			Not Connected
+		</div>
+	}
 }

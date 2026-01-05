@@ -7,6 +7,18 @@ import (
 	"github.com/spf13/viper"
 )
 
+// PlaylistSyncConfig holds settings for syncing playlists to Navidrome.
+type PlaylistSyncConfig struct {
+	// SyncInterval is how often to sync playlists to Navidrome (e.g., "1h", "30m", "6h")
+	SyncInterval string `mapstructure:"sync_interval"`
+	// DeleteOnUnsync determines whether to delete Navidrome playlist when sync is disabled
+	DeleteOnUnsync bool `mapstructure:"delete_on_unsync"`
+	// MinMatchConfidence is the minimum confidence for track matching (0.0-1.0)
+	MinMatchConfidence float64 `mapstructure:"min_match_confidence"`
+	// IncludeUnmatchedTracks determines whether to include unmatched tracks as placeholders
+	IncludeUnmatchedTracks bool `mapstructure:"include_unmatched_tracks"`
+}
+
 type Config struct {
 	Database struct {
 		Driver string `mapstructure:"driver"`
@@ -45,7 +57,8 @@ type Config struct {
 		BaseURL string `mapstructure:"base_url"` // Base URL for API (for LiteLLM or compatible proxies)
 		Model   string `mapstructure:"model"`    // Model to use for enrichment (e.g., gpt-4o, gpt-4-turbo)
 	} `mapstructure:"openai"`
-	Metadata struct {
+	PlaylistSync PlaylistSyncConfig `mapstructure:"playlist_sync"`
+	Metadata     struct {
 		Enabled  bool   `mapstructure:"enabled"`  // Enable/disable metadata enrichment
 		Interval string `mapstructure:"interval"` // Sync interval (e.g., "1h", "30m")
 		Order    string `mapstructure:"order"`    // Comma-separated enricher order (e.g., "musicbrainz,navidrome,spotify,lastfm,fanart,openai")
@@ -140,6 +153,12 @@ func Load() (*Config, error) {
 	v.SetDefault("openai.api_key", "")
 	v.SetDefault("openai.base_url", "https://api.openai.com/v1")
 	v.SetDefault("openai.model", "gpt-4o")
+
+	// Playlist sync defaults
+	v.SetDefault("playlist_sync.sync_interval", "1h")
+	v.SetDefault("playlist_sync.delete_on_unsync", false)
+	v.SetDefault("playlist_sync.min_match_confidence", 0.8)
+	v.SetDefault("playlist_sync.include_unmatched_tracks", false)
 
 	// Metadata enrichment defaults
 	v.SetDefault("metadata.enabled", true)

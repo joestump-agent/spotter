@@ -5,6 +5,11 @@ import (
 	"spotter/ent"
 )
 
+// isNavidromePlaylist checks if the playlist source is navidrome
+func isNavidromePlaylist(source string) bool {
+	return source == "navidrome"
+}
+
 templ PlaylistTile(playlist *ent.Playlist, subtitle string) {
 	<a href={ templ.URL(fmt.Sprintf("/playlists/%d", playlist.ID)) } class="card bg-base-100 shadow-md hover:shadow-xl transition-all hover:-translate-y-1">
 		<figure class="relative pt-[100%]">
@@ -15,6 +20,15 @@ templ PlaylistTile(playlist *ent.Playlist, subtitle string) {
 					<span class="icon-[heroicons--queue-list] w-16 h-16 text-base-content/20"></span>
 				</div>
 			}
+			// Sync status badge overlay
+			@PlaylistSyncBadge(PlaylistSyncBadgeConfig{
+				SyncToNavidrome:  playlist.SyncToNavidrome,
+				IsNavidromeOwned: isNavidromePlaylist(playlist.Source),
+				NavidromeID:      playlist.NavidromePlaylistID,
+				MatchedTracks:    playlist.MatchedTrackCount,
+				TotalTracks:      playlist.TrackCount,
+				SyncError:        playlist.SyncError,
+			})
 		</figure>
 		<div class="card-body p-3">
 			<h4 class="font-semibold text-sm line-clamp-1">{ playlist.Name }</h4>
