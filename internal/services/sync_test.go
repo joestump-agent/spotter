@@ -31,11 +31,14 @@ func (m *mockProvider) Type() providers.Type {
 	return m.providerType
 }
 
-func (m *mockProvider) GetRecentListens(ctx context.Context, since time.Time) ([]providers.Track, error) {
+func (m *mockProvider) GetRecentListens(ctx context.Context, since time.Time, callback func([]providers.Track) error) error {
 	if m.err != nil {
-		return nil, m.err
+		return m.err
 	}
-	return m.tracks, nil
+	if len(m.tracks) > 0 {
+		return callback(m.tracks)
+	}
+	return nil
 }
 
 func (m *mockProvider) GetPlaylists(ctx context.Context) ([]providers.Playlist, error) {

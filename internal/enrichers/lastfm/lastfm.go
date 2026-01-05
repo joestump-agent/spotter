@@ -308,8 +308,16 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 		// Last.fm images come in different sizes
 		width, height := imageSizeFromLastFM(img.Size)
 
+		localPath := fmt.Sprintf("data/images/artists/%d_lastfm_%s.png", artist.ID, img.Size)
+		_, err := enrichers.DownloadAndSaveImage(img.Text, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download lastfm image", "url", img.Text, "error", err)
+			continue
+		}
+
 		images = append(images, enrichers.ImageData{
 			URL:       img.Text,
+			LocalPath: localPath,
 			Type:      "thumbnail",
 			Source:    "lastfm",
 			Width:     width,
@@ -431,8 +439,16 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 
 		width, height := imageSizeFromLastFM(img.Size)
 
+		localPath := fmt.Sprintf("data/images/albums/%d_lastfm_%s.png", album.ID, img.Size)
+		_, err := enrichers.DownloadAndSaveImage(img.Text, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download lastfm image", "url", img.Text, "error", err)
+			continue
+		}
+
 		images = append(images, enrichers.ImageData{
 			URL:       img.Text,
+			LocalPath: localPath,
 			Type:      "cover_front",
 			Source:    "lastfm",
 			Width:     width,

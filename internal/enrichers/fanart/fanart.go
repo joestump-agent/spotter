@@ -168,8 +168,15 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	// Add HD music logos (preferred over regular logos)
 	for i, img := range response.HDMusicLogo {
 		likes := parseLikes(img.Likes)
+		localPath := fmt.Sprintf("data/images/artists/%d_fanart_%s.png", artist.ID, img.ID)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download fanart image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "logo",
 			Source:    "fanart",
 			Likes:     likes,
@@ -180,8 +187,15 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	// Add regular music logos
 	for _, img := range response.MusicLogo {
 		likes := parseLikes(img.Likes)
+		localPath := fmt.Sprintf("data/images/artists/%d_fanart_%s.png", artist.ID, img.ID)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download fanart image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "logo",
 			Source:    "fanart",
 			Likes:     likes,
@@ -192,8 +206,15 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	// Add artist backgrounds
 	for i, img := range response.ArtistBackground {
 		likes := parseLikes(img.Likes)
+		localPath := fmt.Sprintf("data/images/artists/%d_fanart_%s.png", artist.ID, img.ID)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download fanart image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "background",
 			Source:    "fanart",
 			Likes:     likes,
@@ -204,8 +225,15 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	// Add artist fanart
 	for i, img := range response.ArtistFanart {
 		likes := parseLikes(img.Likes)
+		localPath := fmt.Sprintf("data/images/artists/%d_fanart_%s.png", artist.ID, img.ID)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download fanart image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "fanart",
 			Source:    "fanart",
 			Likes:     likes,
@@ -216,8 +244,15 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	// Add artist thumbnails
 	for i, img := range response.ArtistThumb {
 		likes := parseLikes(img.Likes)
+		localPath := fmt.Sprintf("data/images/artists/%d_fanart_%s.png", artist.ID, img.ID)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download fanart image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "thumbnail",
 			Source:    "fanart",
 			Likes:     likes,
@@ -228,8 +263,15 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	// Add music banners
 	for i, img := range response.MusicBanner {
 		likes := parseLikes(img.Likes)
+		localPath := fmt.Sprintf("data/images/artists/%d_fanart_%s.png", artist.ID, img.ID)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download fanart image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "banner",
 			Source:    "fanart",
 			Likes:     likes,
@@ -303,8 +345,15 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 	// Add CD art
 	for i, img := range albumData.CDart {
 		likes := parseLikes(img.Likes)
+		localPath := fmt.Sprintf("data/images/albums/%d_fanart_%s.png", album.ID, img.ID)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download fanart image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "cd_art",
 			Source:    "fanart",
 			Likes:     likes,
@@ -315,8 +364,15 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 	// Add album covers
 	for i, img := range albumData.AlbumCover {
 		likes := parseLikes(img.Likes)
+		localPath := fmt.Sprintf("data/images/albums/%d_fanart_%s.png", album.ID, img.ID)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download fanart image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "cover_front",
 			Source:    "fanart",
 			Likes:     likes,

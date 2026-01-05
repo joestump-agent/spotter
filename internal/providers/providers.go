@@ -50,7 +50,8 @@ type Provider interface {
 type HistoryFetcher interface {
 	Provider
 	// GetRecentListens retrieves tracks played after the given timestamp.
-	GetRecentListens(ctx context.Context, since time.Time) ([]Track, error)
+	// It calls the provided callback for each batch of tracks retrieved.
+	GetRecentListens(ctx context.Context, since time.Time, callback func([]Track) error) error
 }
 
 // PlaylistManager is implemented by providers that can read/write playlists.

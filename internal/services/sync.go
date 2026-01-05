@@ -203,15 +203,34 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			since = lastListen.PlayedAt
 			s.Logger.Debug("found last listen", "provider", provider.Type(), "played_at", since)
 		} else {
-			// Default to 24 hours ago if no history exists
-			since = time.Now().Add(-24 * time.Hour)
-			s.Logger.Debug("no previous history found, defaulting lookback", "provider", provider.Type(), "since", since)
+			// Default to beginning of time if no history exists to fetch everything
+			since = time.Unix(0, 0)
+			s.Logger.Debug("no previous history found, defaulting lookback to beginning of time", "provider", provider.Type(), "since", since)
 		}
 
 		s.Logger.Debug("fetching history", "provider", provider.Type(), "since", since)
-		tracks, err := fetcher.GetRecentListens(ctx, since)
+
+		var totalAdded, totalSkipped, totalFound int
+
+		err := fetcher.GetRecentListens(ctx, since, func(tracks []providers.Track) error {
+			if len(tracks) == 0 {
+				return nil
+			}
+			totalFound += len(tracks)
+			s.Logger.Info("found new tracks batch", "count", len(tracks), "provider", provider.Type())
+
+			count, skipped, err := s.persistListens(ctx, u, provider.Type(), tracks)
+			if err != nil {
+				s.Logger.Error("failed to persist listens batch", "error", err)
+				return err
+			}
+			totalAdded += count
+			totalSkipped += skipped
+			return nil
+		})
+
 		if err != nil {
-			s.Logger.Error("failed to fetch recent listens",
+			s.Logger.Error("failed to fetch/persist recent listens",
 				"provider", provider.Type(),
 				"username", u.Username,
 				"error", err,
@@ -221,26 +240,22 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			continue
 		}
 
-		if len(tracks) > 0 {
-			s.Logger.Info("found new tracks", "count", len(tracks), "provider", provider.Type())
-			count, skipped, err := s.persistListens(ctx, u, provider.Type(), tracks)
-			if err != nil {
-				s.Logger.Error("failed to persist listens", "error", err)
-			}
-			if count > 0 {
-				s.Bus.Publish(u.ID, events.Event{
-					Type: events.EventTypeNotification,
-					Payload: events.NotificationPayload{
-						Title:    "New Listens Synced",
-						Message:  fmt.Sprintf("Imported %d tracks from %s", count, provider.Type()),
-						IconType: "success",
-					},
-				})
-			}
+		if totalAdded > 0 {
+			s.Bus.Publish(u.ID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "New Listens Synced",
+					Message:  fmt.Sprintf("Imported %d tracks from %s", totalAdded, provider.Type()),
+					IconType: "success",
+				},
+			})
+		}
+
+		if totalFound > 0 {
 			// Log sync completed event
 			s.logEvent(ctx, u, syncevent.EventTypeSyncCompleted, providerName,
-				fmt.Sprintf("Completed syncing listens from %s: %d added, %d skipped", providerName, count, skipped),
-				map[string]interface{}{"added": count, "skipped": skipped, "total": len(tracks)})
+				fmt.Sprintf("Completed syncing listens from %s: %d added, %d skipped", providerName, totalAdded, totalSkipped),
+				map[string]interface{}{"added": totalAdded, "skipped": totalSkipped, "total": totalFound})
 		} else {
 			s.Logger.Debug("no new tracks found", "provider", provider.Type())
 			// Log sync completed with no new tracks

@@ -248,14 +248,10 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 		<!-- Hero Section -->
 		<div class="relative -mx-6 lg:-mx-8 -mt-6 lg:-mt-8 mb-8">
 			<!-- Background Blur -->
-			if img := getPrimaryAlbumImage(album); img != "" {
-				<div class="absolute inset-0 h-96 overflow-hidden">
-					<img src={ img } alt="" class="w-full h-full object-cover opacity-20 blur-2xl scale-110"/>
-					<div class="absolute inset-0 bg-gradient-to-b from-transparent via-base-200/80 to-base-200"></div>
-				</div>
-			} else {
-				<div class="absolute inset-0 h-96 bg-gradient-to-b from-secondary/20 to-base-200"></div>
-			}
+			<div class="absolute inset-0 h-96 overflow-hidden">
+				@components.AlbumImage(album, "w-full h-full object-cover opacity-20 blur-2xl scale-110")
+				<div class="absolute inset-0 bg-gradient-to-b from-transparent via-base-200/80 to-base-200"></div>
+			</div>
 			<!-- AI Menu (Top Right) -->
 			<div class="absolute top-4 right-4 z-10">
 				<details class="dropdown dropdown-end">
@@ -288,13 +284,7 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 						<!-- Album Cover -->
 						<div class="flex-shrink-0">
 							<div class="w-56 h-56 md:w-64 md:h-64 rounded-xl shadow-2xl ring ring-base-100 ring-offset-base-200 ring-offset-2 overflow-hidden">
-								if img := getPrimaryAlbumImage(album); img != "" {
-									<img src={ img } alt={ album.Name } class="w-full h-full object-cover"/>
-								} else {
-									<div class="bg-base-300 w-full h-full flex items-center justify-center">
-										<span class="icon-[heroicons--square-3-stack-3d] w-24 h-24 text-base-content/30"></span>
-									</div>
-								}
+								@components.AlbumImage(album, "w-full h-full object-cover")
 							</div>
 						</div>
 						<!-- Album Details -->

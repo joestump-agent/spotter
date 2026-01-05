@@ -160,6 +160,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(AuthMiddleware(client))
 		r.Get("/", h.Home)
+
 		r.Get("/events", h.Events)
 		r.Post("/generate", h.GeneratePlaylist)
 
@@ -191,6 +192,10 @@ func main() {
 		// Spotify OAuth
 		r.Get("/auth/spotify/login", h.SpotifyLogin)
 		r.Get("/auth/spotify/callback", h.SpotifyCallback)
+
+		// Last.fm Auth
+		r.Get("/auth/lastfm/login", h.LastFMLogin)
+		r.Get("/auth/lastfm/callback", h.LastFMCallback)
 
 		r.Get("/recent", h.RecentListens)
 		r.Get("/playlists", h.Playlists)

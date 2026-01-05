@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/views/components"
 	"spotter/internal/views/layouts"
 	"time"
 )
@@ -18,13 +19,6 @@ func formatTimeISO(t time.Time) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
-}
-
-func getAlbumCover(album *ent.Album) string {
-	if album.Edges.Images == nil || len(album.Edges.Images) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("/library/album/%d.png", album.ID)
 }
 
 func buildAlbumPaginationURL(page int, artistFilter string) string {
@@ -113,13 +107,7 @@ templ Index(albums []*ent.Album, currentPage int, totalPages int, cfg *config.Co
 											<td>
 												<div class="avatar">
 													<div class="w-10 h-10 rounded">
-														if img := getAlbumCover(album); img != "" {
-															<img src={ img } alt={ album.Name }/>
-														} else {
-															<div class="bg-base-300 w-full h-full flex items-center justify-center">
-																<span class="icon-[heroicons--square-3-stack-3d] w-5 h-5 text-base-content/40"></span>
-															</div>
-														}
+														@components.AlbumImage(album, "w-full h-full object-cover")
 													</div>
 												</div>
 											</td>
@@ -175,37 +163,7 @@ templ Index(albums []*ent.Album, currentPage int, totalPages int, cfg *config.Co
 				<!-- Tile View -->
 				<div id="tile-view" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
 					for _, album := range albums {
-						<a href={ templ.URL(fmt.Sprintf("/library/album/%d", album.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
-							<figure class="aspect-square bg-base-300">
-								if img := getAlbumCover(album); img != "" {
-									<img src={ img } alt={ album.Name } class="w-full h-full object-cover"/>
-								} else {
-									<div class="w-full h-full flex items-center justify-center">
-										<span class="icon-[heroicons--square-3-stack-3d] w-16 h-16 text-base-content/20"></span>
-									</div>
-								}
-							</figure>
-							<div class="card-body p-4">
-								<h3 class="card-title text-sm line-clamp-1">{ album.Name }</h3>
-								<p class="text-xs text-base-content/60 line-clamp-1">
-									if album.Edges.Artist != nil {
-										{ album.Edges.Artist.Name }
-									} else {
-										Unknown Artist
-									}
-								</p>
-								<div class="flex items-center justify-between mt-2">
-									if album.Year > 0 {
-										<span class="text-xs text-base-content/50">{ fmt.Sprintf("%d", album.Year) }</span>
-									} else {
-										<span></span>
-									}
-									if album.AlbumType != "" && album.AlbumType != "album" {
-										<span class="badge badge-ghost badge-xs">{ album.AlbumType }</span>
-									}
-								</div>
-							</div>
-						</a>
+						@components.AlbumTile(album)
 					}
 				</div>
 				if totalPages > 1 {

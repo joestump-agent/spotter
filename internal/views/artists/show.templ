@@ -179,14 +179,10 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 		<!-- Hero Section with Background -->
 		<div class="relative -mx-6 lg:-mx-8 -mt-6 lg:-mt-8 mb-8">
 			<!-- Background Image -->
-			if bg := getBackgroundImage(artist); bg != "" {
-				<div class="absolute inset-0 h-80 overflow-hidden">
-					<img src={ bg } alt="" class="w-full h-full object-cover opacity-30"/>
-					<div class="absolute inset-0 bg-gradient-to-b from-transparent via-base-200/80 to-base-200"></div>
-				</div>
-			} else {
-				<div class="absolute inset-0 h-80 bg-gradient-to-b from-primary/20 to-base-200"></div>
-			}
+			<div class="absolute inset-0 h-80 overflow-hidden">
+				@components.ArtistImage(artist, "w-full h-full object-cover opacity-30")
+				<div class="absolute inset-0 bg-gradient-to-b from-transparent via-base-200/80 to-base-200"></div>
+			</div>
 			<!-- AI Menu (Top Right) -->
 			<div class="absolute top-4 right-4 z-10">
 				<details class="dropdown dropdown-end">
@@ -220,13 +216,7 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 						<div class="flex-shrink-0">
 							<div class="avatar">
 								<div class="w-48 h-48 rounded-xl shadow-2xl ring ring-base-100 ring-offset-base-200 ring-offset-2">
-									if img := getAnyArtistImage(artist); img != "" {
-										<img src={ img } alt={ artist.Name }/>
-									} else {
-										<div class="bg-base-300 w-full h-full flex items-center justify-center">
-											<span class="icon-[heroicons--user-group] w-24 h-24 text-base-content/30"></span>
-										</div>
-									}
+									@components.ArtistImage(artist, "w-full h-full object-cover")
 								</div>
 							</div>
 						</div>

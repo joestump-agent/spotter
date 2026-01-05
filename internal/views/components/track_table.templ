@@ -180,6 +180,16 @@ func (r TrackTableRow) PopularityValue() string {
 	return "0"
 }
 
+func (r TrackTableRow) Album() *ent.Album {
+	if r.Track != nil && r.Track.Edges.Album != nil {
+		return r.Track.Edges.Album
+	}
+	if r.Listen != nil && r.Listen.Edges.Album != nil {
+		return r.Listen.Edges.Album
+	}
+	return nil
+}
+
 func formatDuration(ms *int) string {
 	if ms == nil || *ms <= 0 {
 		return "-"
@@ -343,19 +353,17 @@ templ TrackTableRowRender(row TrackTableRow, initialColumns []string, index int)
 		</td>
 		<td class={ "col-track", getHiddenClass(initialColumns, "track") } data-value={ row.TrackName() }>
 			<div class="flex items-center gap-3">
-				if img := row.ImageURL(); img != "" {
-					<div class="avatar track-artwork">
-						<div class="w-10 h-10 rounded">
-							<img src={ img } alt={ row.TrackName() } loading="lazy"/>
-						</div>
-					</div>
-				} else {
-					<div class="avatar placeholder track-artwork">
-						<div class="bg-base-300 w-10 h-10 rounded flex items-center justify-center">
-							<span class="icon-[heroicons--musical-note] w-5 h-5 text-base-content/40"></span>
-						</div>
-					</div>
-				}
+				<div class="avatar track-artwork">
+					<figure class="w-10 h-10 rounded">
+						if album := row.Album(); album != nil {
+							@AlbumImage(album, "w-full h-full")
+						} else {
+							<div class="bg-base-300 w-full h-full flex items-center justify-center">
+								<span class="icon-[heroicons--musical-note] w-1/2 h-1/2 text-base-content/40"></span>
+							</div>
+						}
+					</figure>
+				</div>
 				<div class="flex items-center">
 					<div class="min-w-0 max-w-xs">
 						if url := row.TrackURL(); url != "" {

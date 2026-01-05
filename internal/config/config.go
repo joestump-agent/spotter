@@ -134,7 +134,7 @@ func Load() (*Config, error) {
 	v.SetDefault("spotify.redirect_url", "http://127.0.0.1:8080/auth/spotify/callback")
 	v.SetDefault("lastfm.api_key", "")
 	v.SetDefault("lastfm.shared_secret", "")
-	v.SetDefault("lastfm.redirect_url", "")
+	v.SetDefault("lastfm.redirect_url", "http://127.0.0.1:8080/auth/lastfm/callback")
 
 	// OpenAI defaults
 	v.SetDefault("openai.api_key", "")

@@ -1,0 +1,56 @@
+package components
+
+import (
+	"spotter/ent"
+	"strconv"
+)
+
+// ArtistImage renders an artist's primary image or a fallback placeholder.
+// It links to the /library/artist/{id}.png endpoint handled by images.go.
+templ ArtistImage(artist *ent.Artist, class string) {
+	if hasLocalArtistImage(artist) {
+		<img src={ templ.SafeURL("/library/artist/" + strconv.Itoa(artist.ID) + ".png") } alt={ artist.Name } class={ class }/>
+	} else {
+		<div class={ "bg-base-300 flex items-center justify-center", class }>
+			<span class="icon-[heroicons--user] w-1/2 h-1/2 text-base-content/40"></span>
+		</div>
+	}
+}
+
+// AlbumImage renders an album's cover art or a fallback placeholder.
+// It links to the /library/album/{id}.png endpoint handled by images.go.
+templ AlbumImage(album *ent.Album, class string) {
+	if hasLocalAlbumImage(album) {
+		<img src={ templ.SafeURL("/library/album/" + strconv.Itoa(album.ID) + ".png") } alt={ album.Name } class={ "object-cover", class }/>
+	} else {
+		<div class={ "bg-base-300 flex items-center justify-center", class }>
+			<span class="icon-[heroicons--musical-note] w-1/2 h-1/2 text-base-content/40"></span>
+		</div>
+	}
+}
+
+// hasLocalArtistImage checks if any of the artist's images have a local path.
+func hasLocalArtistImage(artist *ent.Artist) bool {
+	if artist.Edges.Images == nil {
+		return false
+	}
+	for _, img := range artist.Edges.Images {
+		if img.LocalPath != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasLocalAlbumImage checks if any of the album's images have a local path.
+func hasLocalAlbumImage(album *ent.Album) bool {
+	if album.Edges.Images == nil {
+		return false
+	}
+	for _, img := range album.Edges.Images {
+		if img.LocalPath != "" {
+			return true
+		}
+	}
+	return false
+}

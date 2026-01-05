@@ -1,7 +1,9 @@
 package layouts
 
 templ Base(title string) {
-	@BaseWithTheme(title, "")
+	@BaseWithTheme(title, "dark") {
+		{ children... }
+	}
 }
 
 templ BaseWithTheme(title string, defaultTheme string) {

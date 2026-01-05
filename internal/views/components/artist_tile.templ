@@ -1,0 +1,51 @@
+package components
+
+import (
+	"fmt"
+	"spotter/ent"
+)
+
+func formatFollowers(count *int) string {
+	if count == nil || *count == 0 {
+		return ""
+	}
+	if *count >= 1000000 {
+		return fmt.Sprintf("%.1fM", float64(*count)/1000000)
+	}
+	if *count >= 1000 {
+		return fmt.Sprintf("%.1fK", float64(*count)/1000)
+	}
+	return fmt.Sprintf("%d", *count)
+}
+
+// ArtistTile is a reusable component for displaying an artist card,
+// styled like the tiles on the main library artists page.
+templ ArtistTile(artist *ent.Artist) {
+	<a href={ templ.URL(fmt.Sprintf("/library/artist/%d", artist.ID)) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
+		<figure class="aspect-square">
+			@ArtistImage(artist, "w-full h-full object-cover")
+		</figure>
+		<div class="card-body p-4">
+			<h3 class="card-title text-sm line-clamp-1">{ artist.Name }</h3>
+			<p class="text-xs text-base-content/60 line-clamp-1">
+				if len(artist.Genres) > 0 {
+					{ artist.Genres[0] }
+				} else {
+					// Fallback text if artist has no genres
+					"Artist"
+				}
+			</p>
+			<div class="flex items-center justify-between mt-2">
+				if followers := formatFollowers(artist.FollowerCount); followers != "" {
+					<span class="text-xs text-base-content/50">{ followers } followers</span>
+				} else {
+					<!-- Empty span to maintain layout -->
+					<span></span>
+				}
+				if artist.Popularity != nil && *artist.Popularity > 70 {
+					<span class="badge badge-warning badge-xs">Popular</span>
+				}
+			</div>
+		</div>
+	</a>
+}

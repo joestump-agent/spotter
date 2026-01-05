@@ -56,29 +56,26 @@ func (h *Handler) ArtistImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Prefer primary thumbnail, then any primary, then first image
-	var imageURL, localPath string
+	var localPath string
 	for _, img := range a.Edges.Images {
 		if img.IsPrimary && string(img.ImageType) == "thumbnail" {
 			localPath = img.LocalPath
-			imageURL = img.URL
 			break
 		}
 	}
-	if localPath == "" && imageURL == "" {
+	if localPath == "" {
 		for _, img := range a.Edges.Images {
 			if img.IsPrimary {
 				localPath = img.LocalPath
-				imageURL = img.URL
 				break
 			}
 		}
 	}
-	if localPath == "" && imageURL == "" {
+	if localPath == "" {
 		localPath = a.Edges.Images[0].LocalPath
-		imageURL = a.Edges.Images[0].URL
 	}
 
-	h.serveImage(w, r, localPath, imageURL)
+	h.serveImage(w, r, localPath)
 }
 
 // AlbumImage serves the primary image for an album
@@ -122,20 +119,18 @@ func (h *Handler) AlbumImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Prefer primary image, then first image
-	var imageURL, localPath string
+	var localPath string
 	for _, img := range a.Edges.Images {
 		if img.IsPrimary {
 			localPath = img.LocalPath
-			imageURL = img.URL
 			break
 		}
 	}
-	if localPath == "" && imageURL == "" {
+	if localPath == "" {
 		localPath = a.Edges.Images[0].LocalPath
-		imageURL = a.Edges.Images[0].URL
 	}
 
-	h.serveImage(w, r, localPath, imageURL)
+	h.serveImage(w, r, localPath)
 }
 
 // PlaylistImage serves the image for a playlist
@@ -181,8 +176,9 @@ func (h *Handler) PlaylistImage(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, p.ImageURL, http.StatusTemporaryRedirect)
 }
 
-// serveImage serves an image from local path or redirects to external URL
-func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request, localPath, externalURL string) {
+// serveImage serves an image from a local path
+// serveImage serves an image from a local path
+func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request, localPath string) {
 	// Try to serve local file first
 	if localPath != "" {
 		// Clean and validate the path
@@ -190,20 +186,8 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request, localPath, 
 
 		// Check if file exists
 		if _, err := os.Stat(cleanPath); err == nil {
-			// Determine content type from extension
-			ext := strings.ToLower(filepath.Ext(cleanPath))
-			switch ext {
-			case ".png":
-				w.Header().Set("Content-Type", "image/png")
-			case ".jpg", ".jpeg":
-				w.Header().Set("Content-Type", "image/jpeg")
-			case ".webp":
-				w.Header().Set("Content-Type", "image/webp")
-			case ".gif":
-				w.Header().Set("Content-Type", "image/gif")
-			default:
-				w.Header().Set("Content-Type", "application/octet-stream")
-			}
+			// All images are converted to PNG on download
+			w.Header().Set("Content-Type", "image/png")
 
 			// Set cache headers for images
 			w.Header().Set("Cache-Control", "public, max-age=86400") // 24 hours
@@ -211,12 +195,6 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request, localPath, 
 			http.ServeFile(w, r, cleanPath)
 			return
 		}
-	}
-
-	// Fall back to external URL
-	if externalURL != "" {
-		http.Redirect(w, r, externalURL, http.StatusTemporaryRedirect)
-		return
 	}
 
 	http.Error(w, "No image available", http.StatusNotFound)

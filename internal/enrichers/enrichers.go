@@ -92,6 +92,7 @@ type TrackData struct {
 // ImageData contains data about an image to download.
 type ImageData struct {
 	URL       string
+	LocalPath string
 	Type      string // thumbnail, background, logo, banner, fanart, cover_front, cover_back, cd_art, etc.
 	Source    string // provider name
 	Width     int

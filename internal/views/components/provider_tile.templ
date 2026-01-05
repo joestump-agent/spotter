@@ -1,0 +1,179 @@
+package components
+
+import (
+	"fmt"
+	"time"
+)
+
+func formatISO(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func modalOnClick(id string) string {
+	return fmt.Sprintf("this.closest('details').removeAttribute('open'); document.getElementById('%s').showModal()", id)
+}
+
+type ProviderProps struct {
+	Name                   string
+	Description            string
+	IconClass              string
+	IconColorClass         string // Tailwind class (e.g., text-success)
+	IconColorStyle         string // Hex code if class not available
+	ButtonClass            string // Tailwind class (e.g., btn-success)
+	ButtonStyle            string // Custom style string
+	IsConnected            bool
+	DisplayName            string
+	LastSyncedAt           time.Time
+	ConnectURL             string
+	SyncURL                string
+	RebuildURL             string
+	DisconnectURL          string
+	ModalIDRebuild         string
+	ModalIDDisconnect      string
+	RebuildModalContent    templ.Component
+	DisconnectModalContent templ.Component
+}
+
+templ ProviderTile(props ProviderProps) {
+	<div class="card bg-base-100 shadow-xl h-full flex flex-col">
+		<div class="card-body flex-1 flex flex-col">
+			<h3 class="card-title">
+				if props.IconColorStyle != "" {
+					<span class={ props.IconClass + " w-6 h-6" } style={ "color: " + props.IconColorStyle + ";" }></span>
+				} else {
+					<span class={ props.IconClass + " w-6 h-6 " + props.IconColorClass }></span>
+				}
+				{ props.Name }
+			</h3>
+			<p class="text-base-content/60 text-sm mt-2 flex-grow">
+				{ props.Description }
+			</p>
+			<div class="mt-4">
+				if props.IsConnected {
+					<div>
+						<div class="inline-flex items-stretch rounded-lg overflow-visible w-full">
+							if props.ButtonStyle != "" {
+								<div class="btn flex-1 gap-2 rounded-r-none pointer-events-none text-white border-r-white/30" style={ props.ButtonStyle }>
+									<span class="icon-[heroicons--check-circle] w-5 h-5"></span>
+									{ props.DisplayName }
+								</div>
+								<details class="dropdown dropdown-end group">
+									<summary class="btn rounded-l-none border-l-0 list-none [&::-webkit-details-marker]:hidden text-white" style={ props.ButtonStyle }>
+										<span class="icon-[heroicons--chevron-down] w-5 h-5 transition-transform duration-200 group-open:rotate-180"></span>
+									</summary>
+									<ul class="dropdown-content menu bg-base-100 rounded-box z-50 w-52 p-2 shadow-xl border border-base-300 mt-1">
+										<li>
+											<button
+												hx-post={ props.SyncURL }
+												hx-swap="none"
+												class="flex items-center gap-2"
+												onclick="this.closest('details').removeAttribute('open')"
+											>
+												<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
+												Sync Now
+											</button>
+										</li>
+										<li>
+											<button
+												{ templ.Attributes{"onclick": modalOnClick(props.ModalIDRebuild)}... }
+												class="flex items-center gap-2 text-warning"
+											>
+												<span class="icon-[heroicons--trash] w-4 h-4"></span>
+												Rebuild Data
+											</button>
+										</li>
+										<div class="divider my-1"></div>
+										<li>
+											<button
+												{ templ.Attributes{"onclick": modalOnClick(props.ModalIDDisconnect)}... }
+												class="flex items-center gap-2 text-error"
+											>
+												<span class="icon-[heroicons--arrow-right-on-rectangle] w-4 h-4"></span>
+												Disconnect
+											</button>
+										</li>
+									</ul>
+								</details>
+							} else {
+								<div class={ "btn flex-1 gap-2 rounded-r-none pointer-events-none " + props.ButtonClass }>
+									<span class="icon-[heroicons--check-circle] w-5 h-5"></span>
+									{ props.DisplayName }
+								</div>
+								<div class={ "w-px bg-content/30" }></div>
+								<details class="dropdown dropdown-end group">
+									<summary class={ "btn rounded-l-none border-l-0 list-none [&::-webkit-details-marker]:hidden " + props.ButtonClass }>
+										<span class="icon-[heroicons--chevron-down] w-5 h-5 transition-transform duration-200 group-open:rotate-180"></span>
+									</summary>
+									<ul class="dropdown-content menu bg-base-100 rounded-box z-50 w-52 p-2 shadow-xl border border-base-300 mt-1">
+										<li>
+											<button
+												hx-post={ props.SyncURL }
+												hx-swap="none"
+												class="flex items-center gap-2"
+												onclick="this.closest('details').removeAttribute('open')"
+											>
+												<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
+												Sync Now
+											</button>
+										</li>
+										<li>
+											<button
+												{ templ.Attributes{"onclick": modalOnClick(props.ModalIDRebuild)}... }
+												class="flex items-center gap-2 text-warning"
+											>
+												<span class="icon-[heroicons--trash] w-4 h-4"></span>
+												Rebuild Data
+											</button>
+										</li>
+										<div class="divider my-1"></div>
+										<li>
+											<button
+												{ templ.Attributes{"onclick": modalOnClick(props.ModalIDDisconnect)}... }
+												class="flex items-center gap-2 text-error"
+											>
+												<span class="icon-[heroicons--arrow-right-on-rectangle] w-4 h-4"></span>
+												Disconnect
+											</button>
+										</li>
+									</ul>
+								</details>
+							}
+						</div>
+						if !props.LastSyncedAt.IsZero() {
+							<div class="text-xs text-base-content/60 mt-2">
+								Last synced: <span class="timeago" datetime={ formatISO(props.LastSyncedAt) }>{ props.LastSyncedAt.Local().Format("Jan 02, 2006 at 3:04 PM") }</span>
+							</div>
+						} else {
+							<div class="text-xs text-base-content/60 mt-2">Never synced</div>
+						}
+					</div>
+					<!-- Render Modals -->
+					@props.RebuildModalContent
+					@props.DisconnectModalContent
+				} else {
+					if props.ConnectURL != "" {
+						if props.ButtonStyle != "" {
+							<a href={ templ.SafeURL(props.ConnectURL) } class="btn w-full gap-2" style={ props.ButtonStyle }>
+								<span class={ props.IconClass + " w-5 h-5" }></span>
+								Connect { props.Name }
+							</a>
+						} else {
+							<a href={ templ.SafeURL(props.ConnectURL) } class={ "btn w-full gap-2 " + props.ButtonClass }>
+								<span class={ props.IconClass + " w-5 h-5" }></span>
+								Connect { props.Name }
+							</a>
+						}
+					} else {
+						<div class="badge badge-ghost badge-lg gap-2 w-full">
+							<span class="icon-[heroicons--x-circle] w-4 h-4"></span>
+							Not Connected
+						</div>
+					}
+				}
+			</div>
+		</div>
+	</div>
+}

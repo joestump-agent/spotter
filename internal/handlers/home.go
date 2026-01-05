@@ -11,6 +11,7 @@ import (
 	"spotter/ent"
 	"spotter/ent/album"
 	"spotter/ent/artist"
+
 	"spotter/ent/listen"
 	"spotter/ent/track"
 	"spotter/ent/user"
@@ -71,7 +72,6 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 	albumSet := make(map[string]bool)
 	trackSet := make(map[string]bool)
 	artistCounts := make(map[string]int)
-	tagCounts := make(map[string]int)
 
 	for _, l := range listens {
 		artistSet[l.ArtistName] = true
@@ -97,51 +97,52 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 		Where(track.HasArtistWith(artist.HasUserWith(user.ID(u.ID)))).
 		Count(ctx)
 
-	// Get tags from enriched tracks
-	tracks, err := h.Client.Track.Query().
-		Where(track.HasArtistWith(artist.HasUserWith(user.ID(u.ID)))).
-		All(ctx)
-	if err == nil {
-		for _, t := range tracks {
-			for _, tag := range t.Tags {
-				tagCounts[tag]++
-			}
-		}
-	}
-
-	// Get tags from artists too
-	artists, err := h.Client.Artist.Query().
-		Where(artist.HasUserWith(user.ID(u.ID))).
-		All(ctx)
-	if err == nil {
-		for _, a := range artists {
-			listenCount := artistCounts[a.Name]
-			for _, tag := range a.Tags {
-				tagCounts[tag] += listenCount
-			}
-		}
-	}
-
-	// Build tag cloud (top 30)
-	tagList := make([]struct {
-		Tag   string
+	// Calculate top artists
+	type artistStat struct {
+		Name  string
 		Count int
-	}, 0, len(tagCounts))
-	for tag, count := range tagCounts {
-		tagList = append(tagList, struct {
-			Tag   string
-			Count int
-		}{tag, count})
 	}
-	sort.Slice(tagList, func(i, j int) bool {
-		return tagList[i].Count > tagList[j].Count
+	var topArtists []artistStat
+	for name, count := range artistCounts {
+		topArtists = append(topArtists, artistStat{Name: name, Count: count})
+	}
+	sort.Slice(topArtists, func(i, j int) bool {
+		return topArtists[i].Count > topArtists[j].Count
 	})
-	stats.TagCloud = make([]string, 0, 30)
-	for i, t := range tagList {
-		if i >= 30 {
-			break
+
+	if len(topArtists) > 20 {
+		topArtists = topArtists[:20]
+	}
+
+	// Fetch details for top artists
+	topArtistNames := make([]string, len(topArtists))
+	for i, a := range topArtists {
+		topArtistNames[i] = a.Name
+	}
+
+	enrichedArtists, err := h.Client.Artist.Query().
+		Where(
+			artist.HasUserWith(user.ID(u.ID)),
+			artist.NameIn(topArtistNames...),
+		).
+		WithImages().
+		All(ctx)
+
+	if err == nil {
+		enrichedMap := make(map[string]*ent.Artist)
+		for _, a := range enrichedArtists {
+			enrichedMap[a.Name] = a
 		}
-		stats.TagCloud = append(stats.TagCloud, t.Tag)
+
+		stats.TopArtists = make([]home.TopArtist, 0, len(topArtists))
+		for _, a := range topArtists {
+			if enriched, ok := enrichedMap[a.Name]; ok {
+				stats.TopArtists = append(stats.TopArtists, home.TopArtist{
+					Artist:  enriched,
+					Listens: a.Count,
+				})
+			}
+		}
 	}
 
 	// Navidrome provider stats

@@ -2,10 +2,10 @@ package home
 
 import (
 	"encoding/json"
+	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/views/components"
 	"spotter/internal/views/layouts"
-	"strconv"
 	"time"
 )
 
@@ -22,6 +22,12 @@ type ProviderStats struct {
 	ServerOnline  bool   // Only used for Navidrome
 }
 
+// TopArtist holds data for the top artists section
+type TopArtist struct {
+	Artist  *ent.Artist
+	Listens int
+}
+
 // HomeStats holds all statistics for the home HUD
 type HomeStats struct {
 	TotalListens        int
@@ -31,14 +37,10 @@ type HomeStats struct {
 	NavidromeURL        string
 	LoggedInUser        string
 	Providers           []ProviderStats
-	TagCloud            []string
 	EnrichedArtistCount int
 	EnrichedAlbumCount  int
 	EnrichedTrackCount  int
-}
-
-func formatNumber(n int) string {
-	return strconv.Itoa(n)
+	TopArtists          []TopArtist
 }
 
 func formatISO(t time.Time) string {
@@ -56,6 +58,43 @@ func toJSON(v interface{}) string {
 	return string(b)
 }
 
+func getProviderTileProps(name string) components.ProviderProps {
+	switch name {
+	case "Navidrome":
+		return components.ProviderProps{
+			Name:           "Navidrome",
+			Description:    "Your primary music server. Authentication is managed through your login credentials.",
+			IconClass:      "icon-[heroicons--musical-note]",
+			IconColorStyle: "#4285F4",
+			ButtonStyle:    "background-color: #4285F4; border-color: #4285F4; color: white;",
+			IsConnected:    false,
+			ConnectURL:     "",
+		}
+	case "Spotify":
+		return components.ProviderProps{
+			Name:           "Spotify",
+			Description:    "Connect your Spotify account to import listening history and get better recommendations.",
+			IconClass:      "icon-[simple-icons--spotify]",
+			IconColorClass: "text-success",
+			ButtonClass:    "btn-success",
+			IsConnected:    false,
+			ConnectURL:     "/auth/spotify/login",
+		}
+	case "Last.fm":
+		return components.ProviderProps{
+			Name:           "Last.fm",
+			Description:    "Connect your Last.fm account to scrobble tracks and improve recommendations.",
+			IconClass:      "icon-[simple-icons--lastdotfm]",
+			IconColorClass: "text-error",
+			ButtonClass:    "btn-error",
+			IsConnected:    false,
+			ConnectURL:     "/auth/lastfm/login",
+		}
+	default:
+		return components.ProviderProps{Name: name}
+	}
+}
+
 templ Index(cfg *config.Config, stats *HomeStats) {
 	@layouts.Dashboard("Home | Spotter", cfg, "/") {
 		<div class="max-w-7xl mx-auto">
@@ -66,29 +105,11 @@ templ Index(cfg *config.Config, stats *HomeStats) {
 			</div>
 			<!-- Main Stats HUD -->
 			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-				@components.StatCardLink("Total Listens", formatNumber(stats.TotalListens), "across all providers", "icon-[heroicons--play-circle]", "text-primary", "/recent")
-				@components.StatCardLink("Unique Artists", formatNumber(stats.UniqueArtists), "you've listened to", "icon-[heroicons--user-group]", "text-secondary", "/library/artists")
-				@components.StatCardLink("Unique Albums", formatNumber(stats.UniqueAlbums), "in your history", "icon-[heroicons--square-3-stack-3d]", "text-accent", "/library/albums")
-				@components.StatCardLink("Unique Tracks", formatNumber(stats.UniqueTracks), "played", "icon-[heroicons--musical-note]", "text-info", "/library/tracks")
+				@components.StatCardLink("Total Listens", components.FormatNumber(stats.TotalListens), "across all providers", "icon-[heroicons--play-circle]", "text-primary", "/recent")
+				@components.StatCardLink("Unique Artists", components.FormatNumber(stats.UniqueArtists), "you've listened to", "icon-[heroicons--user-group]", "text-secondary", "/library/artists")
+				@components.StatCardLink("Unique Albums", components.FormatNumber(stats.UniqueAlbums), "in your history", "icon-[heroicons--square-3-stack-3d]", "text-accent", "/library/albums")
+				@components.StatCardLink("Unique Tracks", components.FormatNumber(stats.UniqueTracks), "played", "icon-[heroicons--musical-note]", "text-info", "/library/tracks")
 			</div>
-			<!-- Tags Cloud -->
-			if len(stats.TagCloud) > 0 {
-				<div class="card bg-base-100 shadow-xl mb-8">
-					<div class="card-body">
-						<h3 class="card-title">
-							<span class="icon-[heroicons--hashtag] w-5 h-5"></span>
-							Popular Tags
-						</h3>
-						<div class="flex flex-wrap gap-2 mt-4">
-							for i, tag := range stats.TagCloud {
-								if i < 30 {
-									<span class={ "badge", getBadgeClass(i) }>{ tag }</span>
-								}
-							}
-						</div>
-					</div>
-				</div>
-			}
 			<!-- Provider Stats Grid -->
 			<h3 class="text-xl font-bold mb-4 flex items-center gap-2">
 				<span class="icon-[heroicons--link] w-5 h-5"></span>
@@ -96,48 +117,40 @@ templ Index(cfg *config.Config, stats *HomeStats) {
 			</h3>
 			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
 				for _, provider := range stats.Providers {
-					<div class="card bg-base-100 shadow-xl h-full">
-						<div class="card-body flex flex-col">
-							<div class="flex items-center justify-between">
-								<h4 class="card-title text-lg">
+					if provider.Connected {
+						<div class="card bg-base-100 shadow-xl h-full">
+							<div class="card-body flex flex-col">
+								<div class="flex items-center justify-between">
+									<h4 class="card-title text-lg">
+										if provider.Name == "Navidrome" {
+											<span class="icon-[heroicons--musical-note] w-5 h-5" style="color: #4285F4;"></span>
+										} else if provider.Name == "Spotify" {
+											<span class="icon-[simple-icons--spotify] w-5 h-5 text-success"></span>
+										} else if provider.Name == "Last.fm" {
+											<span class="icon-[simple-icons--lastdotfm] w-5 h-5 text-error"></span>
+										}
+										{ provider.Name }
+									</h4>
 									if provider.Name == "Navidrome" {
-										<span class="icon-[heroicons--musical-note] w-5 h-5" style="color: #4285F4;"></span>
-									} else if provider.Name == "Spotify" {
-										<span class="icon-[simple-icons--spotify] w-5 h-5 text-success"></span>
-									} else if provider.Name == "Last.fm" {
-										<span class="icon-[simple-icons--lastdotfm] w-5 h-5 text-error"></span>
-									}
-									{ provider.Name }
-								</h4>
-								if provider.Name == "Navidrome" {
-									<!-- Navidrome shows Online/Offline status -->
-									if provider.ServerOnline {
-										<div class="badge badge-success badge-sm gap-1">
-											<span class="icon-[heroicons--signal] w-3 h-3"></span>
-											Online
-										</div>
+										<!-- Navidrome shows Online/Offline status -->
+										if provider.ServerOnline {
+											<div class="badge badge-success badge-sm gap-1">
+												<span class="icon-[heroicons--signal] w-3 h-3"></span>
+												Online
+											</div>
+										} else {
+											<div class="badge badge-error badge-sm gap-1">
+												<span class="icon-[heroicons--signal-slash] w-3 h-3"></span>
+												Offline
+											</div>
+										}
 									} else {
-										<div class="badge badge-error badge-sm gap-1">
-											<span class="icon-[heroicons--signal-slash] w-3 h-3"></span>
-											Offline
-										</div>
-									}
-								} else {
-									<!-- Other providers show Connected/Not Connected -->
-									if provider.Connected {
 										<div class="badge badge-success badge-sm gap-1">
 											<span class="icon-[heroicons--check-circle] w-3 h-3"></span>
 											Connected
 										</div>
-									} else {
-										<div class="badge badge-ghost badge-sm gap-1">
-											<span class="icon-[heroicons--x-circle] w-3 h-3"></span>
-											Not Connected
-										</div>
 									}
-								}
-							</div>
-							if provider.Connected {
+								</div>
 								<!-- User Info -->
 								<div class="mt-4 space-y-3">
 									<div class="flex items-center gap-2 text-sm">
@@ -173,35 +186,38 @@ templ Index(cfg *config.Config, stats *HomeStats) {
 									<div class="divider my-3"></div>
 									<div class="grid grid-cols-3 gap-2 text-center">
 										<div>
-											<div class="text-2xl font-bold">{ formatNumber(provider.TotalListens) }</div>
+											<div class="text-2xl font-bold">{ components.FormatNumber(provider.TotalListens) }</div>
 											<div class="text-xs text-base-content/60">Listens</div>
 										</div>
 										<div>
-											<div class="text-2xl font-bold">{ formatNumber(provider.UniqueArtists) }</div>
+											<div class="text-2xl font-bold">{ components.FormatNumber(provider.UniqueArtists) }</div>
 											<div class="text-xs text-base-content/60">Artists</div>
 										</div>
 										<div>
-											<div class="text-2xl font-bold">{ formatNumber(provider.UniqueAlbums) }</div>
+											<div class="text-2xl font-bold">{ components.FormatNumber(provider.UniqueAlbums) }</div>
 											<div class="text-xs text-base-content/60">Albums</div>
 										</div>
 									</div>
 								</div>
-							} else {
-								<div class="mt-4 text-center py-6">
-									<span class="icon-[heroicons--link] w-8 h-8 text-base-content/30"></span>
-									<p class="text-sm text-base-content/60 mt-2">
-										if provider.Name == "Last.fm" {
-											Coming soon
-										} else {
-											Connect in <a href="/preferences/providers" class="link link-primary">Preferences</a>
-										}
-									</p>
-								</div>
-							}
+							</div>
 						</div>
-					</div>
+					} else {
+						@components.ProviderTile(getProviderTileProps(provider.Name))
+					}
 				}
 			</div>
+			<!-- Top Artists -->
+			if len(stats.TopArtists) > 0 {
+				<h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+					<span class="icon-[heroicons--trophy] w-5 h-5"></span>
+					Top Artists
+				</h3>
+				<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-8">
+					for _, topArtist := range stats.TopArtists {
+						@components.ArtistTile(topArtist.Artist)
+					}
+				</div>
+			}
 		</div>
 		<!-- Timeago script -->
 		<script>
@@ -216,22 +232,6 @@ templ Index(cfg *config.Config, stats *HomeStats) {
 			})();
 		</script>
 	}
-}
-
-func getBadgeClass(index int) string {
-	classes := []string{
-		"badge-primary",
-		"badge-secondary",
-		"badge-accent",
-		"badge-info",
-		"badge-success",
-		"badge-warning",
-		"badge-error",
-		"badge-primary badge-outline",
-		"badge-secondary badge-outline",
-		"badge-accent badge-outline",
-	}
-	return classes[index%len(classes)]
 }
 
 func max(a, b int) int {

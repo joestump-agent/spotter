@@ -210,14 +210,14 @@ func (p *Provider) getRecentlyPlayedFromInternalAPI(ctx context.Context, since t
 	return tracks, nil
 }
 
-func (p *Provider) GetRecentListens(ctx context.Context, since time.Time) ([]providers.Track, error) {
+func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callback func([]providers.Track) error) error {
 	p.logger.Info("fetching recent listens from navidrome", "username", p.user.Username, "since", since)
 
 	// Try the internal API first for better history data
 	tracks, err := p.getRecentlyPlayedFromInternalAPI(ctx, since)
 	if err == nil && len(tracks) > 0 {
 		p.logger.Info("fetched recent listens from navidrome internal API", "count", len(tracks))
-		return tracks, nil
+		return callback(tracks)
 	}
 
 	if err != nil {
@@ -225,7 +225,14 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time) ([]pro
 	}
 
 	// Fall back to Subsonic getNowPlaying for currently playing tracks
-	return p.getNowPlayingFromSubsonic(ctx, since)
+	tracks, err = p.getNowPlayingFromSubsonic(ctx, since)
+	if err != nil {
+		return err
+	}
+	if len(tracks) > 0 {
+		return callback(tracks)
+	}
+	return nil
 }
 
 // getNowPlayingFromSubsonic uses the Subsonic API to get currently playing tracks

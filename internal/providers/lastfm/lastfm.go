@@ -2,13 +2,26 @@ package lastfm
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/providers"
+)
+
+const (
+	apiBaseURL = "http://ws.audioscrobbler.com/2.0/"
 )
 
 type Provider struct {
@@ -60,57 +73,256 @@ func (p *Provider) SupportsAuth() bool {
 }
 
 // GetAuthURL returns the Last.fm authentication URL.
-// TODO: Implement actual Last.fm auth flow
 func (p *Provider) GetAuthURL(state string) string {
-	// Last.fm uses a different auth flow - web auth
-	// http://www.last.fm/api/auth/?api_key=xxx&cb=callback
 	if p.config.LastFM.APIKey == "" {
 		p.logger.Warn("Last.fm API key not configured")
 		return ""
 	}
 
-	// TODO: Implement actual Last.fm web auth URL
-	p.logger.Info("Last.fm auth URL requested (stubbed)")
+	// Last.fm doesn't support state parameter natively in the same way OAuth2 does,
+	// but we can't easily pass it through. The controller needs to handle session management.
+	// We just return the standard auth URL.
 	return fmt.Sprintf("http://www.last.fm/api/auth/?api_key=%s&cb=%s",
 		p.config.LastFM.APIKey,
 		p.config.LastFM.RedirectURL)
 }
 
 // ExchangeCode exchanges the authorization token for a session key.
-// TODO: Implement actual Last.fm token exchange
 func (p *Provider) ExchangeCode(ctx context.Context, code string) (*providers.AuthResult, error) {
-	p.logger.Info("Last.fm code exchange requested (stubbed)", "code", code)
+	p.logger.Info("exchanging code for session key", "code", code)
 
-	// TODO: Implement actual Last.fm session key retrieval
-	// Last.fm returns a token in the callback, which needs to be exchanged for a session key
-	// using auth.getSession API method
+	params := map[string]string{
+		"method":  "auth.getSession",
+		"token":   code,
+		"api_key": p.config.LastFM.APIKey,
+	}
 
-	return nil, fmt.Errorf("Last.fm authentication not yet implemented")
+	sig := p.signParams(params)
+	params["api_sig"] = sig
+	params["format"] = "json"
+
+	var result struct {
+		Session struct {
+			Name       string `json:"name"`
+			Key        string `json:"key"`
+			Subscriber int    `json:"subscriber"`
+		} `json:"session"`
+		Error   int    `json:"error"`
+		Message string `json:"message"`
+	}
+
+	if err := p.doRequest(ctx, "GET", params, &result); err != nil {
+		return nil, err
+	}
+
+	if result.Error != 0 {
+		return nil, fmt.Errorf("last.fm api error: %d - %s", result.Error, result.Message)
+	}
+
+	return &providers.AuthResult{
+		AccessToken:  result.Session.Key, // Store session key as access token
+		RefreshToken: "",                 // Last.fm doesn't have refresh tokens
+		Expiry:       time.Time{},        // Session keys don't expire
+		DisplayName:  result.Session.Name,
+		UserID:       result.Session.Name,
+	}, nil
 }
 
 // RefreshToken is not applicable for Last.fm as session keys don't expire.
 func (p *Provider) RefreshToken(ctx context.Context, refreshToken string) (*providers.AuthResult, error) {
-	// Last.fm session keys don't expire, so no refresh needed
-	p.logger.Debug("Last.fm refresh token called (no-op, session keys don't expire)")
 	return nil, fmt.Errorf("Last.fm session keys do not expire")
 }
 
 // Disconnect performs cleanup when disconnecting from Last.fm.
 func (p *Provider) Disconnect(ctx context.Context) error {
 	p.logger.Info("disconnecting from Last.fm", "user", p.user.Username)
-	// Last.fm doesn't have a token revocation endpoint
-	// The session key will be deleted from the database by the handler
 	return nil
 }
 
 // GetRecentListens retrieves tracks played after the given timestamp.
-// TODO: Implement actual Last.fm API call
-func (p *Provider) GetRecentListens(ctx context.Context, since time.Time) ([]providers.Track, error) {
-	p.logger.Info("fetching recent listens from Last.fm (stubbed)", "username", p.user.Username, "since", since)
+func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callback func([]providers.Track) error) error {
+	p.logger.Info("fetching recent listens from last.fm", "username", p.auth.Username, "since", since)
 
-	// TODO: Implement actual Last.fm API call
-	// Use user.getRecentTracks API method
-	// https://www.last.fm/api/show/user.getRecentTracks
+	page := 1
+	limit := 200
 
-	return []providers.Track{}, nil
+	for {
+		p.logger.Debug("fetching recent tracks page", "page", page, "limit", limit)
+
+		params := map[string]string{
+			"method":  "user.getRecentTracks",
+			"user":    p.auth.Username,
+			"api_key": p.config.LastFM.APIKey,
+			"limit":   strconv.Itoa(limit),
+			"page":    strconv.Itoa(page),
+			"format":  "json",
+		}
+
+		if !since.IsZero() {
+			params["from"] = fmt.Sprintf("%d", since.Unix())
+		}
+
+		var result struct {
+			RecentTracks struct {
+				Track []struct {
+					Artist struct {
+						Name string `json:"#text"`
+					} `json:"artist"`
+					Name  string `json:"name"`
+					Album struct {
+						Name string `json:"#text"`
+					} `json:"album"`
+					URL  string `json:"url"`
+					Date struct {
+						Uts string `json:"uts"`
+					} `json:"date"`
+					Attr struct {
+						NowPlaying string `json:"nowplaying"`
+					} `json:"@attr"`
+				} `json:"track"`
+				Attr struct {
+					TotalPages string `json:"totalPages"`
+				} `json:"@attr"`
+			} `json:"recenttracks"`
+		}
+
+		if err := p.doRequest(ctx, "GET", params, &result); err != nil {
+			return err
+		}
+
+		p.logger.Debug("fetched page", "page", page, "count", len(result.RecentTracks.Track), "totalPages", result.RecentTracks.Attr.TotalPages)
+
+		if len(result.RecentTracks.Track) == 0 {
+			break
+		}
+
+		var tracks []providers.Track
+
+		for _, t := range result.RecentTracks.Track {
+			// Skip currently playing track as it doesn't have a final timestamp yet
+			if t.Attr.NowPlaying == "true" {
+				p.logger.Debug("skipping now playing track", "name", t.Name)
+				continue
+			}
+
+			uts, err := strconv.ParseInt(t.Date.Uts, 10, 64)
+			if err != nil {
+				p.logger.Warn("failed to parse track date", "uts", t.Date.Uts, "error", err)
+				continue
+			}
+
+			tracks = append(tracks, providers.Track{
+				ID:       t.URL, // Last.fm doesn't provide stable IDs, using URL
+				Name:     t.Name,
+				Artist:   t.Artist.Name,
+				Album:    t.Album.Name,
+				PlayedAt: time.Unix(uts, 0).UTC(),
+				URL:      t.URL,
+			})
+		}
+
+		if len(tracks) > 0 {
+			if err := callback(tracks); err != nil {
+				return err
+			}
+		}
+
+		totalPages, err := strconv.Atoi(result.RecentTracks.Attr.TotalPages)
+		if err != nil {
+			p.logger.Warn("failed to parse totalPages", "value", result.RecentTracks.Attr.TotalPages, "error", err)
+			break
+		}
+
+		if page >= totalPages {
+			break
+		}
+		page++
+	}
+
+	return nil
+}
+
+// signParams generates the api_sig for Last.fm API calls.
+// sort alphabetically, concatenate name+value, append secret, md5 hash
+func (p *Provider) signParams(params map[string]string) string {
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var sigStr strings.Builder
+	for _, k := range keys {
+		sigStr.WriteString(k)
+		sigStr.WriteString(params[k])
+	}
+	sigStr.WriteString(p.config.LastFM.SharedSecret)
+
+	hasher := md5.New()
+	hasher.Write([]byte(sigStr.String()))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func (p *Provider) doRequest(ctx context.Context, method string, params map[string]string, result interface{}) error {
+	data := url.Values{}
+	for k, v := range params {
+		data.Set(k, v)
+	}
+
+	var req *http.Request
+	var err error
+
+	if method == "POST" {
+		req, err = http.NewRequestWithContext(ctx, "POST", apiBaseURL, strings.NewReader(data.Encode()))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	} else {
+		// GET
+		reqURL := apiBaseURL + "?" + data.Encode()
+		req, err = http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Retry logic for 500 errors
+	maxRetries := 3
+	var lastErr error
+
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			// Exponential backoff: 1s, 2s, 4s
+			time.Sleep(time.Duration(1<<uint(i-1)) * time.Second)
+			p.logger.Info("retrying last.fm request", "attempt", i+1)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			if result != nil {
+				if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		// Try to read body for error details
+		body, _ := io.ReadAll(resp.Body)
+		lastErr = fmt.Errorf("last.fm api returned status %d: %s", resp.StatusCode, string(body))
+
+		// If not a 500 error, don't retry
+		if resp.StatusCode < 500 {
+			return lastErr
+		}
+	}
+
+	return lastErr
 }

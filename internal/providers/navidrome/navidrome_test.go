@@ -109,7 +109,11 @@ func TestGetRecentListens(t *testing.T) {
 
 	// Fetch tracks since 30 minutes ago
 	since := time.Now().Add(-30 * time.Minute)
-	tracks, err := fetcher.GetRecentListens(context.Background(), since)
+	var tracks []providers.Track
+	err = fetcher.GetRecentListens(context.Background(), since, func(listens []providers.Track) error {
+		tracks = append(tracks, listens...)
+		return nil
+	})
 	assert.NoError(t, err)
 
 	// Should only find "Recent Track" (5 mins ago).

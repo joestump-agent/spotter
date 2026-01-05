@@ -23,10 +23,6 @@ type TrackStats struct {
 	ProviderHistory    components.StackedChartData
 }
 
-func formatNumber(n int) string {
-	return fmt.Sprintf("%d", n)
-}
-
 func formatDate(t time.Time) string {
 	if t.IsZero() {
 		return "N/A"
@@ -329,7 +325,7 @@ templ Show(track *ent.Track, playlists []*ent.Playlist, stats *TrackStats, cfg *
 		<div class="max-w-7xl mx-auto">
 			<!-- Stats Grid -->
 			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-				@components.StatCard("Total Listens", formatNumber(stats.TotalListens), "all time", "icon-[heroicons--play-circle]", "text-primary")
+				@components.StatCard("Total Listens", components.FormatNumber(stats.TotalListens), "all time", "icon-[heroicons--play-circle]", "text-primary")
 				@components.StatCard("First Listen", formatDate(stats.FirstListen), "discovered", "icon-[heroicons--calendar]", "text-secondary")
 				@components.StatCard("Last Listen", formatDate(stats.LastListen), "most recent", "icon-[heroicons--clock]", "text-accent")
 				if track.DurationMs != nil {
@@ -517,7 +513,7 @@ func formatIntPtr(i *int) string {
 	if i == nil {
 		return "N/A"
 	}
-	return fmt.Sprintf("%d", *i)
+	return components.FormatNumber(*i)
 }
 
 func formatDurationPtr(ms *int) string {

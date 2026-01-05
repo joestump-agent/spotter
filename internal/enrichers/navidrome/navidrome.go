@@ -379,29 +379,74 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	var images []enrichers.ImageData
 
 	// Add images from artist info
-	if url := info.SubsonicResponse.ArtistInfo.LargeImageURL; url != "" {
-		images = append(images, enrichers.ImageData{
-			URL:       url,
-			Type:      "thumbnail",
-			Source:    "navidrome",
-			IsPrimary: true,
-		})
+	if coverArtID := info.SubsonicResponse.ArtistInfo.LargeImageURL; coverArtID != "" {
+		salt := "static"
+		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
+			e.config.Navidrome.BaseURL,
+			coverArtID,
+			e.user.Username,
+			generateToken(e.auth.Password, salt),
+			salt,
+		)
+		localPath := fmt.Sprintf("data/images/artists/%d_navidrome_large.png", artist.ID)
+		_, err := enrichers.DownloadAndSaveImage(coverURL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download navidrome image", "url", coverURL, "error", err)
+		} else {
+			images = append(images, enrichers.ImageData{
+				URL:       coverURL,
+				LocalPath: localPath,
+				Type:      "thumbnail",
+				Source:    "navidrome",
+				IsPrimary: true,
+			})
+		}
 	}
 
-	if url := info.SubsonicResponse.ArtistInfo.MediumImageURL; url != "" && url != info.SubsonicResponse.ArtistInfo.LargeImageURL {
-		images = append(images, enrichers.ImageData{
-			URL:    url,
-			Type:   "thumbnail",
-			Source: "navidrome",
-		})
+	if coverArtID := info.SubsonicResponse.ArtistInfo.MediumImageURL; coverArtID != "" && coverArtID != info.SubsonicResponse.ArtistInfo.LargeImageURL {
+		salt := "static"
+		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
+			e.config.Navidrome.BaseURL,
+			coverArtID,
+			e.user.Username,
+			generateToken(e.auth.Password, salt),
+			salt,
+		)
+		localPath := fmt.Sprintf("data/images/artists/%d_navidrome_medium.png", artist.ID)
+		_, err := enrichers.DownloadAndSaveImage(coverURL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download navidrome image", "url", coverURL, "error", err)
+		} else {
+			images = append(images, enrichers.ImageData{
+				URL:       coverURL,
+				LocalPath: localPath,
+				Type:      "thumbnail",
+				Source:    "navidrome",
+			})
+		}
 	}
 
-	if url := info.SubsonicResponse.ArtistInfo.SmallImageURL; url != "" && url != info.SubsonicResponse.ArtistInfo.MediumImageURL {
-		images = append(images, enrichers.ImageData{
-			URL:    url,
-			Type:   "thumbnail",
-			Source: "navidrome",
-		})
+	if coverArtID := info.SubsonicResponse.ArtistInfo.SmallImageURL; coverArtID != "" && coverArtID != info.SubsonicResponse.ArtistInfo.MediumImageURL {
+		salt := "static"
+		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
+			e.config.Navidrome.BaseURL,
+			coverArtID,
+			e.user.Username,
+			generateToken(e.auth.Password, salt),
+			salt,
+		)
+		localPath := fmt.Sprintf("data/images/artists/%d_navidrome_small.png", artist.ID)
+		_, err := enrichers.DownloadAndSaveImage(coverURL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download navidrome image", "url", coverURL, "error", err)
+		} else {
+			images = append(images, enrichers.ImageData{
+				URL:       coverURL,
+				LocalPath: localPath,
+				Type:      "thumbnail",
+				Source:    "navidrome",
+			})
+		}
 	}
 
 	return images, nil
@@ -529,12 +574,19 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 			salt,
 		)
 
-		images = append(images, enrichers.ImageData{
-			URL:       coverURL,
-			Type:      "cover_front",
-			Source:    "navidrome",
-			IsPrimary: true,
-		})
+		localPath := fmt.Sprintf("data/images/albums/%d_navidrome.png", album.ID)
+		_, err := enrichers.DownloadAndSaveImage(coverURL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download navidrome image", "url", coverURL, "error", err)
+		} else {
+			images = append(images, enrichers.ImageData{
+				URL:       coverURL,
+				LocalPath: localPath,
+				Type:      "cover_front",
+				Source:    "navidrome",
+				IsPrimary: true,
+			})
+		}
 	}
 
 	return images, nil

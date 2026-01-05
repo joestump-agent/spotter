@@ -426,8 +426,15 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 
 	var images []enrichers.ImageData
 	for i, img := range sp.Images {
+		localPath := fmt.Sprintf("data/images/artists/%d_spotify_%d.png", artist.ID, i)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download spotify image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "thumbnail",
 			Source:    "spotify",
 			Width:     img.Width,
@@ -509,8 +516,15 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 
 	var images []enrichers.ImageData
 	for i, img := range sp.Images {
+		localPath := fmt.Sprintf("data/images/albums/%d_spotify_%d.png", album.ID, i)
+		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		if err != nil {
+			e.logger.Warn("failed to download spotify image", "url", img.URL, "error", err)
+			continue
+		}
 		images = append(images, enrichers.ImageData{
 			URL:       img.URL,
+			LocalPath: localPath,
 			Type:      "cover_front",
 			Source:    "spotify",
 			Width:     img.Width,

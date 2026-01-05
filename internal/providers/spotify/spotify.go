@@ -241,39 +241,42 @@ type recentlyPlayedResponse struct {
 //
 // To capture the most history, sync should run frequently (at least every few hours)
 // to catch new plays before they fall out of the 50-track window.
-func (p *Provider) GetRecentListens(ctx context.Context, since time.Time) ([]providers.Track, error) {
+func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callback func([]providers.Track) error) error {
 	p.logger.Info("fetching recent listens from spotify", "username", p.user.Username, "since", since)
 
 	accessToken, err := p.getValidToken(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Spotify API uses milliseconds timestamp for the 'after' parameter
 	// Note: Spotify only returns up to 50 tracks regardless of the 'after' value
 	// There is no pagination cursor to get older history - this is a Spotify API limitation
 	afterMs := since.UnixMilli()
+	if afterMs < 0 {
+		afterMs = 0
+	}
 	url := fmt.Sprintf("https://api.spotify.com/v1/me/player/recently-played?limit=50&after=%d", afterMs)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("spotify API returned status %d", resp.StatusCode)
+		return fmt.Errorf("spotify API returned status %d", resp.StatusCode)
 	}
 
 	var result recentlyPlayedResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+		return err
 	}
 
 	tracks := make([]providers.Track, 0, len(result.Items))
@@ -297,7 +300,11 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time) ([]pro
 	p.logger.Info("fetched recent listens from spotify",
 		"count", len(tracks),
 		"note", "Spotify API limited to last 50 tracks - older history unavailable")
-	return tracks, nil
+
+	if len(tracks) > 0 {
+		return callback(tracks)
+	}
+	return nil
 }
 
 type playlistsResponse struct {
