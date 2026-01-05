@@ -9,6 +9,8 @@ import (
 
 	"spotter/ent"
 	"spotter/ent/enttest"
+	"spotter/ent/playlist"
+	"spotter/ent/playlisttrack"
 	"spotter/internal/config"
 	"spotter/internal/events"
 	"spotter/internal/providers"
@@ -813,4 +815,118 @@ func TestSyncer_UpdatesPlaylistTracks(t *testing.T) {
 	assert.Contains(t, trackNames, "New Track 1")
 	assert.Contains(t, trackNames, "New Track 2")
 	assert.NotContains(t, trackNames, "Old Track")
+}
+
+func TestSyncer_PreservesCatalogLinksOnPlaylistSync(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	defer client.Close()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus)
+
+	// Create user
+	user, err := client.User.Create().
+		SetUsername("testuser").
+		SetPaginationSize(25).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Create catalog artist, album, and track
+	catalogArtist, err := client.Artist.Create().
+		SetUser(user).
+		SetName("Test Artist").
+		Save(ctx)
+	require.NoError(t, err)
+
+	catalogAlbum, err := client.Album.Create().
+		SetUser(user).
+		SetArtist(catalogArtist).
+		SetName("Test Album").
+		Save(ctx)
+	require.NoError(t, err)
+
+	catalogTrack, err := client.Track.Create().
+		SetArtist(catalogArtist).
+		SetAlbum(catalogAlbum).
+		SetName("Test Track").
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Create playlist
+	existingPlaylist, err := client.Playlist.Create().
+		SetUser(user).
+		SetRemoteID("playlist-1").
+		SetName("My Playlist").
+		SetSource("spotify").
+		SetTrackCount(1).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Create playlist track with catalog links
+	_, err = client.PlaylistTrack.Create().
+		SetPlaylist(existingPlaylist).
+		SetTrackName("Test Track").
+		SetArtistName("Test Artist").
+		SetAlbumName("Test Album").
+		SetRemoteID("track-1").
+		SetPosition(0).
+		SetTrack(catalogTrack).
+		SetArtist(catalogArtist).
+		SetAlbum(catalogAlbum).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register mock Spotify provider with same track (simulating a re-sync)
+	mockSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks:       []providers.Track{},
+		playlists: []providers.Playlist{
+			{
+				ID:            "playlist-1",
+				Name:          "My Playlist",
+				TrackCount:    1,
+				UniqueArtists: 1,
+				UniqueAlbums:  1,
+				Tracks: []providers.Track{
+					{
+						ID:     "track-1",
+						Name:   "Test Track",
+						Artist: "Test Artist",
+						Album:  "Test Album",
+					},
+				},
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockSpotify))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify playlist track still has catalog links
+	playlistTracks, err := client.PlaylistTrack.Query().
+		Where(playlisttrack.HasPlaylistWith(playlist.ID(existingPlaylist.ID))).
+		WithTrack().
+		WithArtist().
+		WithAlbum().
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, playlistTracks, 1, "Should have 1 track")
+
+	pt := playlistTracks[0]
+	assert.NotNil(t, pt.Edges.Track, "Track catalog link should be preserved")
+	assert.NotNil(t, pt.Edges.Artist, "Artist catalog link should be preserved")
+	assert.NotNil(t, pt.Edges.Album, "Album catalog link should be preserved")
+
+	if pt.Edges.Track != nil {
+		assert.Equal(t, catalogTrack.ID, pt.Edges.Track.ID, "Should link to same catalog track")
+	}
+	if pt.Edges.Artist != nil {
+		assert.Equal(t, catalogArtist.ID, pt.Edges.Artist.ID, "Should link to same catalog artist")
+	}
+	if pt.Edges.Album != nil {
+		assert.Equal(t, catalogAlbum.ID, pt.Edges.Album.ID, "Should link to same catalog album")
+	}
 }

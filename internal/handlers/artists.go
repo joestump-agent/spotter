@@ -241,7 +241,9 @@ func (h *Handler) getTopTracksForArtist(ctx context.Context, userID int, artistN
 				track.Name(r.TrackName),
 				track.HasArtistWith(artist.Name(artistName)),
 			).
-			WithAlbum().
+			WithAlbum(func(q *ent.AlbumQuery) {
+				q.WithImages()
+			}).
 			First(ctx)
 		if err != nil {
 			// Track might not exist in catalog, create a minimal entry

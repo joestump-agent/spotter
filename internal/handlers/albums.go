@@ -250,6 +250,9 @@ func (h *Handler) getAlbumTracksWithListens(ctx context.Context, userID int, a *
 
 		count, _ := query.Count(ctx)
 
+		// Set the Album edge on the track so that TrackTableRow.Album() can return it
+		// for cover art rendering in the track table
+		t.Edges.Album = a
 		result = append(result, albums.TrackWithListens{
 			Track:       t,
 			ListenCount: count,

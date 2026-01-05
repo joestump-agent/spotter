@@ -399,14 +399,19 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 								<span class="icon-[heroicons--fire] w-5 h-5 text-error"></span>
 								Top Tracks
 							</h3>
-							@components.ColumnToggleMenu("top-tracks-table", []components.ColumnOption{
-								{Value: "col-index", Label: "#", DefaultVisible: true},
-								{Value: "col-track", Label: "Track", DefaultVisible: true},
-								{Value: "col-artist", Label: "Artist", DefaultVisible: false},
-								{Value: "col-album", Label: "Album", DefaultVisible: true},
-								{Value: "col-duration", Label: "Duration", DefaultVisible: true},
-								{Value: "col-popularity", Label: "Popularity", DefaultVisible: true},
-								{Value: "col-plays", Label: "Plays", DefaultVisible: true},
+							@components.TrackTableToolbar(components.TrackTableToolbarConfig{
+								TableID:           "top-tracks-table",
+								ShowArtworkToggle: true,
+								ArtworkDefault:    true,
+								ColumnOptions: []components.ColumnOption{
+									{Value: "col-index", Label: "#", DefaultVisible: true},
+									{Value: "col-track", Label: "Track", DefaultVisible: true},
+									{Value: "col-artist", Label: "Artist", DefaultVisible: false},
+									{Value: "col-album", Label: "Album", DefaultVisible: true},
+									{Value: "col-duration", Label: "Duration", DefaultVisible: true},
+									{Value: "col-popularity", Label: "Popularity", DefaultVisible: true},
+									{Value: "col-plays", Label: "Plays", DefaultVisible: true},
+								},
 							})
 						</div>
 						@components.TrackTable("top-tracks-table", toTrackRowsFromStats(stats.TopTracks), []string{"#", "track", "album", "duration", "popularity", "plays"}, nil, components.SortConfig{})
@@ -472,7 +477,7 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 					</h3>
 					<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
 						for _, album := range albums {
-							@AlbumTile(album)
+							@components.AlbumTile(album)
 						}
 					</div>
 				</div>
@@ -620,49 +625,12 @@ templ providerHistoryScript(artistID int, data components.StackedChartData) {
 	</script>
 }
 
-templ AlbumTile(album *ent.Album) {
-	<a href={ templ.URL(fmt.Sprintf("/library/album/%d", album.ID)) } class="card bg-base-100 shadow-md hover:shadow-xl transition-all hover:-translate-y-1">
-		<figure class="relative pt-[100%]">
-			if img := getPrimaryAlbumImage(album); img != "" {
-				<img src={ img } alt={ album.Name } class="absolute inset-0 w-full h-full object-cover"/>
-			} else {
-				<div class="absolute inset-0 bg-base-300 flex items-center justify-center">
-					<span class="icon-[heroicons--square-3-stack-3d] w-16 h-16 text-base-content/20"></span>
-				</div>
-			}
-			if album.Year > 0 {
-				<div class="absolute bottom-2 right-2 badge badge-neutral badge-sm px-2 py-0.5">
-					<span>{ fmt.Sprintf("%d", album.Year) }</span>
-				</div>
-			}
-		</figure>
-		<div class="card-body p-3">
-			<h4 class="font-semibold text-sm line-clamp-1">{ album.Name }</h4>
-			<div class="flex items-center gap-2 text-xs text-base-content/60">
-				if album.TotalTracks > 0 {
-					<span>{ fmt.Sprintf("%d tracks", album.TotalTracks) }</span>
-				}
-				if album.AlbumType != "" && album.AlbumType != "album" {
-					<span class="badge badge-xs badge-ghost px-1.5 py-0.5">{ album.AlbumType }</span>
-				}
-			</div>
-		</div>
-	</a>
-}
-
 func toJSON(v interface{}) string {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return "[]"
 	}
 	return string(b)
-}
-
-func getPrimaryAlbumImage(album *ent.Album) string {
-	if album.Edges.Images == nil || len(album.Edges.Images) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("/library/album/%d.png", album.ID)
 }
 
 func showGetOrDefault(value, defaultVal string) string {

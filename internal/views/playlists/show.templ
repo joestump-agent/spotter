@@ -103,13 +103,18 @@ templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *confi
 							Tracks
 							<span class="badge badge-ghost badge-sm">{ fmt.Sprintf("%d", len(tracks)) }</span>
 						</h3>
-						@components.ColumnToggleMenu("playlist-tracks-table", []components.ColumnOption{
-							{Value: "col-index", Label: "#", DefaultVisible: true},
-							{Value: "col-track", Label: "Track", DefaultVisible: true},
-							{Value: "col-artist", Label: "Artist", DefaultVisible: true},
-							{Value: "col-album", Label: "Album", DefaultVisible: true},
-							{Value: "col-duration", Label: "Duration", DefaultVisible: true},
-							{Value: "col-popularity", Label: "Popularity", DefaultVisible: false},
+						@components.TrackTableToolbar(components.TrackTableToolbarConfig{
+							TableID:           "playlist-tracks-table",
+							ShowArtworkToggle: true,
+							ArtworkDefault:    true,
+							ColumnOptions: []components.ColumnOption{
+								{Value: "col-index", Label: "#", DefaultVisible: true},
+								{Value: "col-track", Label: "Track", DefaultVisible: true},
+								{Value: "col-artist", Label: "Artist", DefaultVisible: true},
+								{Value: "col-album", Label: "Album", DefaultVisible: true},
+								{Value: "col-duration", Label: "Duration", DefaultVisible: true},
+								{Value: "col-popularity", Label: "Popularity", DefaultVisible: false},
+							},
 						})
 					</div>
 					if len(tracks) == 0 {

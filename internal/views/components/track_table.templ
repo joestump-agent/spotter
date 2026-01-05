@@ -103,8 +103,7 @@ func (r TrackTableRow) ImageURL() string {
 	var albumEdge *ent.Album
 	if r.Track != nil && r.Track.Edges.Album != nil {
 		albumEdge = r.Track.Edges.Album
-	}
-	if r.Listen != nil && r.Listen.Edges.Album != nil {
+	} else if r.Listen != nil && r.Listen.Edges.Album != nil {
 		albumEdge = r.Listen.Edges.Album
 	}
 	if albumEdge != nil && len(albumEdge.Edges.Images) > 0 {

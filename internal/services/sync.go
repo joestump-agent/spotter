@@ -561,7 +561,7 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 	return addedCount, updatedCount, nil
 }
 
-// persistPlaylistTracks saves tracks for a playlist, replacing existing tracks
+// persistPlaylistTracks saves tracks for a playlist, upserting to preserve catalog links
 func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, tracks []providers.Track) error {
 	// Get the playlist to access user and provider info
 	pl, err := s.Client.Playlist.Query().
@@ -574,52 +574,142 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 	providerName := pl.Source
 	userID := pl.Edges.User.ID
 
-	// Delete existing playlist tracks
-	_, err = s.Client.PlaylistTrack.Delete().
+	// Get existing playlist tracks with their catalog links
+	existingTracks, err := s.Client.PlaylistTrack.Query().
 		Where(playlisttrack.HasPlaylistWith(playlist.ID(playlistID))).
-		Exec(ctx)
+		WithTrack().
+		WithArtist().
+		WithAlbum().
+		All(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to delete existing playlist tracks: %w", err)
+		return fmt.Errorf("failed to get existing playlist tracks: %w", err)
 	}
 
-	// Create new playlist tracks in bulk
-	builders := make([]*ent.PlaylistTrackCreate, 0, len(tracks))
+	// Build maps for quick lookup of existing tracks
+	// Use remote_id as primary key, fall back to track_name+artist_name
+	existingByRemoteID := make(map[string]*ent.PlaylistTrack)
+	existingByNameArtist := make(map[string]*ent.PlaylistTrack)
+	existingIDs := make(map[int]bool)
+
+	for _, pt := range existingTracks {
+		existingIDs[pt.ID] = true
+		if pt.RemoteID != "" {
+			existingByRemoteID[pt.RemoteID] = pt
+		}
+		key := pt.TrackName + "|" + pt.ArtistName
+		existingByNameArtist[key] = pt
+	}
+
+	// First, move all existing tracks to negative positions to avoid unique constraint conflicts
+	// when updating positions
+	for i, pt := range existingTracks {
+		if err := s.Client.PlaylistTrack.UpdateOneID(pt.ID).SetPosition(-(i + 1)).Exec(ctx); err != nil {
+			s.Logger.Warn("failed to temporarily reposition playlist track", "error", err, "id", pt.ID)
+		}
+	}
+
+	// Track which existing tracks we've seen (to delete removed ones)
+	seenIDs := make(map[int]bool)
+	addedCount := 0
+	updatedCount := 0
+
 	for i, track := range tracks {
 		if track.Name == "" || track.Artist == "" {
 			continue
 		}
 
-		builder := s.Client.PlaylistTrack.Create().
-			SetPlaylistID(playlistID).
-			SetTrackName(track.Name).
-			SetArtistName(track.Artist).
-			SetPosition(i).
-			SetRemoteID(track.ID)
-
-		if track.Album != "" {
-			builder.SetAlbumName(track.Album)
+		// Try to find existing track by remote_id first, then by name+artist
+		var existing *ent.PlaylistTrack
+		if track.ID != "" {
+			existing = existingByRemoteID[track.ID]
 		}
-		if track.DurationMs > 0 {
-			builder.SetDurationMs(track.DurationMs)
-		}
-		if track.URL != "" {
-			builder.SetURL(track.URL)
+		if existing == nil {
+			key := track.Name + "|" + track.Artist
+			existing = existingByNameArtist[key]
 		}
 
-		builders = append(builders, builder)
+		if existing != nil {
+			// Update existing track, preserving catalog links
+			seenIDs[existing.ID] = true
+			update := s.Client.PlaylistTrack.UpdateOneID(existing.ID).
+				SetTrackName(track.Name).
+				SetArtistName(track.Artist).
+				SetPosition(i)
+
+			if track.ID != "" {
+				update.SetRemoteID(track.ID)
+			}
+			if track.Album != "" {
+				update.SetAlbumName(track.Album)
+			}
+			if track.DurationMs > 0 {
+				update.SetDurationMs(track.DurationMs)
+			}
+			if track.URL != "" {
+				update.SetURL(track.URL)
+			}
+
+			if err := update.Exec(ctx); err != nil {
+				s.Logger.Warn("failed to update playlist track", "error", err, "track", track.Name)
+				continue
+			}
+			updatedCount++
+		} else {
+			// Create new track
+			builder := s.Client.PlaylistTrack.Create().
+				SetPlaylistID(playlistID).
+				SetTrackName(track.Name).
+				SetArtistName(track.Artist).
+				SetPosition(i)
+
+			if track.ID != "" {
+				builder.SetRemoteID(track.ID)
+			}
+			if track.Album != "" {
+				builder.SetAlbumName(track.Album)
+			}
+			if track.DurationMs > 0 {
+				builder.SetDurationMs(track.DurationMs)
+			}
+			if track.URL != "" {
+				builder.SetURL(track.URL)
+			}
+
+			if _, err := builder.Save(ctx); err != nil {
+				s.Logger.Warn("failed to create playlist track", "error", err, "track", track.Name)
+				continue
+			}
+			addedCount++
+		}
 	}
 
-	if len(builders) > 0 {
-		_, err = s.Client.PlaylistTrack.CreateBulk(builders...).Save(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create playlist tracks: %w", err)
+	// Delete tracks that are no longer in the playlist
+	deletedCount := 0
+	for id := range existingIDs {
+		if !seenIDs[id] {
+			if err := s.Client.PlaylistTrack.DeleteOneID(id).Exec(ctx); err != nil {
+				s.Logger.Warn("failed to delete removed playlist track", "error", err, "id", id)
+				continue
+			}
+			deletedCount++
 		}
-		s.Logger.Debug("saved playlist tracks", "playlist_id", playlistID, "count", len(builders))
+	}
+
+	totalCount := addedCount + updatedCount
+	if totalCount > 0 || deletedCount > 0 {
+		s.Logger.Debug("synced playlist tracks",
+			"playlist_id", playlistID,
+			"added", addedCount,
+			"updated", updatedCount,
+			"deleted", deletedCount)
 
 		// Log event and send notification
-		message := fmt.Sprintf("Imported %d tracks for playlist: %s", len(builders), pl.Name)
+		message := fmt.Sprintf("Synced %d tracks for playlist: %s", totalCount, pl.Name)
+		if deletedCount > 0 {
+			message = fmt.Sprintf("Synced %d tracks (%d removed) for playlist: %s", totalCount, deletedCount, pl.Name)
+		}
 		s.logEvent(ctx, pl.Edges.User, syncevent.EventTypeTrackAdded, providerName, message,
-			map[string]interface{}{"playlist_name": pl.Name, "track_count": len(builders)})
+			map[string]interface{}{"playlist_name": pl.Name, "track_count": totalCount, "added": addedCount, "updated": updatedCount, "deleted": deletedCount})
 
 		s.Bus.Publish(userID, events.Event{
 			Type: events.EventTypeNotification,

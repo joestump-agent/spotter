@@ -382,14 +382,19 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 							<span class="icon-[heroicons--queue-list] w-5 h-5"></span>
 							Tracks
 						</h3>
-						@components.ColumnToggleMenu("album-tracks-table", []components.ColumnOption{
-							{Value: "col-index", Label: "#", DefaultVisible: true},
-							{Value: "col-track", Label: "Track", DefaultVisible: true},
-							{Value: "col-artist", Label: "Artist", DefaultVisible: false},
-							{Value: "col-album", Label: "Album", DefaultVisible: false},
-							{Value: "col-duration", Label: "Duration", DefaultVisible: true},
-							{Value: "col-popularity", Label: "Popularity", DefaultVisible: true},
-							{Value: "col-plays", Label: "Plays", DefaultVisible: true},
+						@components.TrackTableToolbar(components.TrackTableToolbarConfig{
+							TableID:           "album-tracks-table",
+							ShowArtworkToggle: true,
+							ArtworkDefault:    false,
+							ColumnOptions: []components.ColumnOption{
+								{Value: "col-index", Label: "#", DefaultVisible: true},
+								{Value: "col-track", Label: "Track", DefaultVisible: true},
+								{Value: "col-artist", Label: "Artist", DefaultVisible: false},
+								{Value: "col-album", Label: "Album", DefaultVisible: false},
+								{Value: "col-duration", Label: "Duration", DefaultVisible: true},
+								{Value: "col-popularity", Label: "Popularity", DefaultVisible: true},
+								{Value: "col-plays", Label: "Plays", DefaultVisible: true},
+							},
 						})
 					</div>
 					@components.TrackTable("album-tracks-table", toTrackRowsFromAlbumStats(tracks), []string{"#", "track", "duration", "popularity", "plays"}, nil, components.SortConfig{})
