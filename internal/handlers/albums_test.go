@@ -39,7 +39,7 @@ func setupAlbumHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events.Bu
 	cfg := &config.Config{}
 	bus := events.NewBus()
 	syncer := services.NewSyncer(client, cfg, logger, bus)
-	h := handlers.New(client, cfg, logger, syncer, nil, nil, nil, nil, bus)
+	h := handlers.New(client, cfg, logger, syncer, nil, nil, nil, nil, nil, bus)
 	return client, h, bus
 }
 

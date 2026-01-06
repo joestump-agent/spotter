@@ -15,6 +15,11 @@ const (
 	EventTypeMixtapeGenerated  EventType = "mixtape-generated"
 	EventTypeMixtapeError      EventType = "mixtape-error"
 
+	// Playlist Enhancement events
+	EventTypePlaylistEnhancing    EventType = "playlist-enhancing"
+	EventTypePlaylistEnhanced     EventType = "playlist-enhanced"
+	EventTypePlaylistEnhanceError EventType = "playlist-enhance-error"
+
 	// Similar Artists events
 	EventTypeSimilarArtistsSearching EventType = "similar-artists-searching"
 	EventTypeSimilarArtistsFound     EventType = "similar-artists-found"
@@ -74,6 +79,27 @@ type SimilarArtistsFoundPayload struct {
 type SimilarArtistsErrorPayload struct {
 	ArtistID   int
 	ArtistName string
+	Error      string
+}
+
+// PlaylistEnhancingPayload is sent when playlist enhancement starts.
+type PlaylistEnhancingPayload struct {
+	PlaylistID   int
+	PlaylistName string
+	DJName       string
+}
+
+// PlaylistEnhancedPayload is sent when playlist enhancement completes.
+type PlaylistEnhancedPayload struct {
+	PlaylistID   int
+	PlaylistName string
+	TracksAdded  int
+	TokensUsed   int
+}
+
+// PlaylistEnhanceErrorPayload is sent when playlist enhancement fails.
+type PlaylistEnhanceErrorPayload struct {
+	PlaylistID int
 	Error      string
 }
 
@@ -216,6 +242,42 @@ func (b *Bus) PublishSimilarArtistsError(userID int, artistID int, artistName, e
 		Payload: SimilarArtistsErrorPayload{
 			ArtistID:   artistID,
 			ArtistName: artistName,
+			Error:      errorMsg,
+		},
+	})
+}
+
+// PublishPlaylistEnhancing publishes an event when playlist enhancement starts.
+func (b *Bus) PublishPlaylistEnhancing(userID int, playlistID int, playlistName, djName string) {
+	b.Publish(userID, Event{
+		Type: EventTypePlaylistEnhancing,
+		Payload: PlaylistEnhancingPayload{
+			PlaylistID:   playlistID,
+			PlaylistName: playlistName,
+			DJName:       djName,
+		},
+	})
+}
+
+// PublishPlaylistEnhanced publishes an event when playlist enhancement completes.
+func (b *Bus) PublishPlaylistEnhanced(userID int, playlistID int, playlistName string, tracksAdded, tokensUsed int) {
+	b.Publish(userID, Event{
+		Type: EventTypePlaylistEnhanced,
+		Payload: PlaylistEnhancedPayload{
+			PlaylistID:   playlistID,
+			PlaylistName: playlistName,
+			TracksAdded:  tracksAdded,
+			TokensUsed:   tokensUsed,
+		},
+	})
+}
+
+// PublishPlaylistEnhancementError publishes an event when playlist enhancement fails.
+func (b *Bus) PublishPlaylistEnhancementError(userID int, playlistID int, errorMsg string) {
+	b.Publish(userID, Event{
+		Type: EventTypePlaylistEnhanceError,
+		Payload: PlaylistEnhanceErrorPayload{
+			PlaylistID: playlistID,
 			Error:      errorMsg,
 		},
 	})

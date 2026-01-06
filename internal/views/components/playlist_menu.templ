@@ -67,9 +67,12 @@ templ PlaylistMenuBar(config PlaylistMenuConfig) {
 				SyncError:       config.SyncError,
 			})
 		} else {
-			// Navidrome playlist: Show AI dropdown
+			// Navidrome playlist: Show Enhance Vibes button and AI dropdown
+			@EnhanceVibesButton(config.PlaylistID, "sm")
 			@PlaylistAIDropdown(config)
 		}
+		// Render the Enhance Vibes modal shell (content loaded via HTMX)
+		@EnhanceVibesModal()
 	</div>
 }
 

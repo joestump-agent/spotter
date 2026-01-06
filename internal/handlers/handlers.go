@@ -26,11 +26,12 @@ type Handler struct {
 	MetadataSvc       *services.MetadataService
 	PlaylistSyncSvc   *services.PlaylistSyncService
 	MixtapeGenerator  *vibes.MixtapeGenerator
+	PlaylistEnhancer  *vibes.PlaylistEnhancer
 	SimilarArtistsSvc *services.SimilarArtistsService
 	Bus               *events.Bus
 }
 
-func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, mixtapeGen *vibes.MixtapeGenerator, similarArtistsSvc *services.SimilarArtistsService, bus *events.Bus) *Handler {
+func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, mixtapeGen *vibes.MixtapeGenerator, playlistEnhancer *vibes.PlaylistEnhancer, similarArtistsSvc *services.SimilarArtistsService, bus *events.Bus) *Handler {
 	return &Handler{
 		Client:            client,
 		Config:            cfg,
@@ -39,6 +40,7 @@ func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *se
 		MetadataSvc:       metadataSvc,
 		PlaylistSyncSvc:   playlistSyncSvc,
 		MixtapeGenerator:  mixtapeGen,
+		PlaylistEnhancer:  playlistEnhancer,
 		SimilarArtistsSvc: similarArtistsSvc,
 		Bus:               bus,
 	}

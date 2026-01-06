@@ -272,6 +272,25 @@ Mixtapes can be seeded with:
 - **Album**: Generate a mixtape based on an album's vibe
 - **Tracks**: Generate a mixtape starting from specific seed tracks
 
+#### Playlist Enhancement (Enhance Vibes)
+
+The "Enhance Vibes" feature allows you to use DJ personas to improve existing playlists:
+
+1. **Reordering**: The DJ analyzes your playlist's tracks and reorders them for better flow (energy builds, mood transitions, tempo progression).
+2. **Track Additions**: The DJ suggests new tracks from your library that complement the existing selection.
+3. **Guarantee**: Your original tracks are **never removed** - only reordered and augmented.
+
+**Enhancement Modes:**
+
+| Mode | Description |
+| :--- | :--- |
+| **One-time Enhance** | Apply changes directly to Navidrome. The playlist remains manually editable afterward. |
+| **Convert to Mixtape** | The DJ takes over the playlist. It becomes a Mixtape that can be regenerated and scheduled. |
+
+**Prompt Template:**
+
+The enhancement uses `data/prompts/enhance_playlist.tmpl` which can be customized to adjust how the AI enhances playlists.
+
 ### Similar Artists (AI-Powered Discovery)
 
 The Similar Artists feature uses AI to find artists in your library that are musically related to a given artist. This helps you discover connections within your own music collection.

@@ -58,6 +58,29 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 				}
+			case events.EventTypePlaylistEnhancing:
+				if payload, ok := event.Payload.(events.PlaylistEnhancingPayload); ok {
+					msg := fmt.Sprintf("%s is enhancing '%s'...", payload.DJName, payload.PlaylistName)
+					if err := components.Toast("Enhancing Playlist", msg, "info").Render(ctx, &buf); err != nil {
+						h.Logger.Error("failed to render playlist enhancing toast", "error", err)
+						continue
+					}
+				}
+			case events.EventTypePlaylistEnhanced:
+				if payload, ok := event.Payload.(events.PlaylistEnhancedPayload); ok {
+					msg := fmt.Sprintf("'%s' enhanced with %d new tracks", payload.PlaylistName, payload.TracksAdded)
+					if err := components.Toast("Enhancement Complete", msg, "success").Render(ctx, &buf); err != nil {
+						h.Logger.Error("failed to render playlist enhanced toast", "error", err)
+						continue
+					}
+				}
+			case events.EventTypePlaylistEnhanceError:
+				if payload, ok := event.Payload.(events.PlaylistEnhanceErrorPayload); ok {
+					if err := components.Toast("Enhancement Failed", payload.Error, "error").Render(ctx, &buf); err != nil {
+						h.Logger.Error("failed to render playlist enhance error toast", "error", err)
+						continue
+					}
+				}
 			}
 
 			if buf.Len() > 0 {

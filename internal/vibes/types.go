@@ -219,3 +219,128 @@ type AIResponse struct {
 	OpeningThoughts string `json:"opening_thoughts"`
 	ClosingThoughts string `json:"closing_thoughts"`
 }
+
+// EnhancementMode defines how the enhancement should be applied.
+type EnhancementMode string
+
+const (
+	// EnhancementModeOneTime applies changes directly to Navidrome without creating a Mixtape.
+	EnhancementModeOneTime EnhancementMode = "one_time"
+	// EnhancementModeConvertToMixtape converts the playlist into a DJ-managed Mixtape.
+	EnhancementModeConvertToMixtape EnhancementMode = "convert_to_mixtape"
+)
+
+// EnhancementRequest contains the parameters for enhancing a playlist.
+type EnhancementRequest struct {
+	// PlaylistID is the ID of the playlist to enhance
+	PlaylistID int
+	// DJID is the ID of the DJ persona to use
+	DJID int
+	// Mode determines whether to apply one-time or convert to mixtape
+	Mode EnhancementMode
+	// MaxNewTracks is the maximum number of new tracks to suggest (default: 5)
+	MaxNewTracks int
+	// UserID is the ID of the user making the request
+	UserID int
+}
+
+// ExistingTrack represents a track already in the playlist.
+type ExistingTrack struct {
+	ID       int      // Internal track ID
+	Name     string   // Track name
+	Artist   string   // Artist name
+	Album    string   // Album name
+	Genres   []string // Track genres
+	Energy   *float64 // Energy level (0-1)
+	BPM      *float64 // Beats per minute
+	Position int      // Current position in playlist
+}
+
+// EnhancedTrack represents a track in the enhanced playlist.
+type EnhancedTrack struct {
+	// ID is the track ID (prefixed with EXISTING: or ADD:)
+	ID string
+	// InternalID is the numeric track ID in our database
+	InternalID int
+	// Name is the track name
+	Name string
+	// Artist is the artist name
+	Artist string
+	// Position is the new position in the playlist (1-based)
+	Position int
+	// Reason explains why this track is placed here
+	Reason string
+	// IsNew indicates if this is a newly added track
+	IsNew bool
+	// Matched indicates if the track was found in the library
+	Matched bool
+}
+
+// EnhancementResult contains the result of a playlist enhancement.
+type EnhancementResult struct {
+	// ReorderedTracks contains all tracks in their new order
+	ReorderedTracks []EnhancedTrack
+	// NewTracks contains only the newly added tracks
+	NewTracks []EnhancedTrack
+	// FlowDescription describes the enhanced playlist's journey
+	FlowDescription string
+	// EnhancementSummary summarizes what was changed
+	EnhancementSummary string
+	// OpeningThoughts is the DJ's commentary
+	OpeningThoughts string
+	// PromptUsed is the full prompt sent to the AI
+	PromptUsed string
+	// ModelUsed is the AI model used
+	ModelUsed string
+	// TokensUsed is the number of tokens consumed
+	TokensUsed int
+	// OriginalTrackCount is how many tracks were originally in the playlist
+	OriginalTrackCount int
+	// FinalTrackCount is the total tracks after enhancement
+	FinalTrackCount int
+	// TracksAdded is how many new tracks were added
+	TracksAdded int
+}
+
+// EnhancementTemplateData contains all data needed to render the enhancement prompt.
+type EnhancementTemplateData struct {
+	// DJ information
+	DJName         string
+	DJSystemPrompt string
+	GenresInclude  []string
+	GenresExclude  []string
+	Vibes          []string
+	ArtistsInclude []string
+	ArtistsExclude []string
+
+	// Playlist information
+	PlaylistName        string
+	PlaylistDescription string
+	ExistingTracks      []ExistingTrack
+
+	// Available tracks for addition
+	AvailableTracks []AvailableTrack
+
+	// User context
+	ListeningHistory []HistoryEntry
+
+	// Enhancement settings
+	MaxNewTracks int
+}
+
+// EnhancementAIResponse represents the parsed AI response for enhancement.
+type EnhancementAIResponse struct {
+	ReorderedTracks []struct {
+		ID       string `json:"id"`
+		Position int    `json:"position"`
+		Reason   string `json:"reason"`
+	} `json:"reordered_tracks"`
+	NewTracks []struct {
+		ID       string `json:"id"`
+		Position int    `json:"position"`
+		Reason   string `json:"reason"`
+	} `json:"new_tracks"`
+	FlowDescription    string `json:"flow_description"`
+	EnhancementSummary string `json:"enhancement_summary"`
+	OpeningThoughts    string `json:"opening_thoughts"`
+}

@@ -8,9 +8,12 @@ import (
 	"time"
 
 	"spotter/ent"
+	"spotter/ent/dj"
+	"spotter/ent/mixtape"
 	"spotter/ent/playlist"
 	"spotter/ent/playlisttrack"
 	"spotter/ent/user"
+	"spotter/internal/vibes"
 	"spotter/internal/views/components"
 	"spotter/internal/views/playlists"
 
@@ -763,4 +766,346 @@ func (h *Handler) PlaylistGenerateArtwork(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("HX-Trigger", "playlist-artwork-generated")
 	w.WriteHeader(http.StatusOK)
+}
+
+// EnhanceVibesModal returns the modal content for enhancing a playlist with DJ vibes.
+func (h *Handler) EnhanceVibesModal(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership and get playlist
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	// Get user's DJs
+	djs, err := h.Client.DJ.Query().
+		Where(dj.HasUserWith(user.ID(u.ID))).
+		Order(ent.Asc(dj.FieldName)).
+		All(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to query DJs", "error", err)
+		djs = []*ent.DJ{}
+	}
+
+	params := components.EnhanceVibesModalParams{
+		PlaylistID:   pl.ID,
+		PlaylistName: pl.Name,
+		TrackCount:   pl.TrackCount,
+		DJs:          djs,
+	}
+
+	h.Render(w, r, components.EnhanceVibesModalContent(params))
+}
+
+// EnhanceVibes enhances a playlist using a DJ persona.
+func (h *Handler) EnhanceVibes(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	djID, err := strconv.Atoi(r.FormValue("dj_id"))
+	if err != nil {
+		http.Error(w, "DJ is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify DJ ownership
+	d, err := h.Client.DJ.Query().
+		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "DJ not found", http.StatusNotFound)
+		return
+	}
+
+	mode := vibes.EnhancementMode(r.FormValue("mode"))
+	if mode != vibes.EnhancementModeOneTime && mode != vibes.EnhancementModeConvertToMixtape {
+		mode = vibes.EnhancementModeOneTime
+	}
+
+	maxNewTracks := 5
+	if maxStr := r.FormValue("max_new_tracks"); maxStr != "" {
+		if mt, err := strconv.Atoi(maxStr); err == nil && mt >= 0 && mt <= 20 {
+			maxNewTracks = mt
+		}
+	}
+
+	h.Logger.Info("enhancing playlist vibes",
+		"playlist_id", pl.ID,
+		"playlist_name", pl.Name,
+		"dj_id", d.ID,
+		"dj_name", d.Name,
+		"mode", mode,
+		"max_new_tracks", maxNewTracks,
+		"user_id", u.ID)
+
+	// Check if the PlaylistEnhancer is available
+	if h.PlaylistEnhancer == nil {
+		h.Logger.Error("playlist enhancer not initialized")
+		http.Error(w, "Playlist enhancement service is not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Create the enhancement request
+	req := &vibes.EnhancementRequest{
+		PlaylistID:   pl.ID,
+		DJID:         d.ID,
+		Mode:         mode,
+		MaxNewTracks: maxNewTracks,
+		UserID:       u.ID,
+	}
+
+	// Run enhancement asynchronously
+	go func() {
+		ctx := context.Background()
+
+		// Publish enhancing event
+		if h.Bus != nil {
+			h.Bus.PublishPlaylistEnhancing(u.ID, pl.ID, pl.Name, d.Name)
+		}
+
+		result, err := h.PlaylistEnhancer.EnhancePlaylist(ctx, req)
+		if err != nil {
+			h.Logger.Error("playlist enhancement failed",
+				"playlist_id", pl.ID,
+				"error", err)
+
+			if h.Bus != nil {
+				h.Bus.PublishPlaylistEnhancementError(u.ID, pl.ID, err.Error())
+			}
+			return
+		}
+
+		h.Logger.Info("playlist enhancement complete",
+			"playlist_id", pl.ID,
+			"original_tracks", result.OriginalTrackCount,
+			"final_tracks", result.FinalTrackCount,
+			"tracks_added", result.TracksAdded)
+
+		// Handle the result based on mode
+		if mode == vibes.EnhancementModeConvertToMixtape {
+			// Create a new Mixtape from this playlist
+			h.convertPlaylistToMixtape(ctx, u, pl, d, result)
+		} else {
+			// Apply changes directly to Navidrome
+			h.applyEnhancementToNavidrome(ctx, u, pl, result)
+		}
+	}()
+
+	// Return immediately with "enhancing" status
+	w.Header().Set("HX-Trigger", "playlist-enhancing")
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// convertPlaylistToMixtape converts a playlist into a DJ-managed Mixtape.
+func (h *Handler) convertPlaylistToMixtape(ctx context.Context, u *ent.User, pl *ent.Playlist, d *ent.DJ, result *vibes.EnhancementResult) {
+	trackIDs := result.GetAllTrackIDsAsStrings()
+
+	// Create the mixtape
+	m, err := h.Client.Mixtape.Create().
+		SetName(pl.Name + " (Enhanced)").
+		SetDescription(result.EnhancementSummary).
+		SetSchedule(mixtape.ScheduleNone).
+		SetMaxTracks(len(trackIDs)).
+		SetTrackIds(trackIDs).
+		SetTrackCount(len(trackIDs)).
+		SetSyncToNavidrome(pl.SyncToNavidrome || pl.Source == "navidrome").
+		SetNavidromePlaylistID(pl.NavidromePlaylistID).
+		SetLastGeneratedAt(time.Now()).
+		SetGenerationPrompt(result.PromptUsed).
+		SetGenerationModel(result.ModelUsed).
+		SetGenerationTokensUsed(result.TokensUsed).
+		SetSeedType("playlist").
+		SetSeedID(pl.ID).
+		SetDj(d).
+		SetUser(u).
+		Save(ctx)
+
+	if err != nil {
+		h.Logger.Error("failed to create mixtape from playlist",
+			"playlist_id", pl.ID,
+			"error", err)
+
+		if h.Bus != nil {
+			h.Bus.PublishPlaylistEnhancementError(u.ID, pl.ID, "Failed to create mixtape: "+err.Error())
+		}
+		return
+	}
+
+	h.Logger.Info("converted playlist to mixtape",
+		"playlist_id", pl.ID,
+		"mixtape_id", m.ID,
+		"track_count", len(trackIDs))
+
+	// Publish success
+	if h.Bus != nil {
+		h.Bus.PublishNotification(u.ID,
+			"Playlist Converted to Mixtape",
+			pl.Name+" is now managed by "+d.Name,
+			"success")
+	}
+}
+
+// applyEnhancementToNavidrome applies the enhancement directly to Navidrome.
+func (h *Handler) applyEnhancementToNavidrome(ctx context.Context, u *ent.User, pl *ent.Playlist, result *vibes.EnhancementResult) {
+	// Only apply if the playlist has a Navidrome ID or is from Navidrome
+	if pl.NavidromePlaylistID == "" && pl.Source != "navidrome" {
+		h.Logger.Info("playlist not synced to Navidrome, skipping sync",
+			"playlist_id", pl.ID)
+
+		if h.Bus != nil {
+			h.Bus.PublishNotification(u.ID,
+				"Enhancement Complete",
+				pl.Name+" enhanced (not synced to Navidrome)",
+				"success")
+		}
+		return
+	}
+
+	// Use the PlaylistSyncService to update the playlist in Navidrome
+	if h.PlaylistSyncSvc == nil {
+		h.Logger.Warn("playlist sync service not available")
+		return
+	}
+
+	// Get all track IDs in order
+	trackIDs := result.GetAllTrackIDs()
+
+	h.Logger.Info("applying enhancement to Navidrome",
+		"playlist_id", pl.ID,
+		"navidrome_id", pl.NavidromePlaylistID,
+		"track_count", len(trackIDs))
+
+	// Update the playlist tracks in the database
+	// First, delete existing playlist tracks
+	_, err := h.Client.PlaylistTrack.Delete().
+		Where(playlisttrack.HasPlaylistWith(playlist.ID(pl.ID))).
+		Exec(ctx)
+	if err != nil {
+		h.Logger.Error("failed to delete existing playlist tracks",
+			"playlist_id", pl.ID,
+			"error", err)
+	}
+
+	// Add new tracks in order
+	for i, trackID := range trackIDs {
+		track, err := h.Client.Track.Get(ctx, trackID)
+		if err != nil {
+			h.Logger.Warn("track not found, skipping",
+				"track_id", trackID,
+				"error", err)
+			continue
+		}
+
+		// Get artist and album names
+		artistName := ""
+		albumName := ""
+		if edges, err := track.Edges.ArtistOrErr(); err == nil && edges != nil {
+			artistName = edges.Name
+		}
+		if edges, err := track.Edges.AlbumOrErr(); err == nil && edges != nil {
+			albumName = edges.Name
+		}
+
+		// Get duration if available
+		durationMs := 0
+		if track.DurationMs != nil {
+			durationMs = *track.DurationMs
+		}
+
+		_, err = h.Client.PlaylistTrack.Create().
+			SetPlaylist(pl).
+			SetTrack(track).
+			SetPosition(i + 1).
+			SetTrackName(track.Name).
+			SetArtistName(artistName).
+			SetAlbumName(albumName).
+			SetDurationMs(durationMs).
+			Save(ctx)
+		if err != nil {
+			h.Logger.Error("failed to create playlist track",
+				"playlist_id", pl.ID,
+				"track_id", trackID,
+				"error", err)
+		}
+	}
+
+	// Update playlist track count
+	_, err = h.Client.Playlist.UpdateOne(pl).
+		SetTrackCount(len(trackIDs)).
+		SetUpdatedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		h.Logger.Error("failed to update playlist track count",
+			"playlist_id", pl.ID,
+			"error", err)
+	}
+
+	// Trigger sync to Navidrome
+	if pl.SyncToNavidrome || pl.Source == "navidrome" {
+		go func() {
+			if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, pl.ID); err != nil {
+				h.Logger.Error("failed to sync enhanced playlist to Navidrome",
+					"playlist_id", pl.ID,
+					"error", err)
+
+				if h.Bus != nil {
+					h.Bus.PublishNotification(u.ID,
+						"Sync Failed",
+						"Enhanced "+pl.Name+" but failed to sync: "+err.Error(),
+						"warning")
+				}
+				return
+			}
+
+			if h.Bus != nil {
+				h.Bus.PublishNotification(u.ID,
+					"Enhancement Synced",
+					pl.Name+" enhanced and synced to Navidrome",
+					"success")
+			}
+		}()
+	}
 }

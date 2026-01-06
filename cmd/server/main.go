@@ -84,12 +84,16 @@ func main() {
 		"model", cfg.GetVibesModel(),
 		"temperature", cfg.Vibes.Temperature)
 
+	// Initialize Playlist Enhancer Service (for AI-powered playlist enhancement)
+	playlistEnhancer := vibes.NewPlaylistEnhancer(client, cfg, logger, bus)
+	logger.Info("playlist enhancer initialized")
+
 	// Initialize Similar Artists Service (for AI-powered artist similarity detection)
 	similarArtistsSvc := services.NewSimilarArtistsService(client, cfg, logger, bus)
 	logger.Info("similar artists service initialized")
 
 	// Initialize Handlers
-	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, similarArtistsSvc, bus)
+	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, playlistEnhancer, similarArtistsSvc, bus)
 
 	// Background Sync Loop for listens/playlists
 	syncInterval, err := time.ParseDuration(cfg.Sync.Interval)
@@ -256,6 +260,8 @@ func main() {
 		r.Post("/playlists/{id}/debug-sync", h.DebugPlaylistSync)
 		r.Post("/playlists/{id}/ai/generate-metadata", h.PlaylistGenerateMetadata)
 		r.Post("/playlists/{id}/ai/generate-artwork", h.PlaylistGenerateArtwork)
+		r.Get("/playlists/{id}/enhance-vibes-modal", h.EnhanceVibesModal)
+		r.Post("/playlists/{id}/enhance-vibes", h.EnhanceVibes)
 
 		// Vibes routes (DJs and Mixtapes)
 		r.Get("/vibes", h.VibesRedirect)
