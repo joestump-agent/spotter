@@ -234,9 +234,76 @@ Toast notifications appear in the UI during sync operations:
 | `SPOTTER_METADATA_IMAGES_MAX_WIDTH` | Maximum image width (for resizing). | `1000` |
 | `SPOTTER_METADATA_IMAGES_MAX_HEIGHT` | Maximum image height (for resizing). | `1000` |
 
-## Obtaining API Keys
+## Service Documentation
 
-Spotter integrates with several external services for listening history sync and metadata enrichment. Here's how to obtain API keys for each service:
+Each provider and enricher has its own comprehensive README with detailed setup instructions, configuration options, and troubleshooting guides.
+
+### Providers (Listening History Sources)
+
+Providers sync your listening history from external music services:
+
+- **[Last.fm Provider](internal/providers/lastfm/README.md)** - Scrobble history, full listening history
+  - MD5 authentication flow
+  - No API key expiration
+  - Unlimited historical data
+- **[Spotify Provider](internal/providers/spotify/README.md)** - Recently played tracks (last 50), playlists
+  - OAuth2 authentication
+  - Automatic token refresh
+  - 50-track history limitation
+- **[Navidrome Provider](internal/providers/navidrome/)** - Primary music server integration
+  - Subsonic API
+  - Library management
+  - Playlist syncing
+
+### Enrichers (Metadata Enhancement)
+
+Enrichers enhance your music metadata from various sources:
+
+- **[MusicBrainz Enricher](internal/enrichers/musicbrainz/README.md)** - Open music database (no API key required)
+  - Artist, album, track metadata
+  - MusicBrainz IDs (MBIDs)
+  - Cover Art Archive integration
+  - Rate limit: 1 request/second
+- **[Spotify Enricher](internal/enrichers/spotify/README.md)** - Audio features and metadata
+  - BPM, key, energy, danceability
+  - Popularity scores
+  - High-resolution artwork
+  - Requires user authentication
+- **[Fanart.tv Enricher](internal/enrichers/fanart/README.md)** - High-quality images
+  - HD artist logos
+  - Album artwork
+  - Backgrounds and banners
+  - Requires API key
+- **[Last.fm Enricher](internal/enrichers/lastfm/)** - Community metadata
+  - Artist biographies
+  - Tags and genres
+  - Album information
+- **[Navidrome Enricher](internal/enrichers/navidrome/)** - Local server metadata
+  - Subsonic API integration
+  - Cover art URLs
+  - Library information
+- **[Lidarr Enricher](internal/enrichers/lidarr/)** - Music collection manager
+  - Automated organization
+  - Quality profiles
+  - Release tracking
+- **[OpenAI Enricher](internal/enrichers/openai/)** - AI-powered enrichment
+  - Intelligent summaries
+  - Generated biographies
+  - Smart tagging
+
+### Quick Setup Guide
+
+For detailed setup instructions for each service, see the individual README files linked above. Each README includes:
+- Step-by-step API key acquisition
+- Configuration examples
+- Authentication flows
+- Rate limits and limitations
+- Troubleshooting guides
+- Example usage code
+
+## Quick Start: Obtaining API Keys
+
+For quick reference, here's a brief overview of how to obtain API keys for each service. **For detailed instructions, see the individual service READMEs linked above.**
 
 ### Spotify (Optional)
 
@@ -347,6 +414,8 @@ Spotter uses Go templates for AI prompts. Default prompts are stored in `./data/
 ```bash
 SPOTTER_METADATA_AI_PROMPTS_DIRECTORY=/path/to/custom/prompts
 ```
+
+> **For complete setup instructions, configuration options, and troubleshooting, see the [Service Documentation](#service-documentation) section above and individual component READMEs.**
 
 Template files:
 - `artist.tmpl` - Prompt for artist enrichment (generates biography, summary, and tags)
