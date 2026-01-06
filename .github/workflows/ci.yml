@@ -31,6 +31,7 @@ jobs:
 
   build-and-push:
     name: Build and Push
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
