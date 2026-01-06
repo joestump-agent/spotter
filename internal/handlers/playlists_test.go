@@ -41,7 +41,7 @@ func setupPlaylistHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events
 	bus := events.NewBus()
 	syncer := services.NewSyncer(client, cfg, logger, bus)
 	playlistSyncSvc := services.NewPlaylistSyncService(client, cfg, logger, bus)
-	h := handlers.New(client, cfg, logger, syncer, nil, playlistSyncSvc, bus)
+	h := handlers.New(client, cfg, logger, syncer, nil, playlistSyncSvc, nil, bus)
 	return client, h, bus
 }
 

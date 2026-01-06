@@ -19,6 +19,32 @@ type PlaylistSyncConfig struct {
 	IncludeUnmatchedTracks bool `mapstructure:"include_unmatched_tracks"`
 }
 
+// VibesConfig holds settings for the Vibes mixtape generation system.
+type VibesConfig struct {
+	// DefaultMaxTracks is the default maximum number of tracks to generate in a mixtape
+	DefaultMaxTracks int `mapstructure:"default_max_tracks"`
+	// MinTracks is the minimum number of tracks for a valid mixtape
+	MinTracks int `mapstructure:"min_tracks"`
+	// MaxTracks is the maximum allowed tracks (hard limit)
+	MaxTracks int `mapstructure:"max_tracks"`
+	// HistoryDays is how many days of listening history to include in context
+	HistoryDays int `mapstructure:"history_days"`
+	// MaxHistoryTracks is the maximum number of history tracks to include in prompt
+	MaxHistoryTracks int `mapstructure:"max_history_tracks"`
+	// Model is the AI model to use for mixtape generation (overrides openai.model if set)
+	Model string `mapstructure:"model"`
+	// Temperature is the AI temperature setting for generation (0.0-2.0)
+	Temperature float64 `mapstructure:"temperature"`
+	// MaxTokens is the maximum tokens for the AI response
+	MaxTokens int `mapstructure:"max_tokens"`
+	// TimeoutSeconds is the timeout for AI generation requests
+	TimeoutSeconds int `mapstructure:"timeout_seconds"`
+	// PromptsDirectory is the directory containing prompt templates
+	PromptsDirectory string `mapstructure:"prompts_directory"`
+	// MinMatchConfidence is the minimum confidence for matching AI-suggested tracks to library
+	MinMatchConfidence float64 `mapstructure:"min_match_confidence"`
+}
+
 type Config struct {
 	Database struct {
 		Driver string `mapstructure:"driver"`
@@ -58,6 +84,7 @@ type Config struct {
 		Model   string `mapstructure:"model"`    // Model to use for enrichment (e.g., gpt-4o, gpt-4-turbo)
 	} `mapstructure:"openai"`
 	PlaylistSync PlaylistSyncConfig `mapstructure:"playlist_sync"`
+	Vibes        VibesConfig        `mapstructure:"vibes"`
 	Metadata     struct {
 		Enabled  bool   `mapstructure:"enabled"`  // Enable/disable metadata enrichment
 		Interval string `mapstructure:"interval"` // Sync interval (e.g., "1h", "30m")
@@ -122,6 +149,30 @@ func (c *Config) IsOpenAIEnabled() bool {
 	return c.OpenAI.APIKey != ""
 }
 
+// GetVibesModel returns the model to use for vibes generation.
+// Falls back to the general OpenAI model if not specifically configured.
+func (c *Config) GetVibesModel() string {
+	if c.Vibes.Model != "" {
+		return c.Vibes.Model
+	}
+	if c.OpenAI.Model != "" {
+		return c.OpenAI.Model
+	}
+	return "gpt-4o"
+}
+
+// GetVibesPromptsDirectory returns the directory for vibes prompt templates.
+// Falls back to the metadata AI prompts directory, then to default.
+func (c *Config) GetVibesPromptsDirectory() string {
+	if c.Vibes.PromptsDirectory != "" {
+		return c.Vibes.PromptsDirectory
+	}
+	if c.Metadata.AI.PromptsDirectory != "" {
+		return c.Metadata.AI.PromptsDirectory
+	}
+	return "./data/prompts"
+}
+
 func Load() (*Config, error) {
 	v := viper.New()
 
@@ -159,6 +210,19 @@ func Load() (*Config, error) {
 	v.SetDefault("playlist_sync.delete_on_unsync", false)
 	v.SetDefault("playlist_sync.min_match_confidence", 0.8)
 	v.SetDefault("playlist_sync.include_unmatched_tracks", false)
+
+	// Vibes (mixtape generation) defaults
+	v.SetDefault("vibes.default_max_tracks", 25)
+	v.SetDefault("vibes.min_tracks", 5)
+	v.SetDefault("vibes.max_tracks", 100)
+	v.SetDefault("vibes.history_days", 30)
+	v.SetDefault("vibes.max_history_tracks", 50)
+	v.SetDefault("vibes.model", "")                 // Falls back to openai.model
+	v.SetDefault("vibes.temperature", 0.8)          // Slightly creative
+	v.SetDefault("vibes.max_tokens", 4000)          // Enough for track list + explanations
+	v.SetDefault("vibes.timeout_seconds", 120)      // 2 minutes
+	v.SetDefault("vibes.prompts_directory", "")     // Falls back to metadata.ai.prompts_directory
+	v.SetDefault("vibes.min_match_confidence", 0.7) // Lower than playlist sync for more matches
 
 	// Metadata enrichment defaults
 	v.SetDefault("metadata.enabled", true)

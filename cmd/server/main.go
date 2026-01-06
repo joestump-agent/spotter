@@ -27,6 +27,7 @@ import (
 	"spotter/internal/providers/navidrome"
 	"spotter/internal/providers/spotify"
 	"spotter/internal/services"
+	"spotter/internal/vibes"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -76,8 +77,15 @@ func main() {
 	metadataSvc.Register(enrichers.TypeFanart, enricherFanart.New(logger, cfg))
 	metadataSvc.Register(enrichers.TypeOpenAI, enricherOpenai.New(logger, cfg))
 
+	// Initialize Mixtape Generator Service (for AI-powered mixtape generation)
+	mixtapeGenerator := vibes.NewMixtapeGenerator(client, cfg, logger, bus)
+	logger.Info("vibes mixtape generator initialized",
+		"default_max_tracks", cfg.Vibes.DefaultMaxTracks,
+		"model", cfg.GetVibesModel(),
+		"temperature", cfg.Vibes.Temperature)
+
 	// Initialize Handlers
-	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, bus)
+	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, bus)
 
 	// Background Sync Loop for listens/playlists
 	syncInterval, err := time.ParseDuration(cfg.Sync.Interval)

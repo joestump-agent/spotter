@@ -6,6 +6,7 @@ Spotter is an AI-powered playlist generator for Navidrome. It aggregates your li
 
 *   **Unified Listening History**: Syncs recent listens from Navidrome, Spotify, and Last.fm into a single view with pagination.
 *   **Playlist Management**: View and sync playlists from all connected services.
+*   **Vibes Engine**: AI-powered mixtape generation with customizable DJ personas that curate playlists based on your listening history.
 *   **Navidrome Integration**: Log in using your existing Navidrome credentials.
 *   **External Service Support**: Connect your Spotify and Last.fm accounts to import history and improve recommendations.
 *   **Metadata Enrichment**: Automatically enriches artist, album, and track metadata from MusicBrainz, Fanart.tv, Spotify, Last.fm, and more.
@@ -233,6 +234,43 @@ Toast notifications appear in the UI during sync operations:
 | `SPOTTER_METADATA_IMAGES_DIRECTORY` | Directory to store downloaded images. | `./data/images` |
 | `SPOTTER_METADATA_IMAGES_MAX_WIDTH` | Maximum image width (for resizing). | `1000` |
 | `SPOTTER_METADATA_IMAGES_MAX_HEIGHT` | Maximum image height (for resizing). | `1000` |
+
+### Vibes Engine Configuration
+
+The Vibes Engine enables AI-powered mixtape generation. Create DJ personas with unique personalities that curate playlists based on your listening history and preferences.
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SPOTTER_VIBES_DEFAULT_MAX_TRACKS` | Default maximum tracks per mixtape. | `25` |
+| `SPOTTER_VIBES_MIN_TRACKS` | Minimum tracks for a valid mixtape. | `5` |
+| `SPOTTER_VIBES_MAX_TRACKS` | Maximum allowed tracks (hard limit). | `100` |
+| `SPOTTER_VIBES_HISTORY_DAYS` | Days of listening history to include in context. | `30` |
+| `SPOTTER_VIBES_MAX_HISTORY_TRACKS` | Maximum history tracks to include in prompt. | `50` |
+| `SPOTTER_VIBES_MODEL` | AI model for mixtape generation (overrides `openai.model`). | *Falls back to `openai.model`* |
+| `SPOTTER_VIBES_TEMPERATURE` | AI temperature for generation (0.0-2.0). | `0.8` |
+| `SPOTTER_VIBES_MAX_TOKENS` | Maximum tokens for AI response. | `4000` |
+| `SPOTTER_VIBES_TIMEOUT_SECONDS` | Timeout for AI generation requests. | `120` |
+| `SPOTTER_VIBES_PROMPTS_DIRECTORY` | Directory for vibes prompt templates. | *Falls back to metadata prompts directory* |
+| `SPOTTER_VIBES_MIN_MATCH_CONFIDENCE` | Minimum confidence for track matching. | `0.7` |
+
+#### How the Vibes Engine Works
+
+1. **DJ Personas**: Create DJs with unique personalities, genre preferences, and artists to include/exclude.
+2. **Mixtapes**: Create mixtapes assigned to a DJ with optional scheduling (daily, weekly, monthly regeneration).
+3. **Generation**: The AI uses the DJ's persona, your listening history, and available library tracks to curate a personalized mixtape.
+4. **Track Matching**: AI-suggested tracks are fuzzy-matched against your Navidrome library to ensure playability.
+5. **Sync to Navidrome**: Optionally sync generated mixtapes as playlists to Navidrome.
+
+#### Prompt Templates
+
+The Vibes Engine uses prompt templates stored in `data/prompts/generate_mixtape.tmpl`. You can customize this template to adjust how the AI generates mixtapes without recompiling.
+
+#### Seed Data
+
+Mixtapes can be seeded with:
+- **Artist**: Generate a mixtape inspired by a specific artist
+- **Album**: Generate a mixtape based on an album's vibe
+- **Tracks**: Generate a mixtape starting from specific seed tracks
 
 ## Service Documentation
 

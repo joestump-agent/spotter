@@ -45,6 +45,29 @@ func (Mixtape) Fields() []ent.Field {
 		field.Strings("track_ids").
 			Optional().
 			Comment("IDs of tracks in this mixtape"),
+		field.Text("generation_prompt").
+			Optional().
+			Comment("The full prompt sent to the AI for debugging and reproducibility"),
+		field.Int("generation_tokens_used").
+			Optional().
+			Nillable().
+			Comment("Number of tokens used in the last generation"),
+		field.String("generation_model").
+			Optional().
+			Comment("The AI model used for the last generation"),
+		field.String("generation_error").
+			Optional().
+			Comment("Error message from the last generation attempt, empty if successful"),
+		field.String("seed_type").
+			Optional().
+			Comment("Type of seed data used: artist, album, tracks, or empty for DJ-only"),
+		field.Int("seed_id").
+			Optional().
+			Nillable().
+			Comment("ID of the seed entity (artist or album ID)"),
+		field.Strings("seed_track_ids").
+			Optional().
+			Comment("Track IDs if seeded with specific tracks"),
 		field.Time("last_generated_at").
 			Optional().
 			Nillable().

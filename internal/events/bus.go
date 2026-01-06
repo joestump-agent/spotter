@@ -9,6 +9,11 @@ type EventType string
 const (
 	EventTypeRecentListen EventType = "recent-listen"
 	EventTypeNotification EventType = "notification"
+
+	// Vibes/Mixtape events
+	EventTypeMixtapeGenerating EventType = "mixtape-generating"
+	EventTypeMixtapeGenerated  EventType = "mixtape-generated"
+	EventTypeMixtapeError      EventType = "mixtape-error"
 )
 
 type Event struct {
@@ -19,7 +24,31 @@ type Event struct {
 type NotificationPayload struct {
 	Title    string
 	Message  string
-	IconType string
+	IconType string // "success", "error", "warning", "info"
+}
+
+// MixtapeGeneratingPayload is sent when mixtape generation starts.
+type MixtapeGeneratingPayload struct {
+	MixtapeID   int
+	MixtapeName string
+	DJName      string
+}
+
+// MixtapeGeneratedPayload is sent when mixtape generation completes successfully.
+type MixtapeGeneratedPayload struct {
+	MixtapeID    int
+	MixtapeName  string
+	DJName       string
+	TracksCount  int
+	MatchedCount int
+	TokensUsed   int
+}
+
+// MixtapeErrorPayload is sent when mixtape generation fails.
+type MixtapeErrorPayload struct {
+	MixtapeID   int
+	MixtapeName string
+	Error       string
 }
 
 type Bus struct {
@@ -77,4 +106,55 @@ func (b *Bus) Publish(userID int, event Event) {
 			}
 		}
 	}
+}
+
+// PublishNotification is a convenience method to publish a notification event.
+func (b *Bus) PublishNotification(userID int, title, message, iconType string) {
+	b.Publish(userID, Event{
+		Type: EventTypeNotification,
+		Payload: NotificationPayload{
+			Title:    title,
+			Message:  message,
+			IconType: iconType,
+		},
+	})
+}
+
+// PublishMixtapeGenerating publishes an event when mixtape generation starts.
+func (b *Bus) PublishMixtapeGenerating(userID int, mixtapeID int, mixtapeName, djName string) {
+	b.Publish(userID, Event{
+		Type: EventTypeMixtapeGenerating,
+		Payload: MixtapeGeneratingPayload{
+			MixtapeID:   mixtapeID,
+			MixtapeName: mixtapeName,
+			DJName:      djName,
+		},
+	})
+}
+
+// PublishMixtapeGenerated publishes an event when mixtape generation completes.
+func (b *Bus) PublishMixtapeGenerated(userID int, mixtapeID int, mixtapeName, djName string, tracksCount, matchedCount, tokensUsed int) {
+	b.Publish(userID, Event{
+		Type: EventTypeMixtapeGenerated,
+		Payload: MixtapeGeneratedPayload{
+			MixtapeID:    mixtapeID,
+			MixtapeName:  mixtapeName,
+			DJName:       djName,
+			TracksCount:  tracksCount,
+			MatchedCount: matchedCount,
+			TokensUsed:   tokensUsed,
+		},
+	})
+}
+
+// PublishMixtapeError publishes an event when mixtape generation fails.
+func (b *Bus) PublishMixtapeError(userID int, mixtapeID int, mixtapeName, errorMsg string) {
+	b.Publish(userID, Event{
+		Type: EventTypeMixtapeError,
+		Payload: MixtapeErrorPayload{
+			MixtapeID:   mixtapeID,
+			MixtapeName: mixtapeName,
+			Error:       errorMsg,
+		},
+	})
 }
