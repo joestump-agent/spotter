@@ -1,17 +1,16 @@
 FROM golang:1.24 AS builder
 
-# Install Node.js
+# Install Node.js and make
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs
-
-# Install templ
-RUN go install github.com/a-h/templ/cmd/templ@latest
+    apt-get install -y nodejs make
 
 WORKDIR /app
 
-# Copy dependency files
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy dependency files first for better caching
+COPY go.mod go.sum package.json package-lock.json* Makefile ./
+
+# Install dependencies
+RUN make docker-deps
 
 # Copy source
 COPY . .
@@ -20,18 +19,14 @@ COPY . .
 # This handles the case where source files were generated into a subdirectory
 RUN if [ -d "spotter" ]; then cp -r spotter/* . && rm -rf spotter; fi
 
-# Initialize Tailwind
-RUN if [ ! -f "package.json" ]; then npm init -y; fi
-RUN npm install -D tailwindcss
+# Generate code (Ent schemas and Templ templates)
+RUN make generate
 
-# Generate Templates
-RUN templ generate
+# Build CSS
+RUN make css
 
-# Generate CSS
-RUN npx tailwindcss -i ./static/css/input.css -o ./static/css/output.css --minify
-
-# Build Binary
-RUN CGO_ENABLED=1 GOOS=linux go build -v -o spotter-server ./cmd/server
+# Build binary
+RUN make build-binary
 
 # Runtime Stage
 FROM debian:bookworm-slim

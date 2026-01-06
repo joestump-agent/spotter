@@ -6,7 +6,7 @@ endif
 BINARY_NAME=spotter-server
 MAIN_PATH=./cmd/server/main.go
 
-.PHONY: all help deps ci-deps generate css build run dev test test-coverage clean docker-build docker-run
+.PHONY: all help deps ci-deps docker-deps generate css build build-binary run dev test test-coverage clean docker-build docker-run
 
 all: build
 
@@ -34,6 +34,15 @@ ci-deps: ## Install CI dependencies (minimal, no dev tools)
 	go install github.com/a-h/templ/cmd/templ@latest
 	@echo "✓ CI dependencies installed"
 
+docker-deps: ## Install Docker build dependencies (Go, templ, Node)
+	@echo "Installing Go dependencies..."
+	go mod download
+	@echo "Installing templ..."
+	go install github.com/a-h/templ/cmd/templ@latest
+	@echo "Installing Node dependencies..."
+	npm install
+	@echo "✓ Docker dependencies installed"
+
 generate: ## Generate code (Ent schemas and Templ templates)
 	@echo "Generating Ent code..."
 	go generate ./ent
@@ -49,6 +58,11 @@ css: ## Build CSS from Tailwind
 build: generate css ## Build the application binary
 	@echo "Building $(BINARY_NAME)..."
 	go build -o $(BINARY_NAME) $(MAIN_PATH)
+	@echo "✓ Build complete: $(BINARY_NAME)"
+
+build-binary: ## Build only the binary (no code generation)
+	@echo "Building $(BINARY_NAME)..."
+	CGO_ENABLED=1 go build -o $(BINARY_NAME) $(MAIN_PATH)
 	@echo "✓ Build complete: $(BINARY_NAME)"
 
 run: dev ## Alias for 'make dev'
