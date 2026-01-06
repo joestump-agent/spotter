@@ -6,7 +6,7 @@ endif
 BINARY_NAME=spotter-server
 MAIN_PATH=./cmd/server/main.go
 
-.PHONY: all help deps generate css build run dev test test-coverage clean docker-build docker-run
+.PHONY: all help deps ci-deps generate css build run dev test test-coverage clean docker-build docker-run
 
 all: build
 
@@ -26,6 +26,13 @@ deps: ## Install all dependencies (Go, Node, tools)
 	@echo "Installing Node dependencies..."
 	npm install
 	@echo "✓ Dependencies installed"
+
+ci-deps: ## Install CI dependencies (minimal, no dev tools)
+	@echo "Installing Go dependencies..."
+	go mod download
+	@echo "Installing templ..."
+	go install github.com/a-h/templ/cmd/templ@latest
+	@echo "✓ CI dependencies installed"
 
 generate: ## Generate code (Ent schemas and Templ templates)
 	@echo "Generating Ent code..."
