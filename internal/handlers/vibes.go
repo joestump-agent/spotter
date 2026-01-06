@@ -13,6 +13,7 @@ import (
 	"spotter/ent/dj"
 	"spotter/ent/listen"
 	"spotter/ent/mixtape"
+	"spotter/ent/track"
 	"spotter/ent/user"
 	"spotter/internal/vibes"
 	vibesViews "spotter/internal/views/vibes"
@@ -337,7 +338,7 @@ func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err = h.Client.Mixtape.Create().
+	m, err := h.Client.Mixtape.Create().
 		SetName(name).
 		SetDescription(description).
 		SetSchedule(mixtape.Schedule(schedule)).
@@ -351,6 +352,13 @@ func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to create mixtape", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	h.Logger.Info("mixtape created", "mixtape_id", m.ID, "name", m.Name, "dj", d.Name, "user_id", u.ID)
+
+	// Publish event
+	if h.Bus != nil {
+		h.Bus.PublishMixtapeCreated(u.ID, m.ID, m.Name, d.Name)
 	}
 
 	w.Header().Set("HX-Trigger", "mixtape-created")
@@ -421,7 +429,7 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err = h.Client.Mixtape.UpdateOne(m).
+	updated, err := h.Client.Mixtape.UpdateOne(m).
 		SetName(name).
 		SetDescription(description).
 		SetSchedule(mixtape.Schedule(schedule)).
@@ -434,6 +442,13 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to update mixtape", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	h.Logger.Info("mixtape updated", "mixtape_id", updated.ID, "name", updated.Name, "user_id", u.ID)
+
+	// Publish event
+	if h.Bus != nil {
+		h.Bus.PublishMixtapeUpdated(u.ID, updated.ID, updated.Name)
 	}
 
 	w.Header().Set("HX-Trigger", "mixtape-updated")
@@ -455,7 +470,7 @@ func (h *Handler) DeleteMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	_, err = h.Client.Mixtape.Query().
+	m, err := h.Client.Mixtape.Query().
 		Where(mixtape.ID(mixtapeID), mixtape.HasUserWith(user.ID(u.ID))).
 		Only(r.Context())
 	if err != nil {
@@ -463,11 +478,20 @@ func (h *Handler) DeleteMixtape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mixtapeName := m.Name // Save name before deletion
+
 	err = h.Client.Mixtape.DeleteOneID(mixtapeID).Exec(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to delete mixtape", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	h.Logger.Info("mixtape deleted", "mixtape_id", mixtapeID, "name", mixtapeName, "user_id", u.ID)
+
+	// Publish event
+	if h.Bus != nil {
+		h.Bus.PublishMixtapeDeleted(u.ID, mixtapeID, mixtapeName)
 	}
 
 	w.Header().Set("HX-Trigger", "mixtape-deleted")
@@ -718,7 +742,51 @@ func (h *Handler) MixtapeShow(w http.ResponseWriter, r *http.Request) {
 		djs = []*ent.DJ{}
 	}
 
-	h.Render(w, r, vibesViews.MixtapeShow(m, djs, h.Config))
+	// Load tracks if the mixtape has track IDs
+	var tracks []*ent.Track
+	if len(m.TrackIds) > 0 {
+		// Parse track IDs from strings to ints
+		trackIDs := make([]int, 0, len(m.TrackIds))
+		for _, idStr := range m.TrackIds {
+			if id, err := strconv.Atoi(idStr); err == nil {
+				trackIDs = append(trackIDs, id)
+			}
+		}
+
+		if len(trackIDs) > 0 {
+			// Query tracks with artist and album
+			tracks, err = h.Client.Track.Query().
+				Where(track.IDIn(trackIDs...)).
+				WithArtist().
+				WithAlbum().
+				All(r.Context())
+			if err != nil {
+				h.Logger.Error("failed to query mixtape tracks", "error", err, "mixtape_id", m.ID)
+				tracks = []*ent.Track{}
+			}
+
+			// Reorder tracks to match the original track_ids order
+			trackMap := make(map[int]*ent.Track)
+			for _, t := range tracks {
+				trackMap[t.ID] = t
+			}
+			orderedTracks := make([]*ent.Track, 0, len(trackIDs))
+			for _, id := range trackIDs {
+				if t, ok := trackMap[id]; ok {
+					orderedTracks = append(orderedTracks, t)
+				}
+			}
+			tracks = orderedTracks
+		}
+	}
+
+	h.Logger.Debug("showing mixtape",
+		"mixtape_id", m.ID,
+		"name", m.Name,
+		"track_count", len(tracks),
+		"track_ids_count", len(m.TrackIds))
+
+	h.Render(w, r, vibesViews.MixtapeShow(m, tracks, djs, h.Config))
 }
 
 // GenreSuggestions returns genre suggestions based on user's library

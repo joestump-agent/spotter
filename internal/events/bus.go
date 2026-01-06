@@ -11,6 +11,9 @@ const (
 	EventTypeNotification EventType = "notification"
 
 	// Vibes/Mixtape events
+	EventTypeMixtapeCreated    EventType = "mixtape-created"
+	EventTypeMixtapeUpdated    EventType = "mixtape-updated"
+	EventTypeMixtapeDeleted    EventType = "mixtape-deleted"
 	EventTypeMixtapeGenerating EventType = "mixtape-generating"
 	EventTypeMixtapeGenerated  EventType = "mixtape-generated"
 	EventTypeMixtapeError      EventType = "mixtape-error"
@@ -35,6 +38,25 @@ type NotificationPayload struct {
 	Title    string
 	Message  string
 	IconType string // "success", "error", "warning", "info"
+}
+
+// MixtapeCreatedPayload is sent when a new mixtape is created.
+type MixtapeCreatedPayload struct {
+	MixtapeID   int
+	MixtapeName string
+	DJName      string
+}
+
+// MixtapeUpdatedPayload is sent when a mixtape is updated.
+type MixtapeUpdatedPayload struct {
+	MixtapeID   int
+	MixtapeName string
+}
+
+// MixtapeDeletedPayload is sent when a mixtape is deleted.
+type MixtapeDeletedPayload struct {
+	MixtapeID   int
+	MixtapeName string
 }
 
 // MixtapeGeneratingPayload is sent when mixtape generation starts.
@@ -168,6 +190,40 @@ func (b *Bus) PublishNotification(userID int, title, message, iconType string) {
 			Title:    title,
 			Message:  message,
 			IconType: iconType,
+		},
+	})
+}
+
+// PublishMixtapeCreated publishes an event when a mixtape is created.
+func (b *Bus) PublishMixtapeCreated(userID int, mixtapeID int, mixtapeName, djName string) {
+	b.Publish(userID, Event{
+		Type: EventTypeMixtapeCreated,
+		Payload: MixtapeCreatedPayload{
+			MixtapeID:   mixtapeID,
+			MixtapeName: mixtapeName,
+			DJName:      djName,
+		},
+	})
+}
+
+// PublishMixtapeUpdated publishes an event when a mixtape is updated.
+func (b *Bus) PublishMixtapeUpdated(userID int, mixtapeID int, mixtapeName string) {
+	b.Publish(userID, Event{
+		Type: EventTypeMixtapeUpdated,
+		Payload: MixtapeUpdatedPayload{
+			MixtapeID:   mixtapeID,
+			MixtapeName: mixtapeName,
+		},
+	})
+}
+
+// PublishMixtapeDeleted publishes an event when a mixtape is deleted.
+func (b *Bus) PublishMixtapeDeleted(userID int, mixtapeID int, mixtapeName string) {
+	b.Publish(userID, Event{
+		Type: EventTypeMixtapeDeleted,
+		Payload: MixtapeDeletedPayload{
+			MixtapeID:   mixtapeID,
+			MixtapeName: mixtapeName,
 		},
 	})
 }
