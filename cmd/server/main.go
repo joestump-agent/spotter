@@ -84,8 +84,12 @@ func main() {
 		"model", cfg.GetVibesModel(),
 		"temperature", cfg.Vibes.Temperature)
 
+	// Initialize Similar Artists Service (for AI-powered artist similarity detection)
+	similarArtistsSvc := services.NewSimilarArtistsService(client, cfg, logger, bus)
+	logger.Info("similar artists service initialized")
+
 	// Initialize Handlers
-	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, bus)
+	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, similarArtistsSvc, bus)
 
 	// Background Sync Loop for listens/playlists
 	syncInterval, err := time.ParseDuration(cfg.Sync.Interval)
@@ -282,6 +286,9 @@ func main() {
 			r.Get("/artist/{id}.png", h.ArtistImage)
 			r.Get("/artist/{id}/chart", h.ArtistChart)
 			r.Post("/artist/{id}/regenerate-ai", h.ArtistRegenerateAI)
+			r.Post("/artist/{id}/find-similar", h.ArtistFindSimilar)
+			r.Post("/artist/{id}/create-mixtape", h.ArtistCreateMixtape)
+			r.Get("/artist/{id}/mixtape-modal", h.ArtistMixtapeModal)
 
 			// Album routes
 			r.Get("/albums", h.AlbumIndex)

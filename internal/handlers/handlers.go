@@ -19,26 +19,28 @@ type contextKey string
 const UserContextKey contextKey = "user"
 
 type Handler struct {
-	Client           *ent.Client
-	Config           *config.Config
-	Logger           *slog.Logger
-	Syncer           *services.Syncer
-	MetadataSvc      *services.MetadataService
-	PlaylistSyncSvc  *services.PlaylistSyncService
-	MixtapeGenerator *vibes.MixtapeGenerator
-	Bus              *events.Bus
+	Client            *ent.Client
+	Config            *config.Config
+	Logger            *slog.Logger
+	Syncer            *services.Syncer
+	MetadataSvc       *services.MetadataService
+	PlaylistSyncSvc   *services.PlaylistSyncService
+	MixtapeGenerator  *vibes.MixtapeGenerator
+	SimilarArtistsSvc *services.SimilarArtistsService
+	Bus               *events.Bus
 }
 
-func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, mixtapeGen *vibes.MixtapeGenerator, bus *events.Bus) *Handler {
+func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, mixtapeGen *vibes.MixtapeGenerator, similarArtistsSvc *services.SimilarArtistsService, bus *events.Bus) *Handler {
 	return &Handler{
-		Client:           client,
-		Config:           cfg,
-		Logger:           logger,
-		Syncer:           syncer,
-		MetadataSvc:      metadataSvc,
-		PlaylistSyncSvc:  playlistSyncSvc,
-		MixtapeGenerator: mixtapeGen,
-		Bus:              bus,
+		Client:            client,
+		Config:            cfg,
+		Logger:            logger,
+		Syncer:            syncer,
+		MetadataSvc:       metadataSvc,
+		PlaylistSyncSvc:   playlistSyncSvc,
+		MixtapeGenerator:  mixtapeGen,
+		SimilarArtistsSvc: similarArtistsSvc,
+		Bus:               bus,
 	}
 }
 

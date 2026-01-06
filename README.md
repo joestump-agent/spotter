@@ -272,6 +272,40 @@ Mixtapes can be seeded with:
 - **Album**: Generate a mixtape based on an album's vibe
 - **Tracks**: Generate a mixtape starting from specific seed tracks
 
+### Similar Artists (AI-Powered Discovery)
+
+The Similar Artists feature uses AI to find artists in your library that are musically related to a given artist. This helps you discover connections within your own music collection.
+
+#### How It Works
+
+1. **AI Analysis**: When you click "Find Similar Artists" on an artist's page, the system sends the artist's metadata (genres, tags, biography) along with a list of all artists in your library to OpenAI.
+2. **Library-Only Recommendations**: The AI is instructed to ONLY recommend artists that exist in your library—no hallucinated artists.
+3. **Confidence Scoring**: Each recommendation includes a confidence score (0.0-1.0) indicating how similar the artists are.
+4. **Explanations**: The AI provides a brief explanation for why each artist is similar.
+
+#### Features
+
+- **Provider Tracking**: Each similarity recommendation is tagged with its source (e.g., "OpenAI", "LastFM") so you know where it came from.
+- **Visual Indicators**: Similar artist tiles show an AI badge and confidence score.
+- **Hover Explanations**: Hover over a similar artist tile to see why they're recommended.
+- **Refresh on Demand**: Re-run the similarity analysis anytime to get fresh recommendations.
+
+#### Prompt Template
+
+The similarity analysis uses the prompt template at `data/prompts/enrich_artist.txt`. You can customize this template to adjust how the AI finds similar artists.
+
+#### Create Mixtape from Artist
+
+From any artist's page, you can create a mixtape inspired by that artist:
+
+1. Click the **AI** dropdown menu on the artist page
+2. Select **Create Mixtape**
+3. Choose a DJ persona to curate the mixtape
+4. Optionally customize the name and track count
+5. Click **Create Mixtape** to start generation
+
+The mixtape will be seeded with the artist, and the DJ's personality will influence track selection from your library.
+
 ## Service Documentation
 
 Each provider and enricher has its own comprehensive README with detailed setup instructions, configuration options, and troubleshooting guides.

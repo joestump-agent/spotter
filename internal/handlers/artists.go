@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"spotter/ent"
 	"spotter/ent/album"
 	"spotter/ent/artist"
+	"spotter/ent/dj"
 	"spotter/ent/listen"
 	"spotter/ent/playlist"
 	"spotter/ent/playlisttrack"
@@ -17,6 +19,7 @@ import (
 	"spotter/ent/user"
 	"spotter/internal/enrichers"
 	"spotter/internal/events"
+	"spotter/internal/vibes"
 	"spotter/internal/views/artists"
 	"spotter/internal/views/components"
 
@@ -56,6 +59,36 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 		timeframe = "30d"
 	}
 
+	// Get similar artists
+	var similarArtists []artists.SimilarArtistInfo
+	if h.SimilarArtistsSvc != nil {
+		similar, err := h.SimilarArtistsSvc.GetSimilarArtists(r.Context(), u.ID, artistID)
+		if err != nil {
+			h.Logger.Warn("failed to get similar artists", "error", err, "artist_id", artistID)
+		} else {
+			for _, s := range similar {
+				if s.Edges.SimilarArtist != nil {
+					similarArtists = append(similarArtists, artists.SimilarArtistInfo{
+						Artist:     s.Edges.SimilarArtist,
+						Provider:   s.Provider,
+						Confidence: s.Confidence,
+						Reason:     s.Reason,
+					})
+				}
+			}
+		}
+	}
+
+	// Get DJs for mixtape modal
+	djs, err := h.Client.DJ.Query().
+		Where(dj.HasUserWith(user.ID(u.ID))).
+		Order(ent.Asc(dj.FieldName)).
+		All(r.Context())
+	if err != nil {
+		h.Logger.Warn("failed to get DJs for mixtape modal", "error", err)
+		djs = []*ent.DJ{}
+	}
+
 	// Get albums for this artist (with tracks for tag collection)
 	albums, err := h.Client.Album.Query().
 		Where(
@@ -78,7 +111,7 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 	// Get stats
 	stats := h.getArtistStats(r.Context(), u.ID, a.Name, timeframe)
 
-	h.Render(w, r, artists.Show(a, albums, playlists, stats, h.Config, timeframe))
+	h.Render(w, r, artists.Show(a, albums, playlists, stats, similarArtists, djs, h.Config, timeframe))
 }
 
 func (h *Handler) ArtistChart(w http.ResponseWriter, r *http.Request) {
@@ -606,4 +639,264 @@ func (h *Handler) getAIEnricher(ctx context.Context, u *ent.User) ([]enrichers.E
 	}
 
 	return []enrichers.Enricher{enricher}, nil
+}
+
+// ArtistFindSimilar finds similar artists for the given artist using AI.
+func (h *Handler) ArtistFindSimilar(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify artist exists and belongs to user
+	a, err := h.Client.Artist.Query().
+		Where(
+			artist.ID(artistID),
+			artist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Artist not found", http.StatusNotFound)
+		return
+	}
+
+	if h.SimilarArtistsSvc == nil {
+		http.Error(w, "Similar artists service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Run in background
+	go func() {
+		ctx := context.Background()
+		if err := h.SimilarArtistsSvc.FindSimilarArtists(ctx, u.ID, artistID); err != nil {
+			h.Logger.Error("failed to find similar artists",
+				"artist_id", artistID,
+				"artist_name", a.Name,
+				"error", err)
+			if h.Bus != nil {
+				h.Bus.PublishNotification(u.ID,
+					"Similar Artists Failed",
+					"Failed to find similar artists for "+a.Name+": "+err.Error(),
+					"error")
+			}
+		}
+	}()
+
+	// Send notification that search started
+	if h.Bus != nil {
+		h.Bus.PublishNotification(u.ID,
+			"Finding Similar Artists",
+			"Searching for artists similar to "+a.Name+"...",
+			"info")
+	}
+
+	w.Header().Set("HX-Refresh", "true")
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// ArtistCreateMixtape creates a mixtape seeded with the given artist.
+func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify artist exists and belongs to user
+	a, err := h.Client.Artist.Query().
+		Where(
+			artist.ID(artistID),
+			artist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Artist not found", http.StatusNotFound)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	djID, err := strconv.Atoi(r.FormValue("dj_id"))
+	if err != nil {
+		http.Error(w, "DJ is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify DJ ownership
+	d, err := h.Client.DJ.Query().
+		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "DJ not found", http.StatusNotFound)
+		return
+	}
+
+	// Generate mixtape name
+	mixtapeName := strings.TrimSpace(r.FormValue("name"))
+	if mixtapeName == "" {
+		mixtapeName = a.Name + " Mix"
+	}
+
+	// Get max tracks (default 25)
+	maxTracks := 25
+	if maxTracksStr := r.FormValue("max_tracks"); maxTracksStr != "" {
+		if mt, err := strconv.Atoi(maxTracksStr); err == nil && mt >= 1 && mt <= 100 {
+			maxTracks = mt
+		}
+	}
+
+	// Create the mixtape
+	m, err := h.Client.Mixtape.Create().
+		SetName(mixtapeName).
+		SetDescription("Inspired by " + a.Name).
+		SetMaxTracks(maxTracks).
+		SetSeedType("artist").
+		SetSeedID(artistID).
+		SetDj(d).
+		SetUser(u).
+		Save(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to create mixtape", "error", err)
+		http.Error(w, "Failed to create mixtape", http.StatusInternalServerError)
+		return
+	}
+
+	h.Logger.Info("created artist-seeded mixtape",
+		"mixtape_id", m.ID,
+		"mixtape_name", m.Name,
+		"artist_id", artistID,
+		"artist_name", a.Name,
+		"dj_id", d.ID,
+		"dj_name", d.Name)
+
+	// Generate the mixtape in background
+	if h.MixtapeGenerator != nil {
+		go func() {
+			ctx := context.Background()
+
+			// Publish generating event
+			if h.Bus != nil {
+				h.Bus.PublishMixtapeGenerating(u.ID, m.ID, m.Name, d.Name)
+			}
+
+			seed := vibes.NewArtistSeed(a)
+			req := &vibes.GenerationRequest{
+				Mixtape: m,
+				DJ:      d,
+				Seed:    seed,
+				UserID:  u.ID,
+			}
+
+			result, err := h.MixtapeGenerator.GenerateMixtape(ctx, req)
+			if err != nil {
+				h.Logger.Error("mixtape generation failed",
+					"mixtape_id", m.ID,
+					"error", err)
+
+				h.Client.Mixtape.UpdateOneID(m.ID).
+					SetGenerationError(err.Error()).
+					Save(ctx)
+
+				if h.Bus != nil {
+					h.Bus.PublishMixtapeError(u.ID, m.ID, m.Name, err.Error())
+				}
+				return
+			}
+
+			// Get matched track IDs
+			trackIDs := result.GetMatchedTrackIDsAsStrings()
+
+			// Update the mixtape with results
+			_, err = h.Client.Mixtape.UpdateOneID(m.ID).
+				SetTrackIds(trackIDs).
+				SetTrackCount(len(trackIDs)).
+				SetLastGeneratedAt(time.Now()).
+				SetGenerationPrompt(result.PromptUsed).
+				SetGenerationModel(result.ModelUsed).
+				SetNillableGenerationTokensUsed(&result.TokensUsed).
+				ClearGenerationError().
+				Save(ctx)
+			if err != nil {
+				h.Logger.Error("failed to save mixtape generation results",
+					"mixtape_id", m.ID,
+					"error", err)
+				return
+			}
+
+			h.Logger.Info("mixtape generation complete",
+				"mixtape_id", m.ID,
+				"tracks_matched", result.MatchedCount)
+
+			if h.Bus != nil {
+				h.Bus.PublishMixtapeGenerated(u.ID, m.ID, m.Name, d.Name,
+					len(result.Tracks), result.MatchedCount, result.TokensUsed)
+			}
+		}()
+	}
+
+	// Send success notification
+	if h.Bus != nil {
+		h.Bus.PublishNotification(u.ID,
+			"Mixtape Created",
+			"Creating mixtape \""+m.Name+"\" inspired by "+a.Name+"...",
+			"success")
+	}
+
+	w.Header().Set("HX-Redirect", "/vibes/mixtapes")
+	w.WriteHeader(http.StatusOK)
+}
+
+// ArtistMixtapeModal returns the HTML for the create mixtape modal (for HTMX).
+func (h *Handler) ArtistMixtapeModal(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get artist
+	a, err := h.Client.Artist.Query().
+		Where(
+			artist.ID(artistID),
+			artist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Artist not found", http.StatusNotFound)
+		return
+	}
+
+	// Get DJs
+	djs, err := h.Client.DJ.Query().
+		Where(dj.HasUserWith(user.ID(u.ID))).
+		Order(ent.Asc(dj.FieldName)).
+		All(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get DJs", "error", err)
+		djs = []*ent.DJ{}
+	}
+
+	h.Render(w, r, artists.CreateMixtapeModalContent(a, djs))
 }

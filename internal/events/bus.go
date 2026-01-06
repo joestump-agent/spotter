@@ -14,6 +14,11 @@ const (
 	EventTypeMixtapeGenerating EventType = "mixtape-generating"
 	EventTypeMixtapeGenerated  EventType = "mixtape-generated"
 	EventTypeMixtapeError      EventType = "mixtape-error"
+
+	// Similar Artists events
+	EventTypeSimilarArtistsSearching EventType = "similar-artists-searching"
+	EventTypeSimilarArtistsFound     EventType = "similar-artists-found"
+	EventTypeSimilarArtistsError     EventType = "similar-artists-error"
 )
 
 type Event struct {
@@ -49,6 +54,27 @@ type MixtapeErrorPayload struct {
 	MixtapeID   int
 	MixtapeName string
 	Error       string
+}
+
+// SimilarArtistsSearchingPayload is sent when similar artist search starts.
+type SimilarArtistsSearchingPayload struct {
+	ArtistID   int
+	ArtistName string
+}
+
+// SimilarArtistsFoundPayload is sent when similar artists are found.
+type SimilarArtistsFoundPayload struct {
+	ArtistID     int
+	ArtistName   string
+	SimilarCount int
+	Provider     string
+}
+
+// SimilarArtistsErrorPayload is sent when similar artist search fails.
+type SimilarArtistsErrorPayload struct {
+	ArtistID   int
+	ArtistName string
+	Error      string
 }
 
 type Bus struct {
@@ -155,6 +181,42 @@ func (b *Bus) PublishMixtapeError(userID int, mixtapeID int, mixtapeName, errorM
 			MixtapeID:   mixtapeID,
 			MixtapeName: mixtapeName,
 			Error:       errorMsg,
+		},
+	})
+}
+
+// PublishSimilarArtistsSearching publishes an event when similar artist search starts.
+func (b *Bus) PublishSimilarArtistsSearching(userID int, artistID int, artistName string) {
+	b.Publish(userID, Event{
+		Type: EventTypeSimilarArtistsSearching,
+		Payload: SimilarArtistsSearchingPayload{
+			ArtistID:   artistID,
+			ArtistName: artistName,
+		},
+	})
+}
+
+// PublishSimilarArtistsFound publishes an event when similar artists are found.
+func (b *Bus) PublishSimilarArtistsFound(userID int, artistID int, artistName string, similarCount int, provider string) {
+	b.Publish(userID, Event{
+		Type: EventTypeSimilarArtistsFound,
+		Payload: SimilarArtistsFoundPayload{
+			ArtistID:     artistID,
+			ArtistName:   artistName,
+			SimilarCount: similarCount,
+			Provider:     provider,
+		},
+	})
+}
+
+// PublishSimilarArtistsError publishes an event when similar artist search fails.
+func (b *Bus) PublishSimilarArtistsError(userID int, artistID int, artistName, errorMsg string) {
+	b.Publish(userID, Event{
+		Type: EventTypeSimilarArtistsError,
+		Payload: SimilarArtistsErrorPayload{
+			ArtistID:   artistID,
+			ArtistName: artistName,
+			Error:      errorMsg,
 		},
 	})
 }
