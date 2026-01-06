@@ -177,6 +177,15 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// Apply defaults for OpenAI config when env vars are empty strings
+	// (Viper treats empty string env vars as "set", overriding defaults)
+	if cfg.OpenAI.BaseURL == "" {
+		cfg.OpenAI.BaseURL = "https://api.openai.com/v1"
+	}
+	if cfg.OpenAI.Model == "" {
+		cfg.OpenAI.Model = "gpt-4o"
+	}
+
 	if cfg.Navidrome.BaseURL == "" {
 		return nil, fmt.Errorf("navidrome.base_url is required")
 	}

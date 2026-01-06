@@ -20,6 +20,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// createTestProvider creates a Provider with a custom base URL for testing
+func createTestProvider(t *testing.T, cfg *config.Config, user *ent.User, serverURL string) *Provider {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	factory := New(logger, cfg)
+	provider, err := factory(context.Background(), user)
+	require.NoError(t, err)
+	require.NotNil(t, provider)
+
+	p := provider.(*Provider)
+	p.WithBaseURL(serverURL)
+	return p
+}
+
+// createTestAuthenticator creates an Authenticator with a custom base URL for testing
+func createTestAuthenticator(t *testing.T, cfg *config.Config, serverURL string) *Provider {
+	factory := NewAuthenticator(nil, cfg)
+	auth := factory()
+
+	p := auth.(*Provider)
+	p.WithBaseURL(serverURL)
+	return p
+}
+
 func TestNew_NoAuth(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.LastFM.APIKey = "test-api-key"
@@ -124,26 +147,13 @@ func TestExchangeCode_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Override the API base URL for testing
-	originalURL := apiBaseURL
-	defer func() {
-		// Note: can't actually change the const, but in a real scenario
-		// we'd make this configurable or use a test helper
-	}()
-
 	cfg := &config.Config{}
 	cfg.LastFM.APIKey = "test-api-key"
 	cfg.LastFM.SharedSecret = "test-secret"
 
-	factory := NewAuthenticator(nil, cfg)
-	auth := factory()
-	p := auth.(*Provider)
+	auth := createTestAuthenticator(t, cfg, server.URL)
 
-	// Temporarily override doRequest to use test server
-	// For this test, we'll need to make the request directly
-	// In a real scenario, we'd want to make the base URL configurable
-
-	result, err := p.ExchangeCode(context.Background(), "test-token")
+	result, err := auth.ExchangeCode(context.Background(), "test-token")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -155,16 +165,25 @@ func TestExchangeCode_Success(t *testing.T) {
 }
 
 func TestExchangeCode_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"error":   14,
+			"message": "Invalid token",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
 	cfg := &config.Config{}
 	cfg.LastFM.APIKey = "test-api-key"
 	cfg.LastFM.SharedSecret = "test-secret"
 
-	factory := NewAuthenticator(nil, cfg)
-	auth := factory()
+	auth := createTestAuthenticator(t, cfg, server.URL)
 
-	// This will fail because we're hitting the real API without a valid token
 	_, err := auth.ExchangeCode(context.Background(), "invalid-token")
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Invalid token")
 }
 
 func TestRefreshToken_NotSupported(t *testing.T) {
@@ -281,16 +300,12 @@ func TestGetRecentListens_Success(t *testing.T) {
 		},
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
-	provider, err := factory(context.Background(), user)
-	require.NoError(t, err)
+	provider := createTestProvider(t, cfg, user, server.URL)
 
 	var collectedTracks []providers.Track
 	since := time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	historyFetcher := provider.(providers.HistoryFetcher)
-	err = historyFetcher.GetRecentListens(context.Background(), since, func(tracks []providers.Track) error {
+	err := provider.GetRecentListens(context.Background(), since, func(tracks []providers.Track) error {
 		collectedTracks = append(collectedTracks, tracks...)
 		return nil
 	})
@@ -357,14 +372,10 @@ func TestGetRecentListens_SkipsNowPlaying(t *testing.T) {
 		},
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
-	provider, err := factory(context.Background(), user)
-	require.NoError(t, err)
+	provider := createTestProvider(t, cfg, user, server.URL)
 
 	var collectedTracks []providers.Track
-	historyFetcher := provider.(providers.HistoryFetcher)
-	err = historyFetcher.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
+	err := provider.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
 		collectedTracks = append(collectedTracks, tracks...)
 		return nil
 	})
@@ -430,14 +441,10 @@ func TestGetRecentListens_Pagination(t *testing.T) {
 		},
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
-	provider, err := factory(context.Background(), user)
-	require.NoError(t, err)
+	provider := createTestProvider(t, cfg, user, server.URL)
 
 	var collectedTracks []providers.Track
-	historyFetcher := provider.(providers.HistoryFetcher)
-	err = historyFetcher.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
+	err := provider.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
 		collectedTracks = append(collectedTracks, tracks...)
 		return nil
 	})
@@ -486,14 +493,10 @@ func TestGetRecentListens_InvalidTimestamp(t *testing.T) {
 		},
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
-	provider, err := factory(context.Background(), user)
-	require.NoError(t, err)
+	provider := createTestProvider(t, cfg, user, server.URL)
 
 	var collectedTracks []providers.Track
-	historyFetcher := provider.(providers.HistoryFetcher)
-	err = historyFetcher.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
+	err := provider.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
 		collectedTracks = append(collectedTracks, tracks...)
 		return nil
 	})
@@ -539,13 +542,9 @@ func TestGetRecentListens_CallbackError(t *testing.T) {
 		},
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
-	provider, err := factory(context.Background(), user)
-	require.NoError(t, err)
+	provider := createTestProvider(t, cfg, user, server.URL)
 
-	historyFetcher := provider.(providers.HistoryFetcher)
-	err = historyFetcher.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
+	err := provider.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
 		return fmt.Errorf("callback error")
 	})
 
@@ -617,7 +616,10 @@ func TestDoRequest_Retry500(t *testing.T) {
 
 		// Success on 3rd attempt
 		response := map[string]interface{}{
-			"result": "success",
+			"session": map[string]interface{}{
+				"name": "user",
+				"key":  "key",
+			},
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
@@ -626,14 +628,15 @@ func TestDoRequest_Retry500(t *testing.T) {
 
 	cfg := &config.Config{}
 	cfg.LastFM.APIKey = "test-api-key"
+	cfg.LastFM.SharedSecret = "test-secret"
 
-	factory := NewAuthenticator(nil, cfg)
-	auth := factory()
-	p := auth.(*Provider)
+	auth := createTestAuthenticator(t, cfg, server.URL)
 
-	// Note: We can't easily test this without modifying the code to make
-	// the base URL configurable. In a real test, we'd need dependency injection.
-	// This test demonstrates the structure, but won't actually work without refactoring.
+	// This will retry on 500 errors, should eventually succeed
+	result, err := auth.ExchangeCode(context.Background(), "test-token")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 3, attempts)
 }
 
 func TestDoRequest_No400Retry(t *testing.T) {
@@ -647,13 +650,13 @@ func TestDoRequest_No400Retry(t *testing.T) {
 
 	cfg := &config.Config{}
 	cfg.LastFM.APIKey = "test-api-key"
+	cfg.LastFM.SharedSecret = "test-secret"
 
-	factory := NewAuthenticator(nil, cfg)
-	auth := factory()
-	p := auth.(*Provider)
+	auth := createTestAuthenticator(t, cfg, server.URL)
 
-	// Should not retry on 400 errors
-	// Similar limitation as above test
+	_, err := auth.ExchangeCode(context.Background(), "test-token")
+	assert.Error(t, err)
+	assert.Equal(t, 1, attempts) // Should not retry on 400 errors
 }
 
 func TestInterfaceImplementation(t *testing.T) {
@@ -707,16 +710,12 @@ func TestGetRecentListens_WithSinceParameter(t *testing.T) {
 		},
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
-	provider, err := factory(context.Background(), user)
-	require.NoError(t, err)
+	provider := createTestProvider(t, cfg, user, server.URL)
 
 	var collectedTracks []providers.Track
 	since := time.Unix(1609459200, 0)
 
-	historyFetcher := provider.(providers.HistoryFetcher)
-	err = historyFetcher.GetRecentListens(context.Background(), since, func(tracks []providers.Track) error {
+	err := provider.GetRecentListens(context.Background(), since, func(tracks []providers.Track) error {
 		collectedTracks = append(collectedTracks, tracks...)
 		return nil
 	})
@@ -753,14 +752,10 @@ func TestGetRecentListens_EmptyResponse(t *testing.T) {
 		},
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
-	provider, err := factory(context.Background(), user)
-	require.NoError(t, err)
+	provider := createTestProvider(t, cfg, user, server.URL)
 
 	var collectedTracks []providers.Track
-	historyFetcher := provider.(providers.HistoryFetcher)
-	err = historyFetcher.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
+	err := provider.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
 		collectedTracks = append(collectedTracks, tracks...)
 		return nil
 	})

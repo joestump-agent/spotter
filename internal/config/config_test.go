@@ -132,6 +132,9 @@ func TestOpenAIDefaults(t *testing.T) {
 	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
 	t.Setenv("SPOTTER_LIDARR_BASE_URL", "http://localhost:8686")
 	t.Setenv("SPOTTER_LIDARR_API_KEY", "test-api-key")
+	// Explicitly clear these to test defaults (overrides any env vars from user's shell)
+	t.Setenv("SPOTTER_OPENAI_BASE_URL", "")
+	t.Setenv("SPOTTER_OPENAI_MODEL", "")
 
 	cfg, err := Load()
 	require.NoError(t, err)

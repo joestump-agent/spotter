@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	baseURL        = "https://musicbrainz.org/ws/2"
+	defaultBaseURL = "https://musicbrainz.org/ws/2"
 	rateLimitDelay = 1100 * time.Millisecond // MusicBrainz requires max 1 req/sec
 )
 
@@ -27,6 +27,7 @@ type Enricher struct {
 	config     *config.Config
 	httpClient *http.Client
 	userAgent  string
+	baseURL    string
 
 	// Rate limiting
 	mu       sync.Mutex
@@ -55,8 +56,21 @@ func New(logger *slog.Logger, cfg *config.Config) enrichers.Factory {
 				Timeout: 30 * time.Second,
 			},
 			userAgent: userAgent,
+			baseURL:   defaultBaseURL,
 		}, nil
 	}
+}
+
+// WithBaseURL sets a custom base URL for the enricher (used for testing).
+func (e *Enricher) WithBaseURL(url string) *Enricher {
+	e.baseURL = url
+	return e
+}
+
+// WithHTTPClient sets a custom HTTP client for the enricher (used for testing).
+func (e *Enricher) WithHTTPClient(client *http.Client) *Enricher {
+	e.httpClient = client
+	return e
 }
 
 func (e *Enricher) Type() enrichers.Type {
@@ -89,7 +103,7 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string, params url.Va
 	e.rateLimit()
 
 	params.Set("fmt", "json")
-	reqURL := fmt.Sprintf("%s/%s?%s", baseURL, endpoint, params.Encode())
+	reqURL := fmt.Sprintf("%s/%s?%s", e.baseURL, endpoint, params.Encode())
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {

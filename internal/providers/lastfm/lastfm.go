@@ -21,14 +21,16 @@ import (
 )
 
 const (
-	apiBaseURL = "http://ws.audioscrobbler.com/2.0/"
+	defaultAPIBaseURL = "http://ws.audioscrobbler.com/2.0/"
 )
 
 type Provider struct {
-	logger *slog.Logger
-	config *config.Config
-	user   *ent.User
-	auth   *ent.LastFMAuth
+	logger     *slog.Logger
+	config     *config.Config
+	user       *ent.User
+	auth       *ent.LastFMAuth
+	baseURL    string
+	httpClient *http.Client
 }
 
 // Ensure Provider implements interfaces
@@ -43,11 +45,17 @@ func New(logger *slog.Logger, cfg *config.Config) providers.Factory {
 			return nil, nil
 		}
 
+		l := logger
+		if l == nil {
+			l = slog.New(slog.NewTextHandler(io.Discard, nil))
+		}
 		return &Provider{
-			logger: logger,
-			config: cfg,
-			user:   user,
-			auth:   user.Edges.LastfmAuth,
+			logger:     l,
+			config:     cfg,
+			user:       user,
+			auth:       user.Edges.LastfmAuth,
+			baseURL:    defaultAPIBaseURL,
+			httpClient: http.DefaultClient,
 		}, nil
 	}
 }
@@ -56,11 +64,29 @@ func New(logger *slog.Logger, cfg *config.Config) providers.Factory {
 // This is used for the OAuth flow before a user is connected.
 func NewAuthenticator(logger *slog.Logger, cfg *config.Config) providers.AuthenticatorFactory {
 	return func() providers.Authenticator {
+		l := logger
+		if l == nil {
+			l = slog.New(slog.NewTextHandler(io.Discard, nil))
+		}
 		return &Provider{
-			logger: logger,
-			config: cfg,
+			logger:     l,
+			config:     cfg,
+			baseURL:    defaultAPIBaseURL,
+			httpClient: http.DefaultClient,
 		}
 	}
+}
+
+// WithBaseURL sets a custom base URL (used for testing).
+func (p *Provider) WithBaseURL(url string) *Provider {
+	p.baseURL = url
+	return p
+}
+
+// WithHTTPClient sets a custom HTTP client (used for testing).
+func (p *Provider) WithHTTPClient(client *http.Client) *Provider {
+	p.httpClient = client
+	return p
 }
 
 func (p *Provider) Type() providers.Type {
@@ -273,14 +299,14 @@ func (p *Provider) doRequest(ctx context.Context, method string, params map[stri
 	var err error
 
 	if method == "POST" {
-		req, err = http.NewRequestWithContext(ctx, "POST", apiBaseURL, strings.NewReader(data.Encode()))
+		req, err = http.NewRequestWithContext(ctx, "POST", p.baseURL, strings.NewReader(data.Encode()))
 		if err != nil {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	} else {
 		// GET
-		reqURL := apiBaseURL + "?" + data.Encode()
+		reqURL := p.baseURL + "?" + data.Encode()
 		req, err = http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 		if err != nil {
 			return err
@@ -298,7 +324,7 @@ func (p *Provider) doRequest(ctx context.Context, method string, params map[stri
 			p.logger.Info("retrying last.fm request", "attempt", i+1)
 		}
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := p.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
 			continue

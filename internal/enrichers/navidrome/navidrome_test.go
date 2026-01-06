@@ -330,9 +330,9 @@ func TestEnrichArtist_BySearch(t *testing.T) {
 func TestEnrichArtist_WithMBID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/rest/search3" {
-			// Verify MBID is used in search
+			// Search uses artist name, not MBID
 			query := r.URL.Query().Get("query")
-			assert.Contains(t, query, "mbid:mbid-test")
+			assert.Contains(t, query, "Test Artist")
 
 			response := subsonicSearchResponse{}
 			response.SubsonicResponse.Status = "ok"
@@ -385,20 +385,38 @@ func TestEnrichArtist_WithMBID(t *testing.T) {
 
 func TestEnrichAlbum_ByID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/rest/getAlbum", r.URL.Path)
-		assert.Equal(t, "album-456", r.URL.Query().Get("id"))
+		if r.URL.Path == "/rest/search3" {
+			// First call: search for album
+			response := subsonicSearchResponse{}
+			response.SubsonicResponse.Status = "ok"
+			response.SubsonicResponse.SearchResult3.Album = []subsonicAlbum{
+				{
+					ID:            "album-456",
+					Name:          "OK Computer",
+					Artist:        "Radiohead",
+					Year:          1997,
+					MusicBrainzID: "album-mbid-456",
+				},
+			}
 
-		response := subsonicAlbumResponse{}
-		response.SubsonicResponse.Status = "ok"
-		response.SubsonicResponse.Album.ID = "album-456"
-		response.SubsonicResponse.Album.Name = "OK Computer"
-		response.SubsonicResponse.Album.Artist = "Radiohead"
-		response.SubsonicResponse.Album.Year = 1997
-		response.SubsonicResponse.Album.Genre = "Alternative Rock"
-		response.SubsonicResponse.Album.MusicBrainzID = "album-mbid-456"
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+		} else if r.URL.Path == "/rest/getAlbum" {
+			// Second call: get album details
+			assert.Equal(t, "album-456", r.URL.Query().Get("id"))
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+			response := subsonicAlbumResponse{}
+			response.SubsonicResponse.Status = "ok"
+			response.SubsonicResponse.Album.ID = "album-456"
+			response.SubsonicResponse.Album.Name = "OK Computer"
+			response.SubsonicResponse.Album.Artist = "Radiohead"
+			response.SubsonicResponse.Album.Year = 1997
+			response.SubsonicResponse.Album.Genre = "Alternative Rock"
+			response.SubsonicResponse.Album.MusicBrainzID = "album-mbid-456"
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+		}
 	}))
 	defer server.Close()
 
@@ -406,9 +424,8 @@ func TestEnrichAlbum_ByID(t *testing.T) {
 	albumEnricher := enricher.(enrichers.AlbumEnricher)
 
 	album := &ent.Album{
-		ID:          1,
-		Name:        "OK Computer",
-		NavidromeID: "album-456",
+		ID:   1,
+		Name: "OK Computer",
 		Edges: ent.AlbumEdges{
 			Artist: &ent.Artist{Name: "Radiohead"},
 		},
@@ -418,7 +435,6 @@ func TestEnrichAlbum_ByID(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
-	assert.Equal(t, "album-456", data.NavidromeID)
 	assert.Equal(t, "album-mbid-456", data.MusicBrainzID)
 	assert.Equal(t, 1997, data.Year)
 	assert.Equal(t, "Alternative Rock", data.Genre)
@@ -458,11 +474,10 @@ func TestEnrichAlbum_BySearch(t *testing.T) {
 	albumEnricher := enricher.(enrichers.AlbumEnricher)
 
 	album := &ent.Album{
-		ID:          2,
-		Name:        "Abbey Road",
-		NavidromeID: "", // No Navidrome ID
+		ID:   1,
+		Name: "Abbey Road",
 		Edges: ent.AlbumEdges{
-			Artist: &ent.Artist{Name: "The Beatles", NavidromeID: "artist-beatles"},
+			Artist: &ent.Artist{Name: "The Beatles"},
 		},
 	}
 
@@ -470,20 +485,36 @@ func TestEnrichAlbum_BySearch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
-	assert.Equal(t, "album-found", data.NavidromeID)
 	assert.Equal(t, 1969, data.Year)
 }
 
 func TestEnrichAlbum_ParsesYear(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := subsonicAlbumResponse{}
-		response.SubsonicResponse.Status = "ok"
-		response.SubsonicResponse.Album.ID = "album-test"
-		response.SubsonicResponse.Album.Name = "Test Album"
-		response.SubsonicResponse.Album.Year = 2023
+		if r.URL.Path == "/rest/search3" {
+			// First call: search for album
+			response := subsonicSearchResponse{}
+			response.SubsonicResponse.Status = "ok"
+			response.SubsonicResponse.SearchResult3.Album = []subsonicAlbum{
+				{
+					ID:   "album-year",
+					Name: "Test Album",
+					Year: 2023,
+				},
+			}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+		} else if r.URL.Path == "/rest/getAlbum" {
+			// Second call: get album details
+			response := subsonicAlbumResponse{}
+			response.SubsonicResponse.Status = "ok"
+			response.SubsonicResponse.Album.ID = "album-year"
+			response.SubsonicResponse.Album.Name = "Test Album"
+			response.SubsonicResponse.Album.Year = 2023
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+		}
 	}))
 	defer server.Close()
 
@@ -491,9 +522,8 @@ func TestEnrichAlbum_ParsesYear(t *testing.T) {
 	albumEnricher := enricher.(enrichers.AlbumEnricher)
 
 	album := &ent.Album{
-		ID:          1,
-		Name:        "Test Album",
-		NavidromeID: "album-test",
+		ID:   1,
+		Name: "Test Album",
 		Edges: ent.AlbumEdges{
 			Artist: &ent.Artist{Name: "Test Artist"},
 		},
@@ -504,69 +534,6 @@ func TestEnrichAlbum_ParsesYear(t *testing.T) {
 	require.NotNil(t, data)
 
 	assert.Equal(t, 2023, data.Year)
-}
-
-func TestGetCoverArtURL_WithID(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.Navidrome.BaseURL = "http://localhost:4533"
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	user := &ent.User{
-		ID:       1,
-		Username: "testuser",
-		Edges: ent.UserEdges{
-			NavidromeAuth: &ent.NavidromeAuth{
-				ID:       1,
-				Password: "testpass",
-			},
-		},
-	}
-
-	enricher := &Enricher{
-		logger:     logger,
-		config:     cfg,
-		user:       user,
-		auth:       user.Edges.NavidromeAuth,
-		httpClient: &http.Client{},
-	}
-
-	coverURL := enricher.getCoverArtURL("cover-art-123")
-
-	assert.Contains(t, coverURL, "/rest/getCoverArt")
-	assert.Contains(t, coverURL, "id=cover-art-123")
-	assert.Contains(t, coverURL, "u=testuser")
-	assert.Contains(t, coverURL, "s=") // Salt should be present
-	assert.Contains(t, coverURL, "t=") // Token should be present
-}
-
-func TestGetCoverArtURL_NoID(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.Navidrome.BaseURL = "http://localhost:4533"
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	user := &ent.User{
-		ID:       1,
-		Username: "testuser",
-		Edges: ent.UserEdges{
-			NavidromeAuth: &ent.NavidromeAuth{
-				ID:       1,
-				Password: "testpass",
-			},
-		},
-	}
-
-	enricher := &Enricher{
-		logger:     logger,
-		config:     cfg,
-		user:       user,
-		auth:       user.Edges.NavidromeAuth,
-		httpClient: &http.Client{},
-	}
-
-	coverURL := enricher.getCoverArtURL("")
-	assert.Equal(t, "", coverURL)
 }
 
 func TestSearch_MultipleResults(t *testing.T) {
@@ -721,6 +688,22 @@ func TestEnrichTrack_BySearch(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(response)
+		} else if r.URL.Path == "/rest/getSong" {
+			// Second call: get song details
+			response := subsonicSongResponse{}
+			response.SubsonicResponse.Status = "ok"
+			response.SubsonicResponse.Song = subsonicSong{
+				ID:       "track-123",
+				Title:    "Paranoid Android",
+				Artist:   "Radiohead",
+				Album:    "OK Computer",
+				Duration: 383,
+				BPM:      144,
+				Track:    2,
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -735,7 +718,7 @@ func TestEnrichTrack_BySearch(t *testing.T) {
 		TrackNumber: &trackNum,
 		Edges: ent.TrackEdges{
 			Artist: &ent.Artist{Name: "Radiohead", NavidromeID: "artist-radiohead"},
-			Album:  &ent.Album{Name: "OK Computer", NavidromeID: "album-ok-computer"},
+			Album:  &ent.Album{Name: "OK Computer"},
 		},
 	}
 

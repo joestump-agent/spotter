@@ -183,6 +183,9 @@ func TestGetArtistImages_NotFound(t *testing.T) {
 	enricher, err := factory(context.Background(), nil)
 	require.NoError(t, err)
 
+	// Override baseURL for testing
+	enricher.(*Enricher).baseURL = server.URL
+
 	artist := &ent.Artist{
 		ID:            1,
 		Name:          "Test Artist",
@@ -212,6 +215,9 @@ func TestGetArtistImages_ServerError(t *testing.T) {
 	enricher, err := factory(context.Background(), nil)
 	require.NoError(t, err)
 
+	// Override baseURL for testing
+	enricher.(*Enricher).baseURL = server.URL
+
 	artist := &ent.Artist{
 		ID:            1,
 		Name:          "Test Artist",
@@ -239,6 +245,9 @@ func TestGetArtistImages_MalformedJSON(t *testing.T) {
 	factory := New(logger, cfg)
 	enricher, err := factory(context.Background(), nil)
 	require.NoError(t, err)
+
+	// Override baseURL for testing
+	enricher.(*Enricher).baseURL = server.URL
 
 	artist := &ent.Artist{
 		ID:            1,
@@ -358,6 +367,9 @@ func TestGetAlbumImages_AlbumNotInResponse(t *testing.T) {
 	factory := New(logger, cfg)
 	enricher, err := factory(context.Background(), nil)
 	require.NoError(t, err)
+
+	// Override baseURL for testing
+	enricher.(*Enricher).baseURL = server.URL
 
 	album := &ent.Album{
 		ID:            1,

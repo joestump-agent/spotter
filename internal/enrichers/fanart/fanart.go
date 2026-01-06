@@ -23,6 +23,7 @@ type Enricher struct {
 	config     *config.Config
 	httpClient *http.Client
 	apiKey     string
+	baseURL    string
 }
 
 // Ensure Enricher implements interfaces
@@ -43,7 +44,8 @@ func New(logger *slog.Logger, cfg *config.Config) enrichers.Factory {
 			httpClient: &http.Client{
 				Timeout: 30 * time.Second,
 			},
-			apiKey: cfg.Metadata.Fanart.APIKey,
+			apiKey:  cfg.Metadata.Fanart.APIKey,
+			baseURL: baseURL,
 		}, nil
 	}
 }
@@ -62,7 +64,7 @@ func (e *Enricher) IsAvailable() bool {
 
 // doRequest performs an authenticated request to the Fanart.tv API.
 func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, error) {
-	reqURL := fmt.Sprintf("%s/%s?api_key=%s", baseURL, endpoint, e.apiKey)
+	reqURL := fmt.Sprintf("%s/%s?api_key=%s", e.baseURL, endpoint, e.apiKey)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {

@@ -829,10 +829,10 @@ func TestSyncPlaylist_TrackNotFound(t *testing.T) {
 		Name: "Playlist With Missing Tracks",
 		Tracks: []providers.Track{
 			{
-				Name:       "Nonexistent Track",
-				Artist:     "Unknown Artist",
-				Album:      "Unknown Album",
-				ProviderID: "missing-track-id",
+				Name:   "Nonexistent Track",
+				Artist: "Unknown Artist",
+				Album:  "Unknown Album",
+				ID:     "missing-track-id",
 			},
 		},
 	})
