@@ -10,11 +10,13 @@ import (
 	"spotter/ent"
 	"spotter/ent/album"
 	"spotter/ent/artist"
+	"spotter/ent/dj"
 	"spotter/ent/listen"
 	"spotter/ent/track"
 	"spotter/ent/user"
 	"spotter/internal/enrichers"
 	"spotter/internal/events"
+	"spotter/internal/vibes"
 	"spotter/internal/views/albums"
 	"spotter/internal/views/components"
 
@@ -52,6 +54,16 @@ func (h *Handler) AlbumShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get DJs for mixtape modal
+	djs, err := h.Client.DJ.Query().
+		Where(dj.HasUserWith(user.ID(u.ID))).
+		Order(ent.Asc(dj.FieldName)).
+		All(r.Context())
+	if err != nil {
+		h.Logger.Warn("failed to get DJs for mixtape modal", "error", err)
+		djs = []*ent.DJ{}
+	}
+
 	// Get timeframe from query
 	timeframe := r.URL.Query().Get("timeframe")
 	if timeframe == "" {
@@ -64,7 +76,7 @@ func (h *Handler) AlbumShow(w http.ResponseWriter, r *http.Request) {
 	// Get stats
 	stats := h.getAlbumStats(r.Context(), u.ID, a, timeframe)
 
-	h.Render(w, r, albums.Show(a, tracks, stats, h.Config, timeframe))
+	h.Render(w, r, albums.Show(a, tracks, stats, djs, h.Config, timeframe))
 }
 
 func (h *Handler) AlbumChart(w http.ResponseWriter, r *http.Request) {
@@ -463,4 +475,198 @@ func (h *Handler) AlbumRegenerateAI(w http.ResponseWriter, r *http.Request) {
 	// Return HX-Refresh header to reload the page
 	w.Header().Set("HX-Refresh", "true")
 	w.WriteHeader(http.StatusOK)
+}
+
+// AlbumCreateMixtape handles the creation of a mixtape from an album.
+func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	albumID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid album ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify album exists and belongs to user
+	a, err := h.Client.Album.Query().
+		Where(
+			album.ID(albumID),
+			album.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Album not found", http.StatusNotFound)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	djID, err := strconv.Atoi(r.FormValue("dj_id"))
+	if err != nil {
+		http.Error(w, "DJ is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify DJ ownership
+	d, err := h.Client.DJ.Query().
+		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "DJ not found", http.StatusNotFound)
+		return
+	}
+
+	// Generate mixtape name
+	mixtapeName := r.FormValue("name")
+	if mixtapeName == "" {
+		mixtapeName = a.Name + " Mix"
+	}
+
+	// Get max tracks (default 25)
+	maxTracks := 25
+	if maxTracksStr := r.FormValue("max_tracks"); maxTracksStr != "" {
+		if mt, err := strconv.Atoi(maxTracksStr); err == nil && mt >= 1 && mt <= 100 {
+			maxTracks = mt
+		}
+	}
+
+	// Create the mixtape
+	m, err := h.Client.Mixtape.Create().
+		SetName(mixtapeName).
+		SetDescription("Inspired by " + a.Name).
+		SetMaxTracks(maxTracks).
+		SetSeedType("album").
+		SetSeedID(albumID).
+		SetDj(d).
+		SetUser(u).
+		Save(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to create mixtape", "error", err)
+		http.Error(w, "Failed to create mixtape", http.StatusInternalServerError)
+		return
+	}
+
+	h.Logger.Info("created album-seeded mixtape",
+		"mixtape_id", m.ID,
+		"mixtape_name", m.Name,
+		"album_id", albumID,
+		"album_name", a.Name,
+		"dj_id", d.ID,
+		"dj_name", d.Name)
+
+	// Generate the mixtape in background
+	if h.MixtapeGenerator != nil {
+		go func() {
+			ctx := context.Background()
+
+			// Publish generating event
+			if h.Bus != nil {
+				h.Bus.PublishMixtapeGenerating(u.ID, m.ID, m.Name, d.Name)
+			}
+
+			seed := vibes.NewAlbumSeed(a)
+			req := &vibes.GenerationRequest{
+				Mixtape: m,
+				DJ:      d,
+				Seed:    seed,
+				UserID:  u.ID,
+			}
+
+			result, err := h.MixtapeGenerator.GenerateMixtape(ctx, req)
+			if err != nil {
+				h.Logger.Error("mixtape generation failed",
+					"mixtape_id", m.ID,
+					"error", err)
+
+				h.Client.Mixtape.UpdateOneID(m.ID).
+					SetGenerationError(err.Error()).
+					Save(ctx)
+
+				if h.Bus != nil {
+					h.Bus.PublishMixtapeError(u.ID, m.ID, m.Name, err.Error())
+				}
+				return
+			}
+
+			// Get matched track IDs
+			trackIDs := result.GetMatchedTrackIDsAsStrings()
+
+			// Update the mixtape with results
+			_, err = h.Client.Mixtape.UpdateOneID(m.ID).
+				SetTrackIds(trackIDs).
+				SetTrackCount(len(trackIDs)).
+				SetLastGeneratedAt(time.Now()).
+				SetGenerationPrompt(result.PromptUsed).
+				SetGenerationModel(result.ModelUsed).
+				SetNillableGenerationTokensUsed(&result.TokensUsed).
+				ClearGenerationError().
+				Save(ctx)
+			if err != nil {
+				h.Logger.Error("failed to save mixtape generation results",
+					"mixtape_id", m.ID,
+					"error", err)
+				return
+			}
+
+			h.Logger.Info("mixtape generation complete",
+				"mixtape_id", m.ID,
+				"tracks_matched", result.MatchedCount)
+
+			if h.Bus != nil {
+				h.Bus.PublishMixtapeGenerated(u.ID, m.ID, m.Name, d.Name,
+					len(result.Tracks), result.MatchedCount, result.TokensUsed)
+			}
+		}()
+	}
+
+	// Send success notification
+	if h.Bus != nil {
+		h.Bus.PublishNotification(u.ID,
+			"Mixtape Created",
+			"Creating mixtape \""+m.Name+"\" inspired by "+a.Name+"...",
+			"success")
+	}
+
+	w.Header().Set("HX-Redirect", "/vibes/mixtapes")
+	w.WriteHeader(http.StatusOK)
+}
+
+// AlbumMixtapeModal returns the content for the create mixtape modal.
+func (h *Handler) AlbumMixtapeModal(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	albumID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid Album ID", http.StatusBadRequest)
+		return
+	}
+
+	a, err := h.Client.Album.Get(r.Context(), albumID)
+	if err != nil {
+		http.Error(w, "Album not found", http.StatusNotFound)
+		return
+	}
+
+	// Get DJs
+	djs, err := h.Client.DJ.Query().
+		Where(dj.HasUserWith(user.ID(u.ID))).
+		Order(ent.Asc(dj.FieldName)).
+		All(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get DJs", "error", err)
+		djs = []*ent.DJ{}
+	}
+
+	h.Render(w, r, albums.CreateMixtapeModalContent(a, djs))
 }

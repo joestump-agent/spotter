@@ -108,6 +108,16 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 	// Get playlists containing this artist
 	playlists := h.getPlaylistsWithArtist(r.Context(), u.ID, a.ID)
 
+	// Get DJs for mixtape modal
+	djs, djErr := h.Client.DJ.Query().
+		Where(dj.HasUserWith(user.ID(u.ID))).
+		Order(ent.Asc(dj.FieldName)).
+		All(r.Context())
+	if djErr != nil {
+		h.Logger.Warn("failed to get DJs for mixtape modal", "error", djErr)
+		djs = []*ent.DJ{}
+	}
+
 	// Get stats
 	stats := h.getArtistStats(r.Context(), u.ID, a.Name, timeframe)
 

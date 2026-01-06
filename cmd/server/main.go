@@ -296,6 +296,8 @@ func main() {
 			r.Get("/album/{id}.png", h.AlbumImage)
 			r.Get("/album/{id}/chart", h.AlbumChart)
 			r.Post("/album/{id}/regenerate-ai", h.AlbumRegenerateAI)
+			r.Post("/album/{id}/create-mixtape", h.AlbumCreateMixtape)
+			r.Get("/album/{id}/mixtape-modal", h.AlbumMixtapeModal)
 
 			// Track routes
 			r.Get("/tracks", h.TrackIndex)

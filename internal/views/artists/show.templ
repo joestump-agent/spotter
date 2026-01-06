@@ -221,7 +221,13 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 						</li>
 						<li>
 							if len(djs) > 0 {
-								<button onclick="document.getElementById('create-mixtape-modal').showModal(); this.closest('details').removeAttribute('open');">
+								<button
+									hx-get={ fmt.Sprintf("/library/artist/%d/mixtape-modal", artist.ID) }
+									hx-target="#create-mixtape-modal"
+									hx-swap="innerHTML"
+									onclick="this.closest('details').removeAttribute('open')"
+									_="on htmx:afterRequest document.getElementById('create-mixtape-modal').showModal()"
+								>
 									<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
 									Create Mixtape
 								</button>
@@ -253,60 +259,23 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ artist.Name }</h1>
 							<!-- Genres and AI Tags -->
 							if len(artist.Genres) > 0 || len(artist.AiTags) > 0 {
-								<div class="flex flex-wrap gap-1.5 mb-3">
+								<div class="flex flex-wrap gap-2 mb-6">
 									for i, genre := range artist.Genres {
 										if i < 6 {
-											<span class="badge badge-sm badge-primary px-2 py-0.5">{ genre }</span>
+											<span class="badge badge-neutral h-auto py-2 px-3 border-0 text-sm">{ genre }</span>
 										}
 									}
 									for _, tag := range artist.AiTags {
-										<span class="badge badge-sm badge-accent gap-1 px-2 py-0.5">
-											<span class="icon-[heroicons--sparkles] w-2.5 h-2.5"></span>
+										<span class="badge badge-secondary h-auto py-2 px-3 gap-1.5 border-0 text-sm">
+											<span class="icon-[heroicons--sparkles] w-3.5 h-3.5"></span>
 											{ tag }
 										</span>
 									}
 									if len(artist.Genres) > 6 {
-										<span class="badge badge-sm badge-ghost px-2 py-0.5">+{ fmt.Sprintf("%d", len(artist.Genres)-6) } more</span>
+										<span class="badge badge-ghost h-auto py-2 px-3 border-0 text-sm">+{ fmt.Sprintf("%d", len(artist.Genres)-6) } more</span>
 									}
 								</div>
 							}
-							<!-- Metadata Table -->
-							<div class="bg-base-100/50 rounded-lg p-3 mb-4">
-								<table class="text-sm">
-									<tbody>
-										<tr>
-											<td class="pr-6 py-1 text-base-content/60">Listens</td>
-											<td class="py-1 font-medium">{ showFormatNumber(stats.TotalListens) }</td>
-											<td class="pr-6 py-1 text-base-content/60 pl-6">Albums</td>
-											<td class="py-1 font-medium">{ showFormatNumber(stats.UniqueAlbums) }</td>
-										</tr>
-										<tr>
-											<td class="pr-6 py-1 text-base-content/60">Tracks</td>
-											<td class="py-1 font-medium">{ showFormatNumber(stats.UniqueTracks) }</td>
-											<td class="pr-6 py-1 text-base-content/60 pl-6">Followers</td>
-											<td class="py-1 font-medium">
-												if artist.FollowerCount != nil && *artist.FollowerCount > 0 {
-													{ showFormatNumber(*artist.FollowerCount) }
-												} else {
-													—
-												}
-											</td>
-										</tr>
-										<tr>
-											<td class="pr-6 py-1 text-base-content/60">Popularity</td>
-											<td class="py-1 font-medium">
-												if artist.Popularity != nil && *artist.Popularity > 0 {
-													{ fmt.Sprintf("%d%%", *artist.Popularity) }
-												} else {
-													—
-												}
-											</td>
-											<td class="pr-6 py-1 text-base-content/60 pl-6"></td>
-											<td class="py-1 font-medium"></td>
-										</tr>
-									</tbody>
-								</table>
-							</div>
 							<!-- External Links -->
 							<div class="flex flex-wrap gap-2">
 								if artist.SpotifyID != "" {
@@ -574,149 +543,18 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 			</div>
 		</div>
 		<!-- Create Mixtape Modal -->
-		<dialog id="create-mixtape-modal" class="modal">
-			<div class="modal-box">
-				<form method="dialog">
-					<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-				</form>
-				<h3 class="font-bold text-lg flex items-center gap-2">
-					<span class="icon-[heroicons--musical-note] w-5 h-5 text-primary"></span>
-					Create Mixtape from { artist.Name }
-				</h3>
-				<p class="text-sm text-base-content/60 py-2">
-					Generate a mixtape inspired by this artist using AI.
-				</p>
-				<form
-					hx-post={ fmt.Sprintf("/library/artist/%d/create-mixtape", artist.ID) }
-					hx-swap="none"
-				>
-					<div class="form-control mb-4">
-						<label class="label">
-							<span class="label-text">Mixtape Name</span>
-						</label>
-						<input
-							type="text"
-							name="name"
-							class="input input-bordered"
-							placeholder={ artist.Name + " Mix" }
-						/>
-					</div>
-					<div class="form-control mb-4">
-						<label class="label">
-							<span class="label-text">
-								DJ Persona
-								<span class="text-error">*</span>
-							</span>
-						</label>
-						<select name="dj_id" class="select select-bordered w-full" required>
-							<option value="" disabled selected>Select a DJ</option>
-							for _, d := range djs {
-								<option value={ fmt.Sprintf("%d", d.ID) }>{ d.Name }</option>
-							}
-						</select>
-						<label class="label">
-							<span class="label-text-alt">The DJ's personality will influence track selection</span>
-						</label>
-					</div>
-					<div class="form-control mb-4">
-						<label class="label">
-							<span class="label-text">Number of Tracks</span>
-						</label>
-						<input
-							type="number"
-							name="max_tracks"
-							class="input input-bordered"
-							min="5"
-							max="100"
-							value="25"
-						/>
-					</div>
-					<div class="modal-action">
-						<button type="button" class="btn btn-ghost" onclick="document.getElementById('create-mixtape-modal').close()">Cancel</button>
-						<button type="submit" class="btn btn-primary gap-2" onclick="document.getElementById('create-mixtape-modal').close()">
-							<span class="icon-[heroicons--sparkles] w-4 h-4"></span>
-							Create Mixtape
-						</button>
-					</div>
-				</form>
-			</div>
-			<form method="dialog" class="modal-backdrop">
-				<button>close</button>
-			</form>
-		</dialog>
+		@components.CreateMixtapeModal()
 	}
 }
 
 // CreateMixtapeModalContent renders just the modal content for HTMX requests.
 templ CreateMixtapeModalContent(artist *ent.Artist, djs []*ent.DJ) {
-	<div class="modal-box">
-		<form method="dialog">
-			<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-		</form>
-		<h3 class="font-bold text-lg flex items-center gap-2">
-			<span class="icon-[heroicons--musical-note] w-5 h-5 text-primary"></span>
-			Create Mixtape from { artist.Name }
-		</h3>
-		<p class="text-sm text-base-content/60 py-2">
-			Generate a mixtape inspired by this artist using AI.
-		</p>
-		<form
-			hx-post={ fmt.Sprintf("/library/artist/%d/create-mixtape", artist.ID) }
-			hx-swap="none"
-		>
-			<div class="form-control mb-4">
-				<label class="label">
-					<span class="label-text">Mixtape Name</span>
-				</label>
-				<input
-					type="text"
-					name="name"
-					class="input input-bordered"
-					placeholder={ artist.Name + " Mix" }
-				/>
-			</div>
-			<div class="form-control mb-4">
-				<label class="label">
-					<span class="label-text">
-						DJ Persona
-						<span class="text-error">*</span>
-					</span>
-				</label>
-				<select name="dj_id" class="select select-bordered w-full" required>
-					<option value="" disabled selected>Select a DJ</option>
-					for _, d := range djs {
-						<option value={ fmt.Sprintf("%d", d.ID) }>{ d.Name }</option>
-					}
-				</select>
-				<label class="label">
-					<span class="label-text-alt">The DJ's personality will influence track selection</span>
-				</label>
-			</div>
-			<div class="form-control mb-4">
-				<label class="label">
-					<span class="label-text">Number of Tracks</span>
-				</label>
-				<input
-					type="number"
-					name="max_tracks"
-					class="input input-bordered"
-					min="5"
-					max="100"
-					value="25"
-				/>
-			</div>
-			<div class="modal-action">
-				<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">Cancel</button>
-				<button type="submit" class="btn btn-primary gap-2" onclick="this.closest('dialog').close()">
-					<span class="icon-[heroicons--sparkles] w-4 h-4"></span>
-					Create Mixtape
-				</button>
-			</div>
-		</form>
-	</div>
-	<form method="dialog" class="modal-backdrop">
-		<button>close</button>
-	</form>
+	@components.CreateMixtapeModalContent(components.CreateMixtapeParams{
+		SeedType: components.SeedArtist,
+		SeedID:   artist.ID,
+		SeedName: artist.Name,
+		DJs:      djs,
+	})
 }
 
 templ ProviderHistoryChart(artistID int, data components.StackedChartData, currentTimeframe string) {

@@ -66,10 +66,19 @@ type DominantColor struct {
 }
 
 type AlbumResponse struct {
-	Summary            string          `json:"summary"`
-	Tags               []string        `json:"tags"`
-	DominantColors     []DominantColor `json:"dominant_colors"`
-	CoverArtCommentary string          `json:"cover_art_commentary"`
+	Summary            string                `json:"summary"`
+	Tags               []string              `json:"tags"`
+	DominantColors     []DominantColor       `json:"dominant_colors"`
+	CoverArtCommentary string                `json:"cover_art_commentary"`
+	Recommendations    []AlbumRecommendation `json:"recommendations"`
+}
+
+// AlbumRecommendation mirrors the structure from the AI prompt response.
+type AlbumRecommendation struct {
+	Name   string `json:"name"`
+	Artist string `json:"artist"`
+	Year   int    `json:"year"`
+	Reason string `json:"reason"`
 }
 
 type TrackResponse struct {
@@ -127,6 +136,7 @@ type AlbumTrackInfo struct {
 	TrackNumber int
 	Name        string
 	Duration    string
+	Listens     int
 }
 
 type TrackTemplateData struct {
@@ -633,7 +643,8 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 	if album.Edges.Tracks != nil {
 		for _, track := range album.Edges.Tracks {
 			info := AlbumTrackInfo{
-				Name: track.Name,
+				Name:    track.Name,
+				Listens: len(track.Edges.Listens),
 			}
 			if track.TrackNumber != nil {
 				info.TrackNumber = *track.TrackNumber
@@ -701,11 +712,23 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		dominantColors = append(dominantColors, fmt.Sprintf("%s|%s", c.Name, c.Hex))
 	}
 
+	// Convert recommendations
+	var recommendations []enrichers.RecommendedAlbum
+	for _, rec := range aiResp.Recommendations {
+		recommendations = append(recommendations, enrichers.RecommendedAlbum{
+			Name:   rec.Name,
+			Artist: rec.Artist,
+			Year:   rec.Year,
+			Reason: rec.Reason,
+		})
+	}
+
 	result := &enrichers.AlbumData{
 		AISummary:          aiResp.Summary,
 		AITags:             aiTags,
 		DominantColors:     dominantColors,
 		CoverArtCommentary: aiResp.CoverArtCommentary,
+		Recommendations:    recommendations,
 	}
 
 	e.logger.Debug("enriched album with AI",
@@ -713,7 +736,8 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		"has_summary", result.AISummary != "",
 		"tags", len(result.AITags),
 		"colors", len(result.DominantColors),
-		"commentary", result.CoverArtCommentary != "")
+		"commentary", result.CoverArtCommentary != "",
+		"recommendations", len(result.Recommendations))
 
 	return result, nil
 }

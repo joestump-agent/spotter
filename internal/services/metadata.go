@@ -20,6 +20,7 @@ import (
 	"spotter/ent/listen"
 	"spotter/ent/playlist"
 	"spotter/ent/playlisttrack"
+	"spotter/ent/schema"
 	"spotter/ent/syncevent"
 	"spotter/ent/track"
 	"spotter/ent/user"
@@ -1006,8 +1007,22 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 		if data.CoverArtCommentary != "" {
 			update = update.SetCoverArtCommentary(data.CoverArtCommentary)
 		}
+		if len(data.Recommendations) > 0 {
+			recs := make([]schema.AlbumRecommendation, len(data.Recommendations))
+			for i, r := range data.Recommendations {
+				recs[i] = schema.AlbumRecommendation{
+					Name:      r.Name,
+					Artist:    r.Artist,
+					SpotifyID: r.SpotifyID,
+					Reason:    r.Reason,
+					ImageURL:  r.ImageURL,
+					Year:      r.Year,
+				}
+			}
+			update = update.SetRecommendations(recs)
+		}
 		// If any AI fields were set, update the timestamp
-		if data.AISummary != "" || len(data.AITags) > 0 || len(data.DominantColors) > 0 || data.CoverArtCommentary != "" {
+		if data.AISummary != "" || len(data.AITags) > 0 || len(data.DominantColors) > 0 || data.CoverArtCommentary != "" || len(data.Recommendations) > 0 {
 			update = update.SetLastAiEnrichedAt(time.Now())
 		}
 

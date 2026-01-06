@@ -1,0 +1,66 @@
+# Spotter Project Guidelines
+
+## Tech Stack
+- **Language**: Go 1.24+
+- **ORM**: [Ent](https://entgo.io/) (Code generation based)
+- **Router**: [Chi](https://github.com/go-chi/chi) v5
+- **Templating**: [Templ](https://github.com/a-h/templ)
+- **Database**: SQLite (via `mattn/go-sqlite3`)
+- **Logging**: `log/slog`
+- **Config**: Viper
+
+## Architecture & Patterns
+
+### Core Philosophy
+Spotter separates "Providers" (sources of user data like history/playlists) from "Enrichers" (sources of metadata). Both use a Factory pattern for instantiation based on the current user context.
+
+### Database (Ent)
+- **Schema**: Defined in `ent/schema`.
+- **Generation**: Run `go generate ./ent` after schema changes.
+- **Usage**: Use the generated client for all DB operations. Do not write raw SQL unless absolutely necessary.
+- **Traversals**: Prefer Ent traversals over manual joins.
+
+### Providers (`internal/providers`)
+Providers handle user-specific data interaction (Listen History, Playlists).
+
+- **Interfaces**: Must implement specific interfaces defined in `providers.go`:
+  - `HistoryFetcher`: Syncing listening history (handling pagination/cursors).
+  - `PlaylistManager`: Reading/Creating playlists.
+  - `PlaylistSyncer`: Syncing playlists between services.
+  - `Authenticator`: Handling OAuth flows.
+- **Authentication**:
+  - Implement `Authenticator` for services needing OAuth (e.g., Spotify, Last.fm).
+  - **Token Management**: Auto-refresh tokens within the provider methods. The caller should not worry about expired tokens.
+  - **State**: Persist tokens via `ent` edges (e.g., `User.Edges.SpotifyAuth`).
+- **Factories**: `New(logger, config)` returns a `Factory` function `func(ctx, user) (Provider, error)`.
+
+### Enrichers (`internal/enrichers`)
+Enrichers add metadata, images, and AI-generated content to local entities.
+
+- **Interfaces**: Must implement interfaces from `enrichers.go`:
+  - `IDMatcher`: **Critical**. Matches local names to external IDs (e.g., Name -> Spotify ID).
+  - `ArtistEnricher`, `AlbumEnricher`, `TrackEnricher`: Fetches metadata using IDs.
+- **Availability**: Implement `IsAvailable() bool` to check if config/auth is present.
+- **Data Types**: Return standardized structs (`ArtistData`, `AlbumData`) defined in `enrichers.go`.
+- **Images**: Download and resize images locally; do not just store hotlinks.
+
+## Coding Standards
+
+### Error Handling
+- Use `fmt.Errorf("context: %w", err)` for wrapping.
+- Do not panic.
+- Log errors with structured attributes using `slog`.
+
+### Context
+- Pass `context.Context` as the first argument to all IO-bound functions.
+- Respect context cancellation.
+
+### Testing
+- **Mocking**: Use `httptest.NewServer` to mock external APIs (Spotify, MusicBrainz, etc.).
+- **No Network**: Tests must not make real network calls.
+- **Coverage**: Test happy paths, 401/403 (Auth), 429 (Rate Limits), and 404s.
+
+## External API Etiquette
+- **Rate Limiting**: Handle 429 responses gracefully (exponential backoff or error).
+- **Batching**: Use batch APIs where possible (e.g., Spotify Audio Features).
+- **User Agent**: Set a descriptive User-Agent string.
