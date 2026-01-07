@@ -545,12 +545,18 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
+// ResponseFormat specifies the format of the response from OpenAI.
+type ResponseFormat struct {
+	Type string `json:"type"`
+}
+
 // ChatRequest represents an OpenAI chat completion request.
 type ChatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []ChatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
-	Temperature float64       `json:"temperature,omitempty"`
+	Model          string          `json:"model"`
+	Messages       []ChatMessage   `json:"messages"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
+	Temperature    float64         `json:"temperature,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 }
 
 // ChatResponse represents an OpenAI chat completion response.
@@ -614,6 +620,9 @@ func (g *MixtapeGenerator) callOpenAI(ctx context.Context, prompt string) (strin
 		},
 		MaxTokens:   maxTokens,
 		Temperature: temperature,
+		ResponseFormat: &ResponseFormat{
+			Type: "json_object",
+		},
 	}
 
 	reqBody, err := json.Marshal(req)
@@ -681,8 +690,8 @@ func (g *MixtapeGenerator) callOpenAI(ctx context.Context, prompt string) (strin
 
 // parseAIResponse parses the AI response JSON.
 func (g *MixtapeGenerator) parseAIResponse(response string) (*AIResponse, error) {
-	// Extract JSON from potential markdown code blocks
-	jsonStr := parseJSONResponse(response)
+	// Extract JSON from potential markdown code blocks and sanitize trailing commas
+	jsonStr := ExtractAndSanitizeJSON(response)
 
 	var aiResp AIResponse
 	if err := json.Unmarshal([]byte(jsonStr), &aiResp); err != nil {
@@ -696,35 +705,9 @@ func (g *MixtapeGenerator) parseAIResponse(response string) (*AIResponse, error)
 }
 
 // parseJSONResponse extracts JSON from the response, handling markdown code blocks.
+// Deprecated: Use ExtractAndSanitizeJSON instead which also handles trailing commas.
 func parseJSONResponse(response string) string {
-	// Try to find JSON in markdown code blocks
-	if start := strings.Index(response, "```json"); start != -1 {
-		start += 7
-		if end := strings.Index(response[start:], "```"); end != -1 {
-			return strings.TrimSpace(response[start : start+end])
-		}
-	}
-
-	// Try plain code blocks
-	if start := strings.Index(response, "```"); start != -1 {
-		start += 3
-		// Skip any language identifier on the same line
-		if newline := strings.Index(response[start:], "\n"); newline != -1 {
-			start += newline + 1
-		}
-		if end := strings.Index(response[start:], "```"); end != -1 {
-			return strings.TrimSpace(response[start : start+end])
-		}
-	}
-
-	// Try to find raw JSON object
-	if start := strings.Index(response, "{"); start != -1 {
-		if end := strings.LastIndex(response, "}"); end != -1 && end > start {
-			return strings.TrimSpace(response[start : end+1])
-		}
-	}
-
-	return strings.TrimSpace(response)
+	return ExtractAndSanitizeJSON(response)
 }
 
 // matchTracksToLibrary matches AI-suggested tracks to the user's library.

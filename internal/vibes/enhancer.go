@@ -480,6 +480,9 @@ func (e *PlaylistEnhancer) callOpenAI(ctx context.Context, prompt string) (strin
 		},
 		MaxTokens:   e.config.Vibes.MaxTokens,
 		Temperature: e.config.Vibes.Temperature,
+		ResponseFormat: &ResponseFormat{
+			Type: "json_object",
+		},
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -532,10 +535,10 @@ func (e *PlaylistEnhancer) callOpenAI(ctx context.Context, prompt string) (strin
 
 // parseAIResponse parses the AI response into structured data.
 func (e *PlaylistEnhancer) parseAIResponse(response string) (*EnhancementAIResponse, error) {
-	// Try to extract JSON from the response
-	jsonStr := extractJSON(response)
+	// Try to extract JSON from the response and sanitize trailing commas
+	jsonStr := ExtractJSONObject(response)
 	if jsonStr == "" {
-		jsonStr = response
+		jsonStr = SanitizeJSON(response)
 	}
 
 	var aiResp EnhancementAIResponse
@@ -547,28 +550,9 @@ func (e *PlaylistEnhancer) parseAIResponse(response string) (*EnhancementAIRespo
 }
 
 // extractJSON attempts to extract a JSON object from text.
+// Deprecated: Use ExtractJSONObject instead which also handles trailing commas and string escaping.
 func extractJSON(text string) string {
-	// Find JSON object
-	start := strings.Index(text, "{")
-	if start == -1 {
-		return ""
-	}
-
-	// Find the matching closing brace
-	depth := 0
-	for i := start; i < len(text); i++ {
-		switch text[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return text[start : i+1]
-			}
-		}
-	}
-
-	return ""
+	return ExtractJSONObject(text)
 }
 
 // buildResult processes the AI response into an EnhancementResult.

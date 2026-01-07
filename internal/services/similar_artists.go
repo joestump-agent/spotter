@@ -241,12 +241,18 @@ type similarArtistChatMessage struct {
 	Content string `json:"content"`
 }
 
+// ResponseFormat specifies the format of the response from OpenAI.
+type similarArtistResponseFormat struct {
+	Type string `json:"type"`
+}
+
 // ChatRequest represents a request to the OpenAI chat API.
 type similarArtistChatRequest struct {
-	Model       string                     `json:"model"`
-	Messages    []similarArtistChatMessage `json:"messages"`
-	MaxTokens   int                        `json:"max_tokens"`
-	Temperature float64                    `json:"temperature"`
+	Model          string                       `json:"model"`
+	Messages       []similarArtistChatMessage   `json:"messages"`
+	MaxTokens      int                          `json:"max_tokens"`
+	Temperature    float64                      `json:"temperature"`
+	ResponseFormat *similarArtistResponseFormat `json:"response_format,omitempty"`
 }
 
 // ChatResponse represents a response from the OpenAI chat API.
@@ -276,6 +282,9 @@ func (s *SimilarArtistsService) callOpenAI(ctx context.Context, prompt string) (
 		},
 		MaxTokens:   2000,
 		Temperature: 0.7,
+		ResponseFormat: &similarArtistResponseFormat{
+			Type: "json_object",
+		},
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -353,6 +362,7 @@ func parseJSONFromResponse(response string, v interface{}) error {
 	}
 
 	content = strings.TrimSpace(content)
+
 	if err := json.Unmarshal([]byte(content), v); err != nil {
 		return fmt.Errorf("failed to parse JSON: %w (content: %s)", err, content[:min(200, len(content))])
 	}

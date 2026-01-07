@@ -64,3 +64,7 @@ Enrichers add metadata, images, and AI-generated content to local entities.
 - **Rate Limiting**: Handle 429 responses gracefully (exponential backoff or error).
 - **Batching**: Use batch APIs where possible (e.g., Spotify Audio Features).
 - **User Agent**: Set a descriptive User-Agent string.
+
+## UI Components and Styling
+- **Icons:** Use Hero Icons http://heroicons.com for any icons.
+- **Components:** Use DaisyUI exclusively. Create shared, abstract components to promote reusability in the UI.

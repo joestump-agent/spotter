@@ -180,11 +180,17 @@ type ImageURL struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// ResponseFormat specifies the format of the response from OpenAI.
+type ResponseFormat struct {
+	Type string `json:"type"`
+}
+
 type ChatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []ChatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
-	Temperature float64       `json:"temperature,omitempty"`
+	Model          string          `json:"model"`
+	Messages       []ChatMessage   `json:"messages"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
+	Temperature    float64         `json:"temperature,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 }
 
 type ChatResponse struct {
@@ -341,6 +347,9 @@ func (e *Enricher) callOpenAI(ctx context.Context, prompt string, images []strin
 		},
 		MaxTokens:   2000,
 		Temperature: 0.7,
+		ResponseFormat: &ResponseFormat{
+			Type: "json_object",
+		},
 	}
 
 	reqBody, err := json.Marshal(req)
@@ -421,34 +430,44 @@ func (e *Enricher) loadImageAsBase64(imagePath string) (string, error) {
 
 // parseJSONResponse extracts JSON from the response, handling markdown code blocks.
 func parseJSONResponse(response string) string {
+	var jsonStr string
+
 	// Try to find JSON in markdown code blocks
 	if start := strings.Index(response, "```json"); start != -1 {
 		start += 7
 		if end := strings.Index(response[start:], "```"); end != -1 {
-			return strings.TrimSpace(response[start : start+end])
+			jsonStr = strings.TrimSpace(response[start : start+end])
 		}
 	}
 
 	// Try plain code blocks
-	if start := strings.Index(response, "```"); start != -1 {
-		start += 3
-		// Skip any language identifier on the same line
-		if newline := strings.Index(response[start:], "\n"); newline != -1 {
-			start += newline + 1
-		}
-		if end := strings.Index(response[start:], "```"); end != -1 {
-			return strings.TrimSpace(response[start : start+end])
+	if jsonStr == "" {
+		if start := strings.Index(response, "```"); start != -1 {
+			start += 3
+			// Skip any language identifier on the same line
+			if newline := strings.Index(response[start:], "\n"); newline != -1 {
+				start += newline + 1
+			}
+			if end := strings.Index(response[start:], "```"); end != -1 {
+				jsonStr = strings.TrimSpace(response[start : start+end])
+			}
 		}
 	}
 
 	// Try to find raw JSON object
-	if start := strings.Index(response, "{"); start != -1 {
-		if end := strings.LastIndex(response, "}"); end != -1 && end > start {
-			return strings.TrimSpace(response[start : end+1])
+	if jsonStr == "" {
+		if start := strings.Index(response, "{"); start != -1 {
+			if end := strings.LastIndex(response, "}"); end != -1 && end > start {
+				jsonStr = strings.TrimSpace(response[start : end+1])
+			}
 		}
 	}
 
-	return strings.TrimSpace(response)
+	if jsonStr == "" {
+		jsonStr = strings.TrimSpace(response)
+	}
+
+	return jsonStr
 }
 
 // deduplicateTags removes duplicate tags (case-insensitive) and limits to max tags.

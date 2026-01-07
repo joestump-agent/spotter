@@ -101,18 +101,19 @@ Based on the information provided above and any album artwork images included, p
 ## Response Format
 
 Respond with a JSON object in exactly this format:
+Respond ONLY with a valid JSON object. No markdown, no explanation, no text before or after the JSON.
+
 ```json
 {
   "summary": "Full album summary text here...",
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
-  {{- if .HasCoverArt -}}
-  ,
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+{{- if .HasCoverArt }}
   "dominant_colors": [
     {"name": "color name 1", "hex": "#RRGGBB"},
     {"name": "color name 2", "hex": "#RRGGBB"}
   ],
-  "cover_art_commentary": "Art critic commentary here..."
-  {{- end }},
+  "cover_art_commentary": "Art critic commentary here...",
+{{- end }}
   "recommendations": [
     {
       "name": "Album Name",
@@ -130,4 +131,4 @@ Respond with a JSON object in exactly this format:
 }
 ```
 
-Ensure your response is valid JSON. Do not include any text before or after the JSON object.
+IMPORTANT: Your entire response must be ONLY the JSON object above. Do not include any text, markdown formatting, or explanation before or after the JSON.
