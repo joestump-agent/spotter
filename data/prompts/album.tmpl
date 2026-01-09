@@ -40,11 +40,12 @@ You are a music expert assistant. Your task is to analyze and enrich metadata ab
 **Total Tracks:** {{ .TotalTracks }}
 {{- end }}
 
-## Track Listing
+## Track Listing & User History
 
 {{- if .Tracks }}
+The following tracks are on this album. Listen counts indicate which tracks the user enjoys most.
 {{ range .Tracks }}
-{{ if .TrackNumber }}{{ .TrackNumber }}. {{ end }}**{{ .Name }}**{{ if .Duration }} ({{ .Duration }}){{ end }}
+{{ if .TrackNumber }}{{ .TrackNumber }}. {{ end }}**{{ .Name }}**{{ if .Duration }} ({{ .Duration }}){{ end }}{{ if .Listens }} - {{ .Listens }} listens{{ end }}
 {{- end }}
 {{- end }}
 
@@ -91,22 +92,43 @@ Based on the information provided above and any album artwork images included, p
 4.  **Cover Art Commentary**: Acting as an art critic, provide a short commentary (1-2 paragraphs) on the album cover. Discuss its style, composition, and how it relates to the music's themes, the artist's intent, and the overall mood of the album.
 {{- end }}
 
+5.  **Recommendations**: Recommend 5 albums that have a similar "vibe" to this one. Consider:
+    *   The genre, era, and production style
+    *   The user's listening habits on this album (tracks with more listens indicate user preference)
+    *   Do NOT recommend other albums by {{ .Artist }}
+    *   For each recommendation, provide the album name, artist name, release year, and a brief reason (1 sentence) explaining why it fits the vibe.
+
 ## Response Format
 
 Respond with a JSON object in exactly this format:
+Respond ONLY with a valid JSON object. No markdown, no explanation, no text before or after the JSON.
+
 ```json
 {
   "summary": "Full album summary text here...",
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
-  {{- if .HasCoverArt -}}
-  ,
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+{{- if .HasCoverArt }}
   "dominant_colors": [
     {"name": "color name 1", "hex": "#RRGGBB"},
     {"name": "color name 2", "hex": "#RRGGBB"}
   ],
-  "cover_art_commentary": "Art critic commentary here..."
-  {{- end }}
+  "cover_art_commentary": "Art critic commentary here...",
+{{- end }}
+  "recommendations": [
+    {
+      "name": "Album Name",
+      "artist": "Artist Name",
+      "year": 1999,
+      "reason": "Why this album fits the vibe..."
+    },
+    {
+      "name": "Album Name 2",
+      "artist": "Artist Name 2",
+      "year": 2005,
+      "reason": "Why this album fits the vibe..."
+    }
+  ]
 }
 ```
 
-Ensure your response is valid JSON. Do not include any text before or after the JSON object.
+IMPORTANT: Your entire response must be ONLY the JSON object above. Do not include any text, markdown formatting, or explanation before or after the JSON.

@@ -3,6 +3,7 @@ package albums
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"spotter/ent"
 	"spotter/internal/config"
@@ -209,7 +210,7 @@ func getSpotifyAlbumLink(spotifyID string) string {
 	return fmt.Sprintf("https://open.spotify.com/album/%s", spotifyID)
 }
 
-templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *config.Config, currentTimeframe string) {
+templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, djs []*ent.DJ, cfg *config.Config, currentTimeframe string) {
 	@layouts.Dashboard(fmt.Sprintf("%s | Albums | Spotter", album.Name), cfg, "/library/album") {
 		<!-- AI Regenerate Modal -->
 		<dialog id="ai-regenerate-modal" class="modal">
@@ -262,17 +263,44 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 					</summary>
 					<ul class="dropdown-content z-[1] menu p-2 shadow-lg bg-base-100 rounded-box w-56">
 						<li>
-							<button onclick="document.getElementById('ai-regenerate-modal').showModal(); this.closest('details').removeAttribute('open');">
-								<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
-								Regenerate AI Enrichment
-							</button>
+							if len(djs) > 0 {
+								<button
+									hx-get={ fmt.Sprintf("/library/album/%d/mixtape-modal", album.ID) }
+									hx-target="#create-mixtape-modal"
+									hx-swap="innerHTML"
+									onclick="this.closest('details').removeAttribute('open')"
+									_="on htmx:afterRequest document.getElementById('create-mixtape-modal').showModal()"
+								>
+									<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
+									Create Mixtape
+								</button>
+							} else {
+								<a href="/vibes/djs" class="opacity-60">
+									<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
+									Create Mixtape
+									<span class="badge badge-xs">Create DJ first</span>
+								</a>
+							}
 						</li>
 						<li>
-							<button disabled class="opacity-50">
-								<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
-								Generate Mixtape
-								<span class="badge badge-xs">Soon</span>
-							</button>
+							if len(djs) > 0 {
+								<button
+									hx-get={ fmt.Sprintf("/library/album/%d/mixtape-modal", album.ID) }
+									hx-target="#create-mixtape-modal"
+									hx-swap="innerHTML"
+									onclick="this.closest('details').removeAttribute('open')"
+									_="on htmx:afterRequest document.getElementById('create-mixtape-modal').showModal()"
+								>
+									<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
+									Create Mixtape
+								</button>
+							} else {
+								<a href="/vibes/djs" class="opacity-60">
+									<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
+									Create Mixtape
+									<span class="badge badge-xs">Create DJ first</span>
+								</a>
+							}
 						</li>
 					</ul>
 				</details>
@@ -426,7 +454,57 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, cfg *
 				</div>
 			</div>
 		</div>
+		if len(album.Recommendations) > 0 {
+			<div class="mt-8">
+				<h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+					<span class="icon-[heroicons--sparkles] text-accent"></span>
+					Recommended Albums
+				</h2>
+				<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+					for _, rec := range album.Recommendations {
+						<a href={ templ.URL(fmt.Sprintf("/library/albums?q=%s %s", url.QueryEscape(rec.Name), url.QueryEscape(rec.Artist))) } class="card bg-base-100 shadow-xl hover:shadow-2xl transition-all hover:scale-105 group" title={ rec.Reason }>
+							<figure class="aspect-square relative overflow-hidden">
+								if rec.ImageURL != "" {
+									<img src={ templ.URL(rec.ImageURL) } alt={ rec.Name } class="w-full h-full object-cover"/>
+								} else {
+									<div class="w-full h-full bg-base-300 flex items-center justify-center">
+										<span class="icon-[heroicons--musical-note] text-5xl text-base-content/20"></span>
+									</div>
+								}
+								if rec.Year > 0 {
+									<div class="absolute bottom-2 right-2 badge badge-neutral badge-sm px-2 py-0.5">
+										<span>{ fmt.Sprintf("%d", rec.Year) }</span>
+									</div>
+								}
+								<div class="absolute top-2 left-2 badge badge-accent badge-sm opacity-0 group-hover:opacity-100 transition-opacity">
+									<span class="icon-[heroicons--sparkles] w-3 h-3 mr-1"></span>
+									AI
+								</div>
+							</figure>
+							<div class="card-body p-4">
+								<h3 class="card-title text-sm line-clamp-1">{ rec.Name }</h3>
+								<p class="text-xs text-base-content/50 truncate mt-1">
+									{ rec.Artist }
+								</p>
+							</div>
+						</a>
+					}
+				</div>
+			</div>
+		}
+		<!-- Create Mixtape Modal -->
+		@components.CreateMixtapeModal()
 	}
+}
+
+// CreateMixtapeModalContent renders just the modal content for HTMX requests.
+templ CreateMixtapeModalContent(album *ent.Album, djs []*ent.DJ) {
+	@components.CreateMixtapeModalContent(components.CreateMixtapeParams{
+		SeedType: components.SeedAlbum,
+		SeedID:   album.ID,
+		SeedName: album.Name,
+		DJs:      djs,
+	})
 }
 
 templ ProviderHistoryChart(albumID int, data components.StackedChartData, currentTimeframe string) {

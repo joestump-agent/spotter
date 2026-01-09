@@ -38,6 +38,14 @@ type PlaylistWithArtist struct {
 	TrackCount int
 }
 
+// SimilarArtistInfo holds information about a similar artist
+type SimilarArtistInfo struct {
+	Artist     *ent.Artist
+	Provider   string
+	Confidence float64
+	Reason     string
+}
+
 func toTrackRowsFromStats(tracks []TrackListenCount) []components.TrackTableRow {
 	rows := make([]components.TrackTableRow, len(tracks))
 	for i, t := range tracks {
@@ -140,7 +148,7 @@ func collectTrackAITags(albums []*ent.Album) []string {
 	return tags
 }
 
-templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArtist, stats *ArtistStats, cfg *config.Config, currentTimeframe string) {
+templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArtist, stats *ArtistStats, similarArtists []SimilarArtistInfo, djs []*ent.DJ, cfg *config.Config, currentTimeframe string) {
 	@layouts.Dashboard(fmt.Sprintf("%s | Artists | Spotter", artist.Name), cfg, "/library/artist") {
 		<!-- AI Regenerate Modal -->
 		<dialog id="ai-regenerate-modal" class="modal">
@@ -199,11 +207,37 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 							</button>
 						</li>
 						<li>
-							<button disabled class="opacity-50">
-								<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
-								Generate Mixtape
-								<span class="badge badge-xs">Soon</span>
+							<button
+								hx-post={ fmt.Sprintf("/library/artist/%d/find-similar", artist.ID) }
+								hx-swap="none"
+								onclick="this.closest('details').removeAttribute('open');"
+							>
+								<span class="icon-[heroicons--users] w-4 h-4"></span>
+								Find Similar Artists
 							</button>
+						</li>
+						<li class="menu-title pt-2">
+							<span>Create</span>
+						</li>
+						<li>
+							if len(djs) > 0 {
+								<button
+									hx-get={ fmt.Sprintf("/library/artist/%d/mixtape-modal", artist.ID) }
+									hx-target="#create-mixtape-modal"
+									hx-swap="innerHTML"
+									onclick="this.closest('details').removeAttribute('open')"
+									_="on htmx:afterRequest document.getElementById('create-mixtape-modal').showModal()"
+								>
+									<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
+									Create Mixtape
+								</button>
+							} else {
+								<a href="/vibes/djs" class="opacity-60">
+									<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
+									Create Mixtape
+									<span class="badge badge-xs">Create DJ first</span>
+								</a>
+							}
 						</li>
 					</ul>
 				</details>
@@ -225,60 +259,23 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ artist.Name }</h1>
 							<!-- Genres and AI Tags -->
 							if len(artist.Genres) > 0 || len(artist.AiTags) > 0 {
-								<div class="flex flex-wrap gap-1.5 mb-3">
+								<div class="flex flex-wrap gap-2 mb-6">
 									for i, genre := range artist.Genres {
 										if i < 6 {
-											<span class="badge badge-sm badge-primary px-2 py-0.5">{ genre }</span>
+											<span class="badge badge-neutral h-auto py-2 px-3 border-0 text-sm">{ genre }</span>
 										}
 									}
 									for _, tag := range artist.AiTags {
-										<span class="badge badge-sm badge-accent gap-1 px-2 py-0.5">
-											<span class="icon-[heroicons--sparkles] w-2.5 h-2.5"></span>
+										<span class="badge badge-secondary h-auto py-2 px-3 gap-1.5 border-0 text-sm">
+											<span class="icon-[heroicons--sparkles] w-3.5 h-3.5"></span>
 											{ tag }
 										</span>
 									}
 									if len(artist.Genres) > 6 {
-										<span class="badge badge-sm badge-ghost px-2 py-0.5">+{ fmt.Sprintf("%d", len(artist.Genres)-6) } more</span>
+										<span class="badge badge-ghost h-auto py-2 px-3 border-0 text-sm">+{ fmt.Sprintf("%d", len(artist.Genres)-6) } more</span>
 									}
 								</div>
 							}
-							<!-- Metadata Table -->
-							<div class="bg-base-100/50 rounded-lg p-3 mb-4">
-								<table class="text-sm">
-									<tbody>
-										<tr>
-											<td class="pr-6 py-1 text-base-content/60">Listens</td>
-											<td class="py-1 font-medium">{ showFormatNumber(stats.TotalListens) }</td>
-											<td class="pr-6 py-1 text-base-content/60 pl-6">Albums</td>
-											<td class="py-1 font-medium">{ showFormatNumber(stats.UniqueAlbums) }</td>
-										</tr>
-										<tr>
-											<td class="pr-6 py-1 text-base-content/60">Tracks</td>
-											<td class="py-1 font-medium">{ showFormatNumber(stats.UniqueTracks) }</td>
-											<td class="pr-6 py-1 text-base-content/60 pl-6">Followers</td>
-											<td class="py-1 font-medium">
-												if artist.FollowerCount != nil && *artist.FollowerCount > 0 {
-													{ showFormatNumber(*artist.FollowerCount) }
-												} else {
-													—
-												}
-											</td>
-										</tr>
-										<tr>
-											<td class="pr-6 py-1 text-base-content/60">Popularity</td>
-											<td class="py-1 font-medium">
-												if artist.Popularity != nil && *artist.Popularity > 0 {
-													{ fmt.Sprintf("%d%%", *artist.Popularity) }
-												} else {
-													—
-												}
-											</td>
-											<td class="pr-6 py-1 text-base-content/60 pl-6"></td>
-											<td class="py-1 font-medium"></td>
-										</tr>
-									</tbody>
-								</table>
-							</div>
 							<!-- External Links -->
 							<div class="flex flex-wrap gap-2">
 								if artist.SpotifyID != "" {
@@ -309,6 +306,35 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 			</div>
 			<!-- AI Summary Card -->
 			@components.AISummaryCard(artist.AiSummary, "AI Insights")
+			<!-- Similar Artists Section -->
+			if len(similarArtists) > 0 {
+				<div class="mb-8">
+					<div class="flex items-center justify-between mb-6">
+						<h3 class="text-2xl font-bold flex items-center gap-2">
+							<span class="icon-[heroicons--users] w-6 h-6"></span>
+							Similar Artists
+							<span class="badge badge-accent badge-sm gap-1">
+								<span class="icon-[heroicons--sparkles] w-3 h-3"></span>
+								AI
+							</span>
+						</h3>
+						<button
+							class="btn btn-sm btn-ghost gap-1"
+							hx-post={ fmt.Sprintf("/library/artist/%d/find-similar", artist.ID) }
+							hx-swap="none"
+							title="Refresh similar artists"
+						>
+							<span class="icon-[heroicons--arrow-path] w-4 h-4"></span>
+							Refresh
+						</button>
+					</div>
+					<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+						for _, sa := range similarArtists {
+							@components.SimilarArtistTile(sa.Artist, sa.Provider, sa.Reason, sa.Confidence)
+						}
+					</div>
+				</div>
+			}
 			<!-- Biography Section with AI Toggle -->
 			if artist.Bio != "" || artist.AiBiography != "" {
 				<div id="bio-card" class={ "card bg-base-100 border-l-4 shadow-xl mb-8", templ.KV("border-accent shadow-accent/10", artist.AiBiography != ""), templ.KV("border-base-content/20", artist.AiBiography == "") }>
@@ -516,7 +542,19 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 				</div>
 			</div>
 		</div>
+		<!-- Create Mixtape Modal -->
+		@components.CreateMixtapeModal()
 	}
+}
+
+// CreateMixtapeModalContent renders just the modal content for HTMX requests.
+templ CreateMixtapeModalContent(artist *ent.Artist, djs []*ent.DJ) {
+	@components.CreateMixtapeModalContent(components.CreateMixtapeParams{
+		SeedType: components.SeedArtist,
+		SeedID:   artist.ID,
+		SeedName: artist.Name,
+		DJs:      djs,
+	})
 }
 
 templ ProviderHistoryChart(artistID int, data components.StackedChartData, currentTimeframe string) {

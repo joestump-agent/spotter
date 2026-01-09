@@ -66,10 +66,19 @@ type DominantColor struct {
 }
 
 type AlbumResponse struct {
-	Summary            string          `json:"summary"`
-	Tags               []string        `json:"tags"`
-	DominantColors     []DominantColor `json:"dominant_colors"`
-	CoverArtCommentary string          `json:"cover_art_commentary"`
+	Summary            string                `json:"summary"`
+	Tags               []string              `json:"tags"`
+	DominantColors     []DominantColor       `json:"dominant_colors"`
+	CoverArtCommentary string                `json:"cover_art_commentary"`
+	Recommendations    []AlbumRecommendation `json:"recommendations"`
+}
+
+// AlbumRecommendation mirrors the structure from the AI prompt response.
+type AlbumRecommendation struct {
+	Name   string `json:"name"`
+	Artist string `json:"artist"`
+	Year   int    `json:"year"`
+	Reason string `json:"reason"`
 }
 
 type TrackResponse struct {
@@ -127,6 +136,7 @@ type AlbumTrackInfo struct {
 	TrackNumber int
 	Name        string
 	Duration    string
+	Listens     int
 }
 
 type TrackTemplateData struct {
@@ -170,11 +180,17 @@ type ImageURL struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// ResponseFormat specifies the format of the response from OpenAI.
+type ResponseFormat struct {
+	Type string `json:"type"`
+}
+
 type ChatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []ChatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
-	Temperature float64       `json:"temperature,omitempty"`
+	Model          string          `json:"model"`
+	Messages       []ChatMessage   `json:"messages"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
+	Temperature    float64         `json:"temperature,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 }
 
 type ChatResponse struct {
@@ -331,6 +347,9 @@ func (e *Enricher) callOpenAI(ctx context.Context, prompt string, images []strin
 		},
 		MaxTokens:   2000,
 		Temperature: 0.7,
+		ResponseFormat: &ResponseFormat{
+			Type: "json_object",
+		},
 	}
 
 	reqBody, err := json.Marshal(req)
@@ -411,34 +430,44 @@ func (e *Enricher) loadImageAsBase64(imagePath string) (string, error) {
 
 // parseJSONResponse extracts JSON from the response, handling markdown code blocks.
 func parseJSONResponse(response string) string {
+	var jsonStr string
+
 	// Try to find JSON in markdown code blocks
 	if start := strings.Index(response, "```json"); start != -1 {
 		start += 7
 		if end := strings.Index(response[start:], "```"); end != -1 {
-			return strings.TrimSpace(response[start : start+end])
+			jsonStr = strings.TrimSpace(response[start : start+end])
 		}
 	}
 
 	// Try plain code blocks
-	if start := strings.Index(response, "```"); start != -1 {
-		start += 3
-		// Skip any language identifier on the same line
-		if newline := strings.Index(response[start:], "\n"); newline != -1 {
-			start += newline + 1
-		}
-		if end := strings.Index(response[start:], "```"); end != -1 {
-			return strings.TrimSpace(response[start : start+end])
+	if jsonStr == "" {
+		if start := strings.Index(response, "```"); start != -1 {
+			start += 3
+			// Skip any language identifier on the same line
+			if newline := strings.Index(response[start:], "\n"); newline != -1 {
+				start += newline + 1
+			}
+			if end := strings.Index(response[start:], "```"); end != -1 {
+				jsonStr = strings.TrimSpace(response[start : start+end])
+			}
 		}
 	}
 
 	// Try to find raw JSON object
-	if start := strings.Index(response, "{"); start != -1 {
-		if end := strings.LastIndex(response, "}"); end != -1 && end > start {
-			return strings.TrimSpace(response[start : end+1])
+	if jsonStr == "" {
+		if start := strings.Index(response, "{"); start != -1 {
+			if end := strings.LastIndex(response, "}"); end != -1 && end > start {
+				jsonStr = strings.TrimSpace(response[start : end+1])
+			}
 		}
 	}
 
-	return strings.TrimSpace(response)
+	if jsonStr == "" {
+		jsonStr = strings.TrimSpace(response)
+	}
+
+	return jsonStr
 }
 
 // deduplicateTags removes duplicate tags (case-insensitive) and limits to max tags.
@@ -633,7 +662,8 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 	if album.Edges.Tracks != nil {
 		for _, track := range album.Edges.Tracks {
 			info := AlbumTrackInfo{
-				Name: track.Name,
+				Name:    track.Name,
+				Listens: len(track.Edges.Listens),
 			}
 			if track.TrackNumber != nil {
 				info.TrackNumber = *track.TrackNumber
@@ -701,11 +731,23 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		dominantColors = append(dominantColors, fmt.Sprintf("%s|%s", c.Name, c.Hex))
 	}
 
+	// Convert recommendations
+	var recommendations []enrichers.RecommendedAlbum
+	for _, rec := range aiResp.Recommendations {
+		recommendations = append(recommendations, enrichers.RecommendedAlbum{
+			Name:   rec.Name,
+			Artist: rec.Artist,
+			Year:   rec.Year,
+			Reason: rec.Reason,
+		})
+	}
+
 	result := &enrichers.AlbumData{
 		AISummary:          aiResp.Summary,
 		AITags:             aiTags,
 		DominantColors:     dominantColors,
 		CoverArtCommentary: aiResp.CoverArtCommentary,
+		Recommendations:    recommendations,
 	}
 
 	e.logger.Debug("enriched album with AI",
@@ -713,7 +755,8 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		"has_summary", result.AISummary != "",
 		"tags", len(result.AITags),
 		"colors", len(result.DominantColors),
-		"commentary", result.CoverArtCommentary != "")
+		"commentary", result.CoverArtCommentary != "",
+		"recommendations", len(result.Recommendations))
 
 	return result, nil
 }

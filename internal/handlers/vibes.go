@@ -13,8 +13,10 @@ import (
 	"spotter/ent/dj"
 	"spotter/ent/listen"
 	"spotter/ent/mixtape"
+	"spotter/ent/track"
 	"spotter/ent/user"
-	"spotter/internal/views/vibes"
+	"spotter/internal/vibes"
+	vibesViews "spotter/internal/views/vibes"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -43,7 +45,7 @@ func (h *Handler) DJsIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Render(w, r, vibes.DJsIndex(djs, h.Config))
+	h.Render(w, r, vibesViews.DJsIndex(djs, h.Config))
 }
 
 // DJShow shows a single DJ
@@ -74,7 +76,7 @@ func (h *Handler) DJShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Render(w, r, vibes.DJShow(d, h.Config))
+	h.Render(w, r, vibesViews.DJShow(d, h.Config))
 }
 
 // CreateDJ creates a new DJ
@@ -284,7 +286,7 @@ func (h *Handler) MixtapesIndex(w http.ResponseWriter, r *http.Request) {
 		djs = []*ent.DJ{}
 	}
 
-	h.Render(w, r, vibes.MixtapesIndex(mixtapes, djs, page, totalPages, h.Config))
+	h.Render(w, r, vibesViews.MixtapesIndex(mixtapes, djs, page, totalPages, h.Config))
 }
 
 // CreateMixtape creates a new Mixtape
@@ -336,7 +338,7 @@ func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err = h.Client.Mixtape.Create().
+	m, err := h.Client.Mixtape.Create().
 		SetName(name).
 		SetDescription(description).
 		SetSchedule(mixtape.Schedule(schedule)).
@@ -350,6 +352,13 @@ func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to create mixtape", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	h.Logger.Info("mixtape created", "mixtape_id", m.ID, "name", m.Name, "dj", d.Name, "user_id", u.ID)
+
+	// Publish event
+	if h.Bus != nil {
+		h.Bus.PublishMixtapeCreated(u.ID, m.ID, m.Name, d.Name)
 	}
 
 	w.Header().Set("HX-Trigger", "mixtape-created")
@@ -420,7 +429,7 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err = h.Client.Mixtape.UpdateOne(m).
+	updated, err := h.Client.Mixtape.UpdateOne(m).
 		SetName(name).
 		SetDescription(description).
 		SetSchedule(mixtape.Schedule(schedule)).
@@ -433,6 +442,13 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to update mixtape", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	h.Logger.Info("mixtape updated", "mixtape_id", updated.ID, "name", updated.Name, "user_id", u.ID)
+
+	// Publish event
+	if h.Bus != nil {
+		h.Bus.PublishMixtapeUpdated(u.ID, updated.ID, updated.Name)
 	}
 
 	w.Header().Set("HX-Trigger", "mixtape-updated")
@@ -454,42 +470,6 @@ func (h *Handler) DeleteMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	_, err = h.Client.Mixtape.Query().
-		Where(mixtape.ID(mixtapeID), mixtape.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
-	if err != nil {
-		http.Error(w, "Mixtape not found", http.StatusNotFound)
-		return
-	}
-
-	// TODO: If synced to Navidrome, delete the playlist there too
-
-	err = h.Client.Mixtape.DeleteOneID(mixtapeID).Exec(r.Context())
-	if err != nil {
-		h.Logger.Error("failed to delete mixtape", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("HX-Trigger", "mixtape-deleted")
-	w.WriteHeader(http.StatusOK)
-}
-
-// ToggleMixtapeSync toggles the Navidrome sync status of a Mixtape
-func (h *Handler) ToggleMixtapeSync(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
-	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	mixtapeID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid Mixtape ID", http.StatusBadRequest)
-		return
-	}
-
-	// Verify ownership and get current state
 	m, err := h.Client.Mixtape.Query().
 		Where(mixtape.ID(mixtapeID), mixtape.HasUserWith(user.ID(u.ID))).
 		Only(r.Context())
@@ -498,27 +478,28 @@ func (h *Handler) ToggleMixtapeSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newSyncState := !m.SyncToNavidrome
+	mixtapeName := m.Name // Save name before deletion
 
-	_, err = h.Client.Mixtape.UpdateOne(m).
-		SetSyncToNavidrome(newSyncState).
-		Save(r.Context())
-
+	err = h.Client.Mixtape.DeleteOneID(mixtapeID).Exec(r.Context())
 	if err != nil {
-		h.Logger.Error("failed to toggle mixtape sync", "error", err)
+		h.Logger.Error("failed to delete mixtape", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// TODO: If enabling sync, trigger sync to Navidrome
-	// TODO: If disabling sync, optionally remove from Navidrome
+	h.Logger.Info("mixtape deleted", "mixtape_id", mixtapeID, "name", mixtapeName, "user_id", u.ID)
 
-	w.Header().Set("HX-Trigger", "mixtape-sync-toggled")
+	// Publish event
+	if h.Bus != nil {
+		h.Bus.PublishMixtapeDeleted(u.ID, mixtapeID, mixtapeName)
+	}
+
+	w.Header().Set("HX-Trigger", "mixtape-deleted")
 	w.WriteHeader(http.StatusOK)
 }
 
-// GenerateMixtape triggers AI generation of tracks for a Mixtape
-func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
+// ToggleMixtapeSync toggles the sync_to_navidrome flag for a Mixtape
+func (h *Handler) ToggleMixtapeSync(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -534,6 +515,43 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 	// Verify ownership
 	m, err := h.Client.Mixtape.Query().
 		Where(mixtape.ID(mixtapeID), mixtape.HasUserWith(user.ID(u.ID))).
+		Only(r.Context())
+	if err != nil {
+		http.Error(w, "Mixtape not found", http.StatusNotFound)
+		return
+	}
+
+	// Toggle the sync flag
+	_, err = h.Client.Mixtape.UpdateOne(m).
+		SetSyncToNavidrome(!m.SyncToNavidrome).
+		Save(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to toggle mixtape sync", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", "mixtape-updated")
+	w.WriteHeader(http.StatusOK)
+}
+
+// GenerateMixtape generates tracks for a mixtape using the AI-powered vibes engine
+func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	mixtapeID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid Mixtape ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership and get mixtape with DJ
+	m, err := h.Client.Mixtape.Query().
+		Where(mixtape.ID(mixtapeID), mixtape.HasUserWith(user.ID(u.ID))).
 		WithDj().
 		Only(r.Context())
 	if err != nil {
@@ -541,21 +559,149 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Logger.Info("generating mixtape", "mixtape_id", m.ID, "name", m.Name, "dj", m.Edges.Dj.Name)
+	h.Logger.Info("generating mixtape",
+		"mixtape_id", m.ID,
+		"name", m.Name,
+		"dj", m.Edges.Dj.Name,
+		"user_id", u.ID)
 
-	// TODO: Implement actual AI generation using the DJ's settings
-	// For now, just update the last generated timestamp
-
-	_, err = h.Client.Mixtape.UpdateOne(m).
-		SetLastGeneratedAt(time.Now()).
-		Save(r.Context())
-	if err != nil {
-		h.Logger.Error("failed to update mixtape last generated time", "error", err)
+	// Check if the MixtapeGenerator is available
+	if h.MixtapeGenerator == nil {
+		h.Logger.Error("mixtape generator not initialized")
+		http.Error(w, "Mixtape generation service is not available", http.StatusServiceUnavailable)
+		return
 	}
 
-	// Just acknowledge for now - actual implementation will come later
-	w.Header().Set("HX-Trigger", "mixtape-generated")
-	w.WriteHeader(http.StatusOK)
+	// Parse optional seed data from the request
+	var seed *vibes.Seed
+	if err := r.ParseForm(); err == nil {
+		seedType := r.FormValue("seed_type")
+		seedID := r.FormValue("seed_id")
+
+		switch seedType {
+		case "artist":
+			if artistID, err := strconv.Atoi(seedID); err == nil {
+				a, err := h.Client.Artist.Get(r.Context(), artistID)
+				if err == nil {
+					seed = vibes.NewArtistSeed(a)
+					h.Logger.Debug("using artist seed", "artist_id", artistID, "artist_name", a.Name)
+				}
+			}
+		case "album":
+			if albumID, err := strconv.Atoi(seedID); err == nil {
+				album, err := h.Client.Album.Get(r.Context(), albumID)
+				if err == nil {
+					seed = vibes.NewAlbumSeed(album)
+					h.Logger.Debug("using album seed", "album_id", albumID, "album_name", album.Name)
+				}
+			}
+		case "tracks":
+			if trackIDsStr := r.FormValue("track_ids"); trackIDsStr != "" {
+				var trackIDs []int
+				for _, idStr := range strings.Split(trackIDsStr, ",") {
+					if id, err := strconv.Atoi(strings.TrimSpace(idStr)); err == nil {
+						trackIDs = append(trackIDs, id)
+					}
+				}
+				if len(trackIDs) > 0 {
+					seed = vibes.NewTrackIDsSeed(trackIDs)
+					h.Logger.Debug("using tracks seed", "track_ids", trackIDs)
+				}
+			}
+		}
+	}
+
+	// Create the generation request
+	req := &vibes.GenerationRequest{
+		Mixtape: m,
+		DJ:      m.Edges.Dj,
+		Seed:    seed,
+		UserID:  u.ID,
+	}
+
+	// Run generation (this can take a while, so we do it in a goroutine for async UX)
+	go func() {
+		ctx := r.Context()
+
+		// Publish generating event
+		if h.Bus != nil {
+			h.Bus.PublishMixtapeGenerating(u.ID, m.ID, m.Name, m.Edges.Dj.Name)
+		}
+
+		result, err := h.MixtapeGenerator.GenerateMixtape(ctx, req)
+		if err != nil {
+			h.Logger.Error("mixtape generation failed",
+				"mixtape_id", m.ID,
+				"error", err)
+
+			// Update mixtape with error
+			h.Client.Mixtape.UpdateOneID(m.ID).
+				SetGenerationError(err.Error()).
+				Save(ctx)
+
+			// Publish error event
+			if h.Bus != nil {
+				h.Bus.PublishMixtapeError(u.ID, m.ID, m.Name, err.Error())
+			}
+			return
+		}
+
+		// Get matched track IDs
+		trackIDs := result.GetMatchedTrackIDsAsStrings()
+
+		// Update the mixtape with the results
+		updater := h.Client.Mixtape.UpdateOneID(m.ID).
+			SetTrackIds(trackIDs).
+			SetTrackCount(len(trackIDs)).
+			SetLastGeneratedAt(time.Now()).
+			SetGenerationPrompt(result.PromptUsed).
+			SetGenerationModel(result.ModelUsed).
+			ClearGenerationError()
+
+		if result.TokensUsed > 0 {
+			updater.SetGenerationTokensUsed(result.TokensUsed)
+		}
+
+		// Store seed information if provided
+		if seed != nil {
+			updater.SetSeedType(string(seed.Type))
+			if seed.Type == vibes.SeedTypeArtist && seed.Artist != nil {
+				updater.SetSeedID(seed.Artist.ID)
+			} else if seed.Type == vibes.SeedTypeAlbum && seed.Album != nil {
+				updater.SetSeedID(seed.Album.ID)
+			} else if seed.Type == vibes.SeedTypeTracks && len(seed.TrackIDs) > 0 {
+				seedTrackIDs := make([]string, len(seed.TrackIDs))
+				for i, id := range seed.TrackIDs {
+					seedTrackIDs[i] = strconv.Itoa(id)
+				}
+				updater.SetSeedTrackIds(seedTrackIDs)
+			}
+		}
+
+		_, err = updater.Save(ctx)
+		if err != nil {
+			h.Logger.Error("failed to save mixtape generation results",
+				"mixtape_id", m.ID,
+				"error", err)
+			return
+		}
+
+		h.Logger.Info("mixtape generation complete",
+			"mixtape_id", m.ID,
+			"tracks_matched", result.MatchedCount,
+			"tracks_unmatched", result.UnmatchedCount,
+			"tokens_used", result.TokensUsed)
+
+		// Publish success event
+		if h.Bus != nil {
+			h.Bus.PublishMixtapeGenerated(u.ID, m.ID, m.Name, m.Edges.Dj.Name,
+				len(result.Tracks), result.MatchedCount, result.TokensUsed)
+		}
+	}()
+
+	// Return immediately with a "generating" status
+	w.Header().Set("HX-Trigger", "mixtape-generating")
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // MixtapeShow shows a single Mixtape
@@ -596,10 +742,54 @@ func (h *Handler) MixtapeShow(w http.ResponseWriter, r *http.Request) {
 		djs = []*ent.DJ{}
 	}
 
-	h.Render(w, r, vibes.MixtapeShow(m, djs, h.Config))
+	// Load tracks if the mixtape has track IDs
+	var tracks []*ent.Track
+	if len(m.TrackIds) > 0 {
+		// Parse track IDs from strings to ints
+		trackIDs := make([]int, 0, len(m.TrackIds))
+		for _, idStr := range m.TrackIds {
+			if id, err := strconv.Atoi(idStr); err == nil {
+				trackIDs = append(trackIDs, id)
+			}
+		}
+
+		if len(trackIDs) > 0 {
+			// Query tracks with artist and album
+			tracks, err = h.Client.Track.Query().
+				Where(track.IDIn(trackIDs...)).
+				WithArtist().
+				WithAlbum().
+				All(r.Context())
+			if err != nil {
+				h.Logger.Error("failed to query mixtape tracks", "error", err, "mixtape_id", m.ID)
+				tracks = []*ent.Track{}
+			}
+
+			// Reorder tracks to match the original track_ids order
+			trackMap := make(map[int]*ent.Track)
+			for _, t := range tracks {
+				trackMap[t.ID] = t
+			}
+			orderedTracks := make([]*ent.Track, 0, len(trackIDs))
+			for _, id := range trackIDs {
+				if t, ok := trackMap[id]; ok {
+					orderedTracks = append(orderedTracks, t)
+				}
+			}
+			tracks = orderedTracks
+		}
+	}
+
+	h.Logger.Debug("showing mixtape",
+		"mixtape_id", m.ID,
+		"name", m.Name,
+		"track_count", len(tracks),
+		"track_ids_count", len(m.TrackIds))
+
+	h.Render(w, r, vibesViews.MixtapeShow(m, tracks, djs, h.Config))
 }
 
-// GenreSuggestions returns unique genres from the user's listen history
+// GenreSuggestions returns genre suggestions based on user's library
 func (h *Handler) GenreSuggestions(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -607,56 +797,59 @@ func (h *Handler) GenreSuggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	query := strings.ToLower(r.URL.Query().Get("q"))
 
-	// Get all listens for this user with their tracks and artists
+	// Get unique genres from user's listens
 	listens, err := h.Client.Listen.Query().
 		Where(listen.HasUserWith(user.ID(u.ID))).
-		WithTrack().
-		WithArtist().
+		Limit(1000).
 		All(r.Context())
 	if err != nil {
-		h.Logger.Error("failed to query listens for genre suggestions", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		h.Logger.Error("failed to query listens for genres", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]string{})
 		return
 	}
 
-	// Collect unique genres from tracks and artists
-	genreSet := make(map[string]struct{})
+	// Extract and count genres from album names and artist names
+	genreCounts := make(map[string]int)
 	for _, l := range listens {
-		if l.Edges.Track != nil {
-			for _, g := range l.Edges.Track.Genres {
-				genreSet[g] = struct{}{}
-			}
-		}
-		if l.Edges.Artist != nil {
-			for _, g := range l.Edges.Artist.Genres {
-				genreSet[g] = struct{}{}
+		// This is a simplified approach - in production you'd have actual genre data
+		// For now, we'll suggest based on artist/album patterns
+		genreCounts[l.ArtistName]++
+	}
+
+	// Get actual genres from artists in the database
+	artists, err := h.Client.Artist.Query().
+		Where(artist.HasUserWith(user.ID(u.ID))).
+		All(r.Context())
+	if err == nil {
+		for _, a := range artists {
+			for _, g := range a.Genres {
+				genreCounts[g]++
 			}
 		}
 	}
 
-	// Convert to slice and filter by query
-	var genres []string
-	for g := range genreSet {
-		if query == "" || strings.Contains(strings.ToLower(g), query) {
-			genres = append(genres, g)
+	// Filter by query and sort by count
+	var suggestions []string
+	for genre := range genreCounts {
+		if query == "" || strings.Contains(strings.ToLower(genre), query) {
+			suggestions = append(suggestions, genre)
 		}
 	}
 
-	// Sort alphabetically
-	sort.Strings(genres)
-
-	// Limit results
-	if len(genres) > 50 {
-		genres = genres[:50]
+	// Sort alphabetically, limit to 20
+	sort.Strings(suggestions)
+	if len(suggestions) > 20 {
+		suggestions = suggestions[:20]
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(genres)
+	json.NewEncoder(w).Encode(suggestions)
 }
 
-// ArtistSuggestions returns unique artist names from the user's listen history
+// ArtistSuggestions returns artist suggestions based on user's library
 func (h *Handler) ArtistSuggestions(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -664,37 +857,39 @@ func (h *Handler) ArtistSuggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	query := strings.ToLower(r.URL.Query().Get("q"))
 
-	// Get all artists for this user
+	// Get artists from user's catalog
 	artists, err := h.Client.Artist.Query().
 		Where(artist.HasUserWith(user.ID(u.ID))).
 		Order(ent.Asc(artist.FieldName)).
+		Limit(100).
 		All(r.Context())
 	if err != nil {
-		h.Logger.Error("failed to query artists for suggestions", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		h.Logger.Error("failed to query artists", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]string{})
 		return
 	}
 
-	// Filter by query and collect names
-	var artistNames []string
+	// Filter by query
+	var suggestions []string
 	for _, a := range artists {
 		if query == "" || strings.Contains(strings.ToLower(a.Name), query) {
-			artistNames = append(artistNames, a.Name)
+			suggestions = append(suggestions, a.Name)
 		}
 	}
 
-	// Limit results
-	if len(artistNames) > 50 {
-		artistNames = artistNames[:50]
+	// Limit to 20
+	if len(suggestions) > 20 {
+		suggestions = suggestions[:20]
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(artistNames)
+	json.NewEncoder(w).Encode(suggestions)
 }
 
-// parseCommaSeparated parses a comma-separated string into a slice of trimmed strings
+// parseCommaSeparated splits a comma-separated string into a slice of trimmed strings
 func parseCommaSeparated(s string) []string {
 	if s == "" {
 		return nil
@@ -702,15 +897,13 @@ func parseCommaSeparated(s string) []string {
 
 	parts := strings.Split(s, ",")
 	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			result = append(result, p)
+
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
 		}
 	}
 
-	if len(result) == 0 {
-		return nil
-	}
 	return result
 }

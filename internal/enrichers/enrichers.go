@@ -41,6 +41,16 @@ type ArtistData struct {
 	AITags      []string
 }
 
+// RecommendedAlbum contains data about a recommended album.
+type RecommendedAlbum struct {
+	Name      string
+	Artist    string
+	SpotifyID string
+	Reason    string
+	ImageURL  string
+	Year      int
+}
+
 // AlbumData contains enrichment data for an album.
 type AlbumData struct {
 	MusicBrainzID string
@@ -59,6 +69,7 @@ type AlbumData struct {
 	AITags             []string
 	DominantColors     []string
 	CoverArtCommentary string
+	Recommendations    []RecommendedAlbum
 }
 
 // TrackData contains enrichment data for a track.

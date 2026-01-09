@@ -9,6 +9,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/events"
 	"spotter/internal/services"
+	"spotter/internal/vibes"
 
 	"github.com/a-h/templ"
 )
@@ -18,24 +19,30 @@ type contextKey string
 const UserContextKey contextKey = "user"
 
 type Handler struct {
-	Client          *ent.Client
-	Config          *config.Config
-	Logger          *slog.Logger
-	Syncer          *services.Syncer
-	MetadataSvc     *services.MetadataService
-	PlaylistSyncSvc *services.PlaylistSyncService
-	Bus             *events.Bus
+	Client            *ent.Client
+	Config            *config.Config
+	Logger            *slog.Logger
+	Syncer            *services.Syncer
+	MetadataSvc       *services.MetadataService
+	PlaylistSyncSvc   *services.PlaylistSyncService
+	MixtapeGenerator  *vibes.MixtapeGenerator
+	PlaylistEnhancer  *vibes.PlaylistEnhancer
+	SimilarArtistsSvc *services.SimilarArtistsService
+	Bus               *events.Bus
 }
 
-func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, bus *events.Bus) *Handler {
+func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, mixtapeGen *vibes.MixtapeGenerator, playlistEnhancer *vibes.PlaylistEnhancer, similarArtistsSvc *services.SimilarArtistsService, bus *events.Bus) *Handler {
 	return &Handler{
-		Client:          client,
-		Config:          cfg,
-		Logger:          logger,
-		Syncer:          syncer,
-		MetadataSvc:     metadataSvc,
-		PlaylistSyncSvc: playlistSyncSvc,
-		Bus:             bus,
+		Client:            client,
+		Config:            cfg,
+		Logger:            logger,
+		Syncer:            syncer,
+		MetadataSvc:       metadataSvc,
+		PlaylistSyncSvc:   playlistSyncSvc,
+		MixtapeGenerator:  mixtapeGen,
+		PlaylistEnhancer:  playlistEnhancer,
+		SimilarArtistsSvc: similarArtistsSvc,
+		Bus:               bus,
 	}
 }
 

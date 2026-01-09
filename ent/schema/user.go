@@ -49,5 +49,7 @@ func (User) Edges() []ent.Edge {
 		// Vibes system edges
 		edge.To("djs", DJ.Type),
 		edge.To("mixtapes", Mixtape.Type),
+		// Similar artists relationships
+		edge.To("similar_artists", SimilarArtist.Type),
 	}
 }

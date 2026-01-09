@@ -27,6 +27,7 @@ import (
 	"spotter/internal/providers/navidrome"
 	"spotter/internal/providers/spotify"
 	"spotter/internal/services"
+	"spotter/internal/vibes"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -76,8 +77,23 @@ func main() {
 	metadataSvc.Register(enrichers.TypeFanart, enricherFanart.New(logger, cfg))
 	metadataSvc.Register(enrichers.TypeOpenAI, enricherOpenai.New(logger, cfg))
 
+	// Initialize Mixtape Generator Service (for AI-powered mixtape generation)
+	mixtapeGenerator := vibes.NewMixtapeGenerator(client, cfg, logger, bus)
+	logger.Info("vibes mixtape generator initialized",
+		"default_max_tracks", cfg.Vibes.DefaultMaxTracks,
+		"model", cfg.GetVibesModel(),
+		"temperature", cfg.Vibes.Temperature)
+
+	// Initialize Playlist Enhancer Service (for AI-powered playlist enhancement)
+	playlistEnhancer := vibes.NewPlaylistEnhancer(client, cfg, logger, bus)
+	logger.Info("playlist enhancer initialized")
+
+	// Initialize Similar Artists Service (for AI-powered artist similarity detection)
+	similarArtistsSvc := services.NewSimilarArtistsService(client, cfg, logger, bus)
+	logger.Info("similar artists service initialized")
+
 	// Initialize Handlers
-	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, bus)
+	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, playlistEnhancer, similarArtistsSvc, bus)
 
 	// Background Sync Loop for listens/playlists
 	syncInterval, err := time.ParseDuration(cfg.Sync.Interval)
@@ -244,6 +260,8 @@ func main() {
 		r.Post("/playlists/{id}/debug-sync", h.DebugPlaylistSync)
 		r.Post("/playlists/{id}/ai/generate-metadata", h.PlaylistGenerateMetadata)
 		r.Post("/playlists/{id}/ai/generate-artwork", h.PlaylistGenerateArtwork)
+		r.Get("/playlists/{id}/enhance-vibes-modal", h.EnhanceVibesModal)
+		r.Post("/playlists/{id}/enhance-vibes", h.EnhanceVibes)
 
 		// Vibes routes (DJs and Mixtapes)
 		r.Get("/vibes", h.VibesRedirect)
@@ -274,6 +292,9 @@ func main() {
 			r.Get("/artist/{id}.png", h.ArtistImage)
 			r.Get("/artist/{id}/chart", h.ArtistChart)
 			r.Post("/artist/{id}/regenerate-ai", h.ArtistRegenerateAI)
+			r.Post("/artist/{id}/find-similar", h.ArtistFindSimilar)
+			r.Post("/artist/{id}/create-mixtape", h.ArtistCreateMixtape)
+			r.Get("/artist/{id}/mixtape-modal", h.ArtistMixtapeModal)
 
 			// Album routes
 			r.Get("/albums", h.AlbumIndex)
@@ -281,6 +302,8 @@ func main() {
 			r.Get("/album/{id}.png", h.AlbumImage)
 			r.Get("/album/{id}/chart", h.AlbumChart)
 			r.Post("/album/{id}/regenerate-ai", h.AlbumRegenerateAI)
+			r.Post("/album/{id}/create-mixtape", h.AlbumCreateMixtape)
+			r.Get("/album/{id}/mixtape-modal", h.AlbumMixtapeModal)
 
 			// Track routes
 			r.Get("/tracks", h.TrackIndex)

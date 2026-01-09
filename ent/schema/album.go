@@ -9,6 +9,16 @@ import (
 	"entgo.io/ent/schema/index"
 )
 
+// AlbumRecommendation holds metadata about a recommended album.
+type AlbumRecommendation struct {
+	Name      string `json:"name"`
+	Artist    string `json:"artist"`
+	SpotifyID string `json:"spotify_id"`
+	Reason    string `json:"reason"`
+	ImageURL  string `json:"image_url"`
+	Year      int    `json:"year"`
+}
+
 // Album holds the schema definition for the Album entity.
 type Album struct {
 	ent.Schema
@@ -81,6 +91,9 @@ func (Album) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Last time AI enrichment was performed"),
+		field.JSON("recommendations", []AlbumRecommendation{}).
+			Optional().
+			Comment("AI-generated album recommendations based on this album"),
 	}
 }
 

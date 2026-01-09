@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -41,7 +42,7 @@ func setupPlaylistHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events
 	bus := events.NewBus()
 	syncer := services.NewSyncer(client, cfg, logger, bus)
 	playlistSyncSvc := services.NewPlaylistSyncService(client, cfg, logger, bus)
-	h := handlers.New(client, cfg, logger, syncer, nil, playlistSyncSvc, bus)
+	h := handlers.New(client, cfg, logger, syncer, nil, playlistSyncSvc, nil, nil, nil, bus)
 	return client, h, bus
 }
 
@@ -754,4 +755,225 @@ func TestSyncState_ZeroMatchesReturnsWarning(t *testing.T) {
 		"Zero matches should render with progress-warning class, not progress-success (the False Success bug)")
 	assert.NotContains(t, bodyStr, "progress-success",
 		"Zero matches must NOT render with progress-success class")
+}
+
+// TestEnhanceVibesModal_Success tests that the enhance vibes modal is rendered correctly
+func TestEnhanceVibesModal_Success(t *testing.T) {
+	client, h, _ := setupPlaylistHandler(t)
+
+	// Create a test user
+	u, err := client.User.Create().
+		SetUsername(uniquePlaylistTestUsername()).
+		SetPaginationSize(25).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	// Create a DJ for the user
+	_, err = client.DJ.Create().
+		SetName("Test DJ").
+		SetUser(u).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	// Create a Navidrome playlist
+	pl, err := client.Playlist.Create().
+		SetUser(u).
+		SetRemoteID("navidrome-playlist-1").
+		SetName("Test Playlist").
+		SetSource("navidrome").
+		SetTrackCount(10).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/playlists/"+strconv.Itoa(pl.ID)+"/enhance-vibes-modal", nil)
+	req = req.WithContext(context.WithValue(req.Context(), handlers.UserContextKey, u))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", strconv.Itoa(pl.ID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+
+	h.EnhanceVibesModal(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+
+	// Verify modal content
+	assert.Contains(t, bodyStr, "Enhance Vibes")
+	assert.Contains(t, bodyStr, "Test Playlist")
+	assert.Contains(t, bodyStr, "Test DJ")
+	assert.Contains(t, bodyStr, "one_time")
+	assert.Contains(t, bodyStr, "convert_to_mixtape")
+}
+
+// TestEnhanceVibesModal_Unauthorized tests that unauthorized users cannot access the modal
+func TestEnhanceVibesModal_Unauthorized(t *testing.T) {
+	_, h, _ := setupPlaylistHandler(t)
+
+	req := httptest.NewRequest("GET", "/playlists/1/enhance-vibes-modal", nil)
+	// No user context set
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+
+	h.EnhanceVibesModal(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+}
+
+// TestEnhanceVibesModal_NotFound tests that the modal returns 404 for non-existent playlists
+func TestEnhanceVibesModal_NotFound(t *testing.T) {
+	client, h, _ := setupPlaylistHandler(t)
+
+	u, err := client.User.Create().
+		SetUsername(uniquePlaylistTestUsername()).
+		SetPaginationSize(25).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/playlists/99999/enhance-vibes-modal", nil)
+	req = req.WithContext(context.WithValue(req.Context(), handlers.UserContextKey, u))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "99999")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+
+	h.EnhanceVibesModal(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+// TestEnhanceVibes_Unauthorized tests that unauthorized users cannot enhance playlists
+func TestEnhanceVibes_Unauthorized(t *testing.T) {
+	_, h, _ := setupPlaylistHandler(t)
+
+	req := httptest.NewRequest("POST", "/playlists/1/enhance-vibes", nil)
+	// No user context set
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+
+	h.EnhanceVibes(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+}
+
+// TestEnhanceVibes_NotFound tests that enhancement returns 404 for non-existent playlists
+func TestEnhanceVibes_NotFound(t *testing.T) {
+	client, h, _ := setupPlaylistHandler(t)
+
+	u, err := client.User.Create().
+		SetUsername(uniquePlaylistTestUsername()).
+		SetPaginationSize(25).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/playlists/99999/enhance-vibes", nil)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(context.WithValue(req.Context(), handlers.UserContextKey, u))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "99999")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+
+	h.EnhanceVibes(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+// TestEnhanceVibes_MissingDJ tests that enhancement fails when no DJ is provided
+func TestEnhanceVibes_MissingDJ(t *testing.T) {
+	client, h, _ := setupPlaylistHandler(t)
+
+	u, err := client.User.Create().
+		SetUsername(uniquePlaylistTestUsername()).
+		SetPaginationSize(25).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	pl, err := client.Playlist.Create().
+		SetUser(u).
+		SetRemoteID("navidrome-playlist-1").
+		SetName("Test Playlist").
+		SetSource("navidrome").
+		SetTrackCount(10).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	form := "mode=one_time&max_new_tracks=5"
+	req := httptest.NewRequest("POST", "/playlists/"+strconv.Itoa(pl.ID)+"/enhance-vibes", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(context.WithValue(req.Context(), handlers.UserContextKey, u))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", strconv.Itoa(pl.ID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+
+	h.EnhanceVibes(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+// TestEnhanceVibes_ServiceUnavailable tests that enhancement fails gracefully when enhancer is nil
+func TestEnhanceVibes_ServiceUnavailable(t *testing.T) {
+	client, h, _ := setupPlaylistHandler(t)
+	// Note: h.PlaylistEnhancer is nil by default in test setup
+
+	u, err := client.User.Create().
+		SetUsername(uniquePlaylistTestUsername()).
+		SetPaginationSize(25).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	dj, err := client.DJ.Create().
+		SetName("Test DJ").
+		SetUser(u).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	pl, err := client.Playlist.Create().
+		SetUser(u).
+		SetRemoteID("navidrome-playlist-1").
+		SetName("Test Playlist").
+		SetSource("navidrome").
+		SetTrackCount(10).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	form := fmt.Sprintf("dj_id=%d&mode=one_time&max_new_tracks=5", dj.ID)
+	req := httptest.NewRequest("POST", "/playlists/"+strconv.Itoa(pl.ID)+"/enhance-vibes", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(context.WithValue(req.Context(), handlers.UserContextKey, u))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", strconv.Itoa(pl.ID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+
+	h.EnhanceVibes(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
