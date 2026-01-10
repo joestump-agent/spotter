@@ -281,7 +281,11 @@ func (h *Handler) checkNavidromeOnline(username, password string) bool {
 		h.Logger.Debug("navidrome ping failed", "error", err)
 		return false
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			h.Logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	return resp.StatusCode == http.StatusOK
 }
