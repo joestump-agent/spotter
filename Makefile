@@ -6,7 +6,7 @@ endif
 BINARY_NAME=spotter-server
 MAIN_PATH=./cmd/server/main.go
 
-.PHONY: all help deps ci-deps docker-deps generate css build build-binary run dev test test-coverage lint-docker lint-go lint-md lint-templ clean docker-build docker-run
+.PHONY: all help deps ci-deps docker-deps generate css build build-binary run dev test test-coverage lint-docker lint-go lint-md lint-templ lint-yaml clean docker-build docker-run
 
 all: build
 
@@ -90,6 +90,11 @@ test-coverage: generate ## Run tests with coverage report
 	go test -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "✓ Coverage report generated: coverage.html"
+
+lint-yaml: ## Run yamllint on YAML files
+	@echo "Linting YAML files..."
+	@yamllint .
+	@echo "✓ YAML linting passed"
 
 lint-docker: ## Run hadolint on Dockerfile
 	@echo "Linting Dockerfile..."
