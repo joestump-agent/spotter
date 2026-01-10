@@ -11,7 +11,6 @@ import (
 	"spotter/ent/enttest"
 	"spotter/ent/track"
 	"spotter/ent/user"
-	"spotter/internal/enrichers"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
