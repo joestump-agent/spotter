@@ -280,13 +280,261 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
-**Workflow:**
+### Basic Workflow
+
+**IMPORTANT: Always create a feature branch from `main` before starting work on a bead.**
+
 ```bash
+# 1. Find and claim work
 bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work (only after ALL quality gates pass)
-bd sync               # Sync with git
+
+# 2. Create feature branch from main
+git checkout main
+git pull
+git checkout -b bead/<id>  # e.g., bead/spotter-vey
+
+# 3. Do the work
+# ... implement, test ...
+make test                 # Run tests before EVERY commit
+git add .
+git commit -m "..."
+# ... repeat as needed ...
+
+# 4. Complete work (only after ALL quality gates pass)
+make test                 # MANDATORY before closing bead
+bd close <id>
+make test                 # MANDATORY before pushing
+git push -u origin bead/<id>  # Push feature branch
+
+# 5. Sync beads metadata
+bd sync
+```
+
+**Branch Naming Convention:**
+- Format: `bead/<bead-id>`
+- Examples: `bead/spotter-vey`, `bead/spotter-ahw`, `bead/spotter-0n9`
+- Always branch from `main`, not from other feature branches
+
+### Creating Quality Beads
+
+#### When to Create a Bead
+
+Create beads for:
+- **Strategic work** spanning multiple sessions
+- **Work with dependencies** or that blocks other work
+- **Discovered work** during implementation that needs tracking
+- **Complex features** requiring planning and multiple steps
+- **Bugs** that require investigation and multiple attempts
+- **Security issues** or other critical problems
+
+Do NOT create beads for:
+- Simple, one-line fixes
+- Trivial documentation updates
+- Work you can complete in the current session
+- Temporary reminders (use TodoWrite for single-session tasks)
+
+#### 1. Outline Multiple Approaches
+
+Before creating a bead, consider 2-3 viable implementation approaches that comply with AGENTS.md requirements. Include in the description or notes.
+
+**Example:**
+```
+Title: Add caching layer for metadata enrichment
+
+Description:
+Metadata enrichment makes excessive API calls. Need caching layer.
+
+Approaches:
+1. In-memory cache with TTL (simple, but lost on restart)
+2. Redis cache (requires new dependency, scales better)
+3. Database-backed cache (reuses existing SQLite, persistent)
+
+Recommend approach #3 for MVP - no new dependencies, persistent across restarts.
+```
+
+#### 2. Write Acceptance Criteria (RFC 2119 Format)
+
+Use RFC 2119 keywords for precision:
+- **MUST** / **MUST NOT** - Absolute requirements
+- **SHOULD** / **SHOULD NOT** - Recommended but not required
+- **MAY** - Optional features
+- **SHALL** / **SHALL NOT** - (same as MUST/MUST NOT)
+
+**Example:**
+```
+Acceptance Criteria:
+- The system MUST encrypt all OAuth tokens using AES-256-GCM
+- The system MUST automatically decrypt tokens on query
+- The system SHOULD support key rotation without data migration
+- The system MAY log encryption operations for audit purposes
+- Backward compatibility MUST be maintained (plaintext → encrypted migration)
+- All tests MUST pass including backward compatibility tests
+```
+
+#### 3. Use Notes for Context (Not Updates)
+
+Notes should contain **static reference material**:
+- Relevant file paths and line numbers
+- Key symbols, functions, classes involved
+- Library choices and rationale
+- Architectural considerations
+- Links to related issues
+- Code snippets for reference
+
+**Example:**
+```
+Notes:
+Files:
+- internal/database/hooks.go:102-170 - Existing NavidromeAuth encryption pattern
+- internal/crypto/encrypt.go - AES-256-GCM utility (already implemented)
+- ent/schema/spotifyauth.go:21-22 - access_token, refresh_token fields
+
+Libraries:
+- crypto/aes (stdlib) - No external dependencies needed
+- encoding/base64 (stdlib) - For storage encoding
+
+Related Issues:
+- spotter-ahw - Navidrome password encryption (same pattern)
+- Implements AUTH-008 requirement from AGENTS.md
+
+Architectural Notes:
+- Ent hooks provide transparent encryption/decryption
+- Hooks run on Create/Update mutations, Interceptors on Query
+- IsEncrypted() heuristic enables backward compatibility
+```
+
+**DO NOT put updates in notes:**
+- ❌ "Started working on this"
+- ❌ "Fixed the first issue"
+- ❌ "Almost done with tests"
+
+#### 4. Use Comments for Updates
+
+Use `bd comments add <id> "update text"` for timeline updates:
+
+```bash
+bd comments add spotter-vey "Implemented encryption hooks for SpotifyAuth"
+bd comments add spotter-vey "All tests passing, ready for review"
+bd comments add spotter-vey "Fixed backward compatibility issue"
+```
+
+Comments create a timeline of progress. Notes are evergreen reference material.
+
+### Bead Metadata
+
+#### Priority Levels
+- **P0** - Critical (security, data loss, system down)
+- **P1** - High (major features, important bugs)
+- **P2** - Medium (normal features, minor bugs)
+- **P3** - Low (nice-to-have features)
+- **P4** - Backlog (future consideration)
+
+#### Types
+- **bug** - Something broken that needs fixing
+- **task** - Work item without new functionality
+- **feature** - New functionality
+- **epic** - Large feature spanning multiple issues
+
+#### Dependencies
+
+Use dependencies to model blockers:
+```bash
+bd dep add <issue> <depends-on>  # issue depends on depends-on
+bd blocked                        # Show all blocked issues
+```
+
+**Example:**
+- "Add playlist sync UI" depends on "Implement playlist sync API"
+- "Write integration tests" depends on "Implement feature"
+
+### Bead Lifecycle
+
+1. **Created** → `open` status, assigned priority and type
+2. **Claimed** → `bd update <id> --status=in_progress`
+3. **Branch Created** → `git checkout -b bead/<id>` from `main`
+4. **Work** → Implement, test, commit. Add comments via `bd comments add <id>`
+5. **Quality Gates** → Run tests, linters, builds (ALL must pass)
+6. **Closed** → `bd close <id> --reason="description"` (ONLY if quality gates pass)
+7. **Pushed** → `git push -u origin bead/<id>` (push feature branch)
+8. **Synced** → `bd sync` (sync beads metadata)
+
+### Best Practices
+
+**DO:**
+- Create beads proactively when discovering new work
+- Use RFC 2119 keywords in acceptance criteria
+- Add file paths and line numbers to notes
+- Break large work into smaller dependent beads
+- Close beads immediately when quality gates pass
+- Use `bd close <id1> <id2> <id3>` to close multiple at once
+
+**DON'T:**
+- Create beads for trivial one-line changes
+- Put progress updates in notes (use comments)
+- Close beads before all quality gates pass
+- Leave beads open after pushing code
+- Forget to sync after closing beads
+
+### Example: Well-Written Bead
+
+```
+Title: Encrypt OAuth tokens at rest using AES-256-GCM
+Type: bug
+Priority: P1
+Status: open
+
+Description:
+SpotifyAuth stores access_token and refresh_token in plaintext. LastFMAuth
+stores session_key in plaintext. These tokens grant account access and should
+be encrypted at rest per AUTH-008 requirement.
+
+Approaches:
+1. Handler-level encryption (encrypt before save, decrypt after load)
+   - Pro: Simple, explicit
+   - Con: Easy to forget in new code paths
+2. Ent hooks (automatic encryption on mutation)
+   - Pro: Transparent, can't be forgotten
+   - Con: More complex, requires understanding Ent hooks
+3. Application-level encryption (encrypt in business logic)
+   - Pro: Full control
+   - Con: Scattered across codebase
+
+Recommend approach #2 (Ent hooks) - same pattern as NavidromeAuth password.
+
+Acceptance Criteria:
+- The system MUST encrypt access_token and refresh_token fields using AES-256-GCM
+- The system MUST encrypt session_key field using AES-256-GCM
+- The system MUST automatically decrypt tokens on query
+- Backward compatibility MUST be maintained (plaintext tokens continue to work)
+- The system SHOULD automatically re-encrypt plaintext tokens on next write
+- All existing tests MUST pass
+- New tests MUST cover encryption, decryption, and backward compatibility
+
+Notes:
+Reference Files:
+- internal/database/hooks.go:33-67 - NavidromeAuth encryption pattern (template)
+- internal/crypto/encrypt.go - AES-256-GCM utility (ready to use)
+- ent/schema/spotifyauth.go:21-23 - Fields to encrypt
+- ent/schema/lastfmauth.go:19 - Field to encrypt
+
+Token Usage:
+- internal/providers/spotify/spotify.go:164,169 - Reads tokens for API calls
+- internal/providers/lastfm/lastfm.go:170 - Reads username (NOT session_key)
+
+Implementation Notes:
+- Use Ent hooks (OnCreate/OnUpdate for encryption)
+- Use Ent interceptors (AfterQuery for decryption)
+- IsEncrypted() heuristic enables backward compatibility
+- Remember to decrypt in returned entities (see NavidromeAuth pattern)
+
+Related:
+- spotter-ahw - Navidrome password encryption (reference implementation)
+- Implements: AUTH-008
+
+Dependencies:
+None (crypto infrastructure already exists)
 ```
 
 ## Tech Stack
@@ -362,39 +610,66 @@ Enrichers add metadata, images, and AI-generated content to local entities.
 
 ## Quality Gates (MANDATORY)
 
-Before running `bd close <id>`, ALL of the following MUST pass:
+Before running `bd close <id>` or `git commit`, ALL of the following MUST pass:
 
-1. **Tests**: All tests pass
+1. **Tests**: `make test` - All tests MUST pass
 2. **Linters**: Code passes all linter checks
 3. **Build**: Project builds successfully
 4. **Code Generation**: Run `go generate ./ent` if schema changed
 5. **Standards**: Code follows all standards above (error handling, context, testing, etc.)
 
-**DO NOT close issues until quality gates pass.**
+**CRITICAL:**
+- Run `make test` before EVERY `git commit`
+- Run `make test` before EVERY `git push`
+- DO NOT close beads until quality gates pass
+- DO NOT commit code that breaks tests
 
 ## Completing Work (Landing the Plane)
 
-When ending a work session, complete ALL steps below. **Work is NOT complete until `git push` succeeds.**
+When ending a work session, complete ALL steps below. **Work is NOT complete until the feature branch is pushed.**
+
 
 **MANDATORY WORKFLOW:**
 
-1. **Verify quality gates** - Ensure all quality gates pass (tests, linters, builds)
-2. **File issues for remaining work** - Create issues for anything that needs follow-up
-3. **Close completed issues** - Run `bd close <id>` ONLY if quality gates passed
-4. **PUSH TO REMOTE** - This is MANDATORY:
+1. **Verify quality gates** - Ensure all quality gates pass:
    ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
+   make test               # MUST pass before proceeding
+   go generate ./ent       # If schema changed
+   # Run any linters
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
+2. **File issues for remaining work** - Create beads for anything that needs follow-up
+3. **Close completed issues** - Run `bd close <id>` ONLY if quality gates passed
+4. **PUSH FEATURE BRANCH** - This is MANDATORY:
+   ```bash
+   make test               # MANDATORY - final verification
+   git status              # Verify clean working tree
+   git push -u origin bead/<id>  # Push feature branch to remote
+   bd sync                 # Sync beads metadata
+   git status              # MUST show "up to date with origin"
+   ```
+5. **Create Pull Request** (optional but recommended):
+   ```bash
+   gh pr create --title "Brief description" --body "Closes bead <id>"
+   ```
+6. **Clean up** - After PR is merged, delete local branch:
+   ```bash
+   git checkout main
+   git pull
+   git branch -d bead/<id>
+   ```
 7. **Hand off** - Provide context for next session
 
 **CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
+- **ALWAYS run `make test` before EVERY `git commit` and `git push`**
+- Work is NOT complete until feature branch is pushed
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-- DO NOT close issues unless ALL quality gates have passed
+- DO NOT close beads unless ALL quality gates have passed
+- DO NOT commit or push code that breaks tests
+- ALWAYS create feature branch `bead/<id>` from `main` before starting work
+- DO NOT work directly on `main` or long-lived branches
+
+## Keeping AGENTS.md Updated
+
+**META-RULE:** When workflow instructions are updated (Git, Beads, testing, etc.), AGENTS.md MUST be updated to reflect the changes. This ensures the documentation stays in sync with current practices and all contributors follow the same workflow.
