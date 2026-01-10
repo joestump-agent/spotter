@@ -46,8 +46,8 @@ func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
 	// Get page number from query
 	page := 1
 	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
+		if pageNum, parseErr := strconv.Atoi(pageStr); parseErr == nil && pageNum > 0 {
+			page = pageNum
 		}
 	}
 
@@ -245,7 +245,7 @@ func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 				h.Logger.Debug("starting async playlist sync",
 					"playlist_id", playlistID)
 
-				if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, playlistID); err != nil {
+				if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(syncCtx, playlistID); err != nil {
 					h.Logger.Error("failed to sync playlist to Navidrome",
 						"playlist_id", playlistID,
 						"playlist_name", pl.Name,
@@ -544,13 +544,13 @@ func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
 	// Trigger sync (async)
 	if h.PlaylistSyncSvc != nil {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			syncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
 
 			h.Logger.Debug("starting async playlist sync",
 				"playlist_id", playlistID)
 
-			if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, playlistID); err != nil {
+			if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(syncCtx, playlistID); err != nil {
 				h.Logger.Error("manual playlist sync failed",
 					"playlist_id", playlistID,
 					"playlist_name", pl.Name,
@@ -643,13 +643,13 @@ func (h *Handler) RebuildPlaylistSync(w http.ResponseWriter, r *http.Request) {
 	// Trigger rebuild (async)
 	if h.PlaylistSyncSvc != nil {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			rebuildCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
 
 			h.Logger.Debug("starting async playlist rebuild",
 				"playlist_id", playlistID)
 
-			if err := h.PlaylistSyncSvc.RebuildPlaylistSync(ctx, playlistID); err != nil {
+			if err := h.PlaylistSyncSvc.RebuildPlaylistSync(rebuildCtx, playlistID); err != nil {
 				h.Logger.Error("playlist rebuild failed",
 					"playlist_id", playlistID,
 					"playlist_name", pl.Name,
@@ -840,7 +840,7 @@ func (h *Handler) EnhanceVibes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	pl, err := h.Client.Playlist.Query().
+	playlistEntity, err := h.Client.Playlist.Query().
 		Where(
 			playlist.ID(playlistID),
 			playlist.HasUserWith(user.ID(u.ID)),
@@ -1031,55 +1031,55 @@ func (h *Handler) applyEnhancementToNavidrome(ctx context.Context, u *ent.User, 
 
 	// Update the playlist tracks in the database
 	// First, delete existing playlist tracks
-	_, err := h.Client.PlaylistTrack.Delete().
+	_, deleteErr := h.Client.PlaylistTrack.Delete().
 		Where(playlisttrack.HasPlaylistWith(playlist.ID(pl.ID))).
 		Exec(ctx)
-	if err != nil {
+	if deleteErr != nil {
 		h.Logger.Error("failed to delete existing playlist tracks",
 			"playlist_id", pl.ID,
-			"error", err)
+			"error", deleteErr)
 	}
 
 	// Add new tracks in order
 	for i, trackID := range trackIDs {
-		track, err := h.Client.Track.Get(ctx, trackID)
-		if err != nil {
+		trackEntity, trackErr := h.Client.Track.Get(ctx, trackID)
+		if trackErr != nil {
 			h.Logger.Warn("track not found, skipping",
 				"track_id", trackID,
-				"error", err)
+				"error", trackErr)
 			continue
 		}
 
 		// Get artist and album names
 		artistName := ""
 		albumName := ""
-		if edges, err := track.Edges.ArtistOrErr(); err == nil && edges != nil {
+		if edges, edgeErr := trackEntity.Edges.ArtistOrErr(); edgeErr == nil && edges != nil {
 			artistName = edges.Name
 		}
-		if edges, err := track.Edges.AlbumOrErr(); err == nil && edges != nil {
+		if edges, edgeErr := trackEntity.Edges.AlbumOrErr(); edgeErr == nil && edges != nil {
 			albumName = edges.Name
 		}
 
 		// Get duration if available
 		durationMs := 0
-		if track.DurationMs != nil {
-			durationMs = *track.DurationMs
+		if trackEntity.DurationMs != nil {
+			durationMs = *trackEntity.DurationMs
 		}
 
-		_, err = h.Client.PlaylistTrack.Create().
+		_, createErr := h.Client.PlaylistTrack.Create().
 			SetPlaylist(pl).
-			SetTrack(track).
+			SetTrack(trackEntity).
 			SetPosition(i + 1).
-			SetTrackName(track.Name).
+			SetTrackName(trackEntity.Name).
 			SetArtistName(artistName).
 			SetAlbumName(albumName).
 			SetDurationMs(durationMs).
 			Save(ctx)
-		if err != nil {
+		if createErr != nil {
 			h.Logger.Error("failed to create playlist track",
 				"playlist_id", pl.ID,
 				"track_id", trackID,
-				"error", err)
+				"error", createErr)
 		}
 	}
 

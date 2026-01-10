@@ -242,8 +242,8 @@ func (h *Handler) MixtapesIndex(w http.ResponseWriter, r *http.Request) {
 	// Get page number from query
 	page := 1
 	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
+		if pageNum, parseErr := strconv.Atoi(pageStr); parseErr == nil && pageNum > 0 {
+			page = pageNum
 		}
 	}
 
@@ -333,7 +333,7 @@ func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
 
 	maxTracks := 25 // default
 	if maxTracksStr := r.FormValue("max_tracks"); maxTracksStr != "" {
-		if mt, err := strconv.Atoi(maxTracksStr); err == nil && mt >= 1 && mt <= 100 {
+		if mt, parseErr := strconv.Atoi(maxTracksStr); parseErr == nil && mt >= 1 && mt <= 100 {
 			maxTracks = mt
 		}
 	}
@@ -424,7 +424,7 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 
 	maxTracks := 25 // default
 	if maxTracksStr := r.FormValue("max_tracks"); maxTracksStr != "" {
-		if mt, err := strconv.Atoi(maxTracksStr); err == nil && mt >= 1 && mt <= 100 {
+		if mt, parseErr := strconv.Atoi(maxTracksStr); parseErr == nil && mt >= 1 && mt <= 100 {
 			maxTracks = mt
 		}
 	}
@@ -750,7 +750,7 @@ func (h *Handler) MixtapeShow(w http.ResponseWriter, r *http.Request) {
 		// Parse track IDs from strings to ints
 		trackIDs := make([]int, 0, len(m.TrackIds))
 		for _, idStr := range m.TrackIds {
-			if id, err := strconv.Atoi(idStr); err == nil {
+			if id, parseErr := strconv.Atoi(idStr); parseErr == nil {
 				trackIDs = append(trackIDs, id)
 			}
 		}

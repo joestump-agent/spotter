@@ -344,8 +344,8 @@ func (h *Handler) AlbumIndex(w http.ResponseWriter, r *http.Request) {
 	// Get page number from query
 	page := 1
 	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
+		if pageNum, parseErr := strconv.Atoi(pageStr); parseErr == nil && pageNum > 0 {
+			page = pageNum
 		}
 	}
 
@@ -502,7 +502,7 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify album exists and belongs to user
-	a, err := h.Client.Album.Query().
+	albumEntity, err := h.Client.Album.Query().
 		Where(
 			album.ID(albumID),
 			album.HasUserWith(user.ID(u.ID)),
@@ -536,13 +536,13 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	// Generate mixtape name
 	mixtapeName := r.FormValue("name")
 	if mixtapeName == "" {
-		mixtapeName = a.Name + " Mix"
+		mixtapeName = albumEntity.Name + " Mix"
 	}
 
 	// Get max tracks (default 25)
 	maxTracks := 25
 	if maxTracksStr := r.FormValue("max_tracks"); maxTracksStr != "" {
-		if mt, err := strconv.Atoi(maxTracksStr); err == nil && mt >= 1 && mt <= 100 {
+		if mt, parseErr := strconv.Atoi(maxTracksStr); parseErr == nil && mt >= 1 && mt <= 100 {
 			maxTracks = mt
 		}
 	}
@@ -550,7 +550,7 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	// Create the mixtape
 	m, err := h.Client.Mixtape.Create().
 		SetName(mixtapeName).
-		SetDescription("Inspired by " + a.Name).
+		SetDescription("Inspired by " + albumEntity.Name).
 		SetMaxTracks(maxTracks).
 		SetSeedType("album").
 		SetSeedID(albumID).
@@ -567,7 +567,7 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 		"mixtape_id", m.ID,
 		"mixtape_name", m.Name,
 		"album_id", albumID,
-		"album_name", a.Name,
+		"album_name", albumEntity.Name,
 		"dj_id", d.ID,
 		"dj_name", d.Name)
 
@@ -581,7 +581,7 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 				h.Bus.PublishMixtapeGenerating(u.ID, m.ID, m.Name, d.Name)
 			}
 
-			seed := vibes.NewAlbumSeed(a)
+			seed := vibes.NewAlbumSeed(albumEntity)
 			req := &vibes.GenerationRequest{
 				Mixtape: m,
 				DJ:      d,
@@ -642,7 +642,7 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	if h.Bus != nil {
 		h.Bus.PublishNotification(u.ID,
 			"Mixtape Created",
-			"Creating mixtape \""+m.Name+"\" inspired by "+a.Name+"...",
+			"Creating mixtape \""+m.Name+"\" inspired by "+albumEntity.Name+"...",
 			"success")
 	}
 

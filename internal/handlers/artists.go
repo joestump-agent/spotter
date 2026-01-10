@@ -68,9 +68,9 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 	// Get similar artists
 	var similarArtists []artists.SimilarArtistInfo
 	if h.SimilarArtistsSvc != nil {
-		similar, err := h.SimilarArtistsSvc.GetSimilarArtists(r.Context(), u.ID, artistID)
-		if err != nil {
-			h.Logger.Warn("failed to get similar artists", "error", err, "artist_id", artistID)
+		similar, similarErr := h.SimilarArtistsSvc.GetSimilarArtists(r.Context(), u.ID, artistID)
+		if similarErr != nil {
+			h.Logger.Warn("failed to get similar artists", "error", similarErr, "artist_id", artistID)
 		} else {
 			for _, s := range similar {
 				if s.Edges.SimilarArtist != nil {
@@ -499,8 +499,8 @@ func (h *Handler) ArtistIndex(w http.ResponseWriter, r *http.Request) {
 	// Get page number from query
 	page := 1
 	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
+		if pageNum, parseErr := strconv.Atoi(pageStr); parseErr == nil && pageNum > 0 {
+			page = pageNum
 		}
 	}
 
@@ -722,7 +722,7 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify artist exists and belongs to user
-	a, err := h.Client.Artist.Query().
+	artistEntity, err := h.Client.Artist.Query().
 		Where(
 			artist.ID(artistID),
 			artist.HasUserWith(user.ID(u.ID)),
@@ -756,13 +756,13 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	// Generate mixtape name
 	mixtapeName := strings.TrimSpace(r.FormValue("name"))
 	if mixtapeName == "" {
-		mixtapeName = a.Name + " Mix"
+		mixtapeName = artistEntity.Name + " Mix"
 	}
 
 	// Get max tracks (default 25)
 	maxTracks := 25
 	if maxTracksStr := r.FormValue("max_tracks"); maxTracksStr != "" {
-		if mt, err := strconv.Atoi(maxTracksStr); err == nil && mt >= 1 && mt <= 100 {
+		if mt, parseErr := strconv.Atoi(maxTracksStr); parseErr == nil && mt >= 1 && mt <= 100 {
 			maxTracks = mt
 		}
 	}
@@ -770,7 +770,7 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	// Create the mixtape
 	m, err := h.Client.Mixtape.Create().
 		SetName(mixtapeName).
-		SetDescription("Inspired by " + a.Name).
+		SetDescription("Inspired by " + artistEntity.Name).
 		SetMaxTracks(maxTracks).
 		SetSeedType("artist").
 		SetSeedID(artistID).
@@ -787,7 +787,7 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 		"mixtape_id", m.ID,
 		"mixtape_name", m.Name,
 		"artist_id", artistID,
-		"artist_name", a.Name,
+		"artist_name", artistEntity.Name,
 		"dj_id", d.ID,
 		"dj_name", d.Name)
 
@@ -801,7 +801,7 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 				h.Bus.PublishMixtapeGenerating(u.ID, m.ID, m.Name, d.Name)
 			}
 
-			seed := vibes.NewArtistSeed(a)
+			seed := vibes.NewArtistSeed(artistEntity)
 			req := &vibes.GenerationRequest{
 				Mixtape: m,
 				DJ:      d,
@@ -862,7 +862,7 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	if h.Bus != nil {
 		h.Bus.PublishNotification(u.ID,
 			"Mixtape Created",
-			"Creating mixtape \""+m.Name+"\" inspired by "+a.Name+"...",
+			"Creating mixtape \""+m.Name+"\" inspired by "+artistEntity.Name+"...",
 			"success")
 	}
 
