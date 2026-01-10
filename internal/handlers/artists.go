@@ -819,9 +819,11 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 					"mixtape_id", m.ID,
 					"error", err)
 
-				h.Client.Mixtape.UpdateOneID(m.ID).
+				if _, saveErr := h.Client.Mixtape.UpdateOneID(m.ID).
 					SetGenerationError(err.Error()).
-					Save(ctx)
+					Save(ctx); saveErr != nil {
+					h.Logger.Error("failed to save mixtape error", "error", saveErr)
+				}
 
 				if h.Bus != nil {
 					h.Bus.PublishMixtapeError(u.ID, m.ID, m.Name, err.Error())

@@ -45,7 +45,7 @@ func DownloadAndSaveImage(url, localPath string, logger *slog.Logger) (string, e
 	if err != nil {
 		return "", fmt.Errorf("failed to start image download from %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to download image, status: %s", resp.Status)
@@ -75,7 +75,7 @@ func DownloadAndSaveImage(url, localPath string, logger *slog.Logger) (string, e
 	if err != nil {
 		return "", fmt.Errorf("failed to create image file %s: %w", localPath, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Encode the (potentially resized) image as a PNG and save it to the file.
 	if err := png.Encode(file, img); err != nil {

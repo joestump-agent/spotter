@@ -173,15 +173,24 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if buf.Len() > 0 {
-				fmt.Fprintf(w, "event: %s\n", event.Type)
+				if _, err := fmt.Fprintf(w, "event: %s\n", event.Type); err != nil {
+					h.Logger.Error("failed to write SSE event type", "error", err)
+					return
+				}
 				// Write data line by line to adhere to SSE spec
 				lines := bytes.Split(buf.Bytes(), []byte("\n"))
 				for _, line := range lines {
 					if len(line) > 0 {
-						fmt.Fprintf(w, "data: %s\n", line)
+						if _, err := fmt.Fprintf(w, "data: %s\n", line); err != nil {
+							h.Logger.Error("failed to write SSE data line", "error", err)
+							return
+						}
 					}
 				}
-				fmt.Fprintf(w, "\n")
+				if _, err := fmt.Fprintf(w, "\n"); err != nil {
+					h.Logger.Error("failed to write SSE separator", "error", err)
+					return
+				}
 				flusher.Flush()
 			}
 		}

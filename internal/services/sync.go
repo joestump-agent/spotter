@@ -190,13 +190,16 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 		// Determine the last sync time for this provider/source to optimize fetching.
 		// We query the latest listen for this specific user and source.
-		lastListen, _ := s.Client.Listen.Query().
+		lastListen, err := s.Client.Listen.Query().
 			Where(
 				listen.HasUserWith(user.ID(u.ID)),
 				listen.Source(string(provider.Type())),
 			).
 			Order(ent.Desc(listen.FieldPlayedAt)).
 			First(ctx)
+		if err != nil && !ent.IsNotFound(err) {
+			s.Logger.Warn("failed to query last listen", "provider", provider.Type(), "error", err)
+		}
 
 		var since time.Time
 		if lastListen != nil {
@@ -212,7 +215,7 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 		var totalAdded, totalSkipped, totalFound int
 
-		err := fetcher.GetRecentListens(ctx, since, func(tracks []providers.Track) error {
+		err = fetcher.GetRecentListens(ctx, since, func(tracks []providers.Track) error {
 			if len(tracks) == 0 {
 				return nil
 			}

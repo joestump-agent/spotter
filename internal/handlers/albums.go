@@ -260,7 +260,10 @@ func (h *Handler) getAlbumTracksWithListens(ctx context.Context, userID int, a *
 			query = query.Where(listen.ArtistName(artistName))
 		}
 
-		count, _ := query.Count(ctx)
+		count, err := query.Count(ctx)
+		if err != nil {
+			count = 0
+		}
 
 		// Set the Album edge on the track so that TrackTableRow.Album() can return it
 		// for cover art rendering in the track table
@@ -300,7 +303,10 @@ func (h *Handler) getAlbumTracksWithListens(ctx context.Context, userID int, a *
 				if artistName != "" {
 					countQuery = countQuery.Where(listen.ArtistName(artistName))
 				}
-				count, _ := countQuery.Count(ctx)
+				count, err := countQuery.Count(ctx)
+				if err != nil {
+					count = 0
+				}
 
 				result = append(result, albums.TrackWithListens{
 					Track:       &ent.Track{Name: tn.TrackName},
@@ -585,9 +591,11 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 					"mixtape_id", m.ID,
 					"error", err)
 
-				h.Client.Mixtape.UpdateOneID(m.ID).
+				if _, saveErr := h.Client.Mixtape.UpdateOneID(m.ID).
 					SetGenerationError(err.Error()).
-					Save(ctx)
+					Save(ctx); saveErr != nil {
+					h.Logger.Error("failed to save mixtape error", "error", saveErr)
+				}
 
 				if h.Bus != nil {
 					h.Bus.PublishMixtapeError(u.ID, m.ID, m.Name, err.Error())

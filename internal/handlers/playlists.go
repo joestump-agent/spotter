@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -340,9 +341,12 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 	duration := time.Since(startTime)
 
 	// Reload playlist to get updated state
-	updatedPl, _ := h.Client.Playlist.Query().
+	updatedPl, err := h.Client.Playlist.Query().
 		Where(playlist.ID(playlistID)).
 		Only(ctx)
+	if err != nil {
+		h.Logger.Warn("failed to reload playlist after sync", "error", err)
+	}
 
 	response := map[string]interface{}{
 		"playlist_id":   playlistID,
@@ -473,7 +477,10 @@ func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) 
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		// Already wrote status, can't return error, just log
+		log.Printf("error encoding JSON response: %v", err)
+	}
 }
 
 // SyncPlaylist triggers an immediate sync of a playlist to Navidrome.
