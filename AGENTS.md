@@ -280,6 +280,21 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
+### Quality Requirements for All Beads
+
+**Every bead MUST meet these requirements:**
+
+1. ✅ **RFC 2119 Acceptance Criteria** - All beads MUST include acceptance criteria using RFC 2119 keywords (MUST/SHOULD/MAY)
+2. 🏷️ **3-5 Labels** - Including exactly ONE work category label (feature/research/toil/cleanup/refactor/other)
+3. 📝 **Markdown Formatting** - All file names, paths, code, and commands MUST use backticks (`` `code` ``)
+4. 😊 **Optional Emojis** - Use 2-3 emojis per bead for clarity (don't overdo it)
+
+**Example label usage:**
+```bash
+bd create --title "Add caching layer" \
+  --labels "feature,database,performance,caching"  # 4 labels total
+```
+
 ### Basic Workflow
 
 **IMPORTANT: Always create a feature branch from `main` before starting work on a bead.**
@@ -341,20 +356,32 @@ Before creating a bead, consider 2-3 viable implementation approaches that compl
 
 **Example:**
 ```
-Title: Add caching layer for metadata enrichment
+Title: ⚡ Add caching layer for metadata enrichment
+Labels: feature, database, performance, metadata
 
 Description:
-Metadata enrichment makes excessive API calls. Need caching layer.
+Metadata enrichment in `internal/services/metadata.go` makes excessive API calls to
+external services (Spotify, MusicBrainz, Last.fm). Need caching layer to reduce
+API usage and improve performance.
 
 Approaches:
 1. In-memory cache with TTL (simple, but lost on restart)
 2. Redis cache (requires new dependency, scales better)
 3. Database-backed cache (reuses existing SQLite, persistent)
 
-Recommend approach #3 for MVP - no new dependencies, persistent across restarts.
+✅ Recommend approach #3 for MVP - no new dependencies, persistent across restarts.
+
+Acceptance Criteria:
+- The system MUST cache metadata enrichment results for at least 24 hours
+- The system MUST support cache invalidation for individual entities
+- The system SHOULD reduce external API calls by at least 80%
+- Cache misses MUST NOT break enrichment flow (graceful degradation)
+- All existing tests MUST pass
 ```
 
-#### 2. Write Acceptance Criteria (RFC 2119 Format)
+#### 2. Write Acceptance Criteria (RFC 2119 Format) - REQUIRED
+
+**All beads MUST include acceptance criteria using RFC 2119 keywords.**
 
 Use RFC 2119 keywords for precision:
 - **MUST** / **MUST NOT** - Absolute requirements
@@ -383,26 +410,26 @@ Notes should contain **static reference material**:
 - Links to related issues
 - Code snippets for reference
 
-**Example:**
+**Example (with proper Markdown formatting):**
 ```
 Notes:
 Files:
-- internal/database/hooks.go:102-170 - Existing NavidromeAuth encryption pattern
-- internal/crypto/encrypt.go - AES-256-GCM utility (already implemented)
-- ent/schema/spotifyauth.go:21-22 - access_token, refresh_token fields
+- `internal/database/hooks.go:102-170` - Existing NavidromeAuth encryption pattern
+- `internal/crypto/encrypt.go` - AES-256-GCM utility (already implemented)
+- `ent/schema/spotifyauth.go:21-22` - `access_token`, `refresh_token` fields
 
 Libraries:
-- crypto/aes (stdlib) - No external dependencies needed
-- encoding/base64 (stdlib) - For storage encoding
+- `crypto/aes` (stdlib) - No external dependencies needed
+- `encoding/base64` (stdlib) - For storage encoding
 
 Related Issues:
-- spotter-ahw - Navidrome password encryption (same pattern)
-- Implements AUTH-008 requirement from AGENTS.md
+- `spotter-ahw` - Navidrome password encryption (same pattern)
+- Implements `AUTH-008` requirement from AGENTS.md
 
 Architectural Notes:
 - Ent hooks provide transparent encryption/decryption
-- Hooks run on Create/Update mutations, Interceptors on Query
-- IsEncrypted() heuristic enables backward compatibility
+- Hooks run on `Create`/`Update` mutations, Interceptors on `Query`
+- `IsEncrypted()` heuristic enables backward compatibility
 ```
 
 **DO NOT put updates in notes:**
@@ -437,6 +464,49 @@ Comments create a timeline of progress. Notes are evergreen reference material.
 - **feature** - New functionality
 - **epic** - Large feature spanning multiple issues
 
+#### Work Category Labels (REQUIRED)
+
+**All beads MUST be labeled with exactly one category:**
+- **feature** - New functionality or capability
+- **research** - Investigation, exploration, or proof-of-concept
+- **toil** - Repetitive maintenance work (updates, migrations)
+- **cleanup** - Code quality improvements, debt reduction
+- **refactor** - Restructuring existing code without behavior changes
+- **other** - Work that doesn't fit other categories
+
+#### Labels (REQUIRED)
+
+**All beads MUST have 3-5 labels total** (including the work category label above).
+
+Additional labels can describe:
+- Technology/domain (e.g., `database`, `api`, `ui`, `auth`, `testing`)
+- Component (e.g., `enricher`, `provider`, `handlers`, `vibes`)
+- Priority context (e.g., `security`, `performance`, `ux`)
+- Type of change (e.g., `breaking-change`, `backward-compatible`)
+
+**Example:**
+```bash
+bd create --title "Add Redis caching layer" \
+  --type task \
+  --priority 2 \
+  --labels "feature,database,performance,caching"
+```
+
+#### Formatting Requirements
+
+**All bead content (descriptions, notes, comments) MUST use Markdown formatting:**
+- File names: `` `internal/database/hooks.go` ``
+- Paths: `` `internal/enrichers/spotify/` ``
+- Code: `` `func EnrichArtist(ctx context.Context)` ``
+- Commands: `` `bd create --title "..."` ``
+- Inline code in prose: "The `IsAvailable()` method returns false when..."
+
+**Emojis are acceptable in moderation** (2-3 per bead) to improve readability:
+- ✅ "Fixed the bug ✓"
+- 🔧 "Refactored the caching layer"
+- ⚠️ "Warning: requires database migration"
+- 🚀 "Performance improvement: 50% faster"
+
 #### Dependencies
 
 Use dependencies to model blockers:
@@ -464,31 +534,40 @@ bd blocked                        # Show all blocked issues
 
 **DO:**
 - Create beads proactively when discovering new work
-- Use RFC 2119 keywords in acceptance criteria
-- Add file paths and line numbers to notes
+- **ALWAYS use Markdown** for file names, paths, code, and commands
+- **Include RFC 2119 acceptance criteria** in every bead
+- **Add 3-5 labels** including exactly one work category label
+- Add file paths and line numbers to notes (with backticks)
 - Break large work into smaller dependent beads
 - Close beads immediately when quality gates pass
 - Use `bd close <id1> <id2> <id3>` to close multiple at once
+- Use emojis sparingly (2-3 per bead) for clarity
 
 **DON'T:**
 - Create beads for trivial one-line changes
+- Forget to add work category label (feature/research/toil/cleanup/refactor/other)
+- Use fewer than 3 or more than 5 labels
+- Skip RFC 2119 acceptance criteria
+- Forget Markdown formatting for code/paths/files
 - Put progress updates in notes (use comments)
 - Close beads before all quality gates pass
 - Leave beads open after pushing code
 - Forget to sync after closing beads
+- Overuse emojis (keep it professional)
 
 ### Example: Well-Written Bead
 
 ```
-Title: Encrypt OAuth tokens at rest using AES-256-GCM
+Title: 🔒 Encrypt OAuth tokens at rest using AES-256-GCM
 Type: bug
 Priority: P1
 Status: open
+Labels: security, database, auth, cleanup
 
 Description:
-SpotifyAuth stores access_token and refresh_token in plaintext. LastFMAuth
-stores session_key in plaintext. These tokens grant account access and should
-be encrypted at rest per AUTH-008 requirement.
+`SpotifyAuth` stores `access_token` and `refresh_token` in plaintext. `LastFMAuth`
+stores `session_key` in plaintext. These tokens grant account access and should
+be encrypted at rest per `AUTH-008` requirement.
 
 Approaches:
 1. Handler-level encryption (encrypt before save, decrypt after load)
@@ -501,11 +580,11 @@ Approaches:
    - Pro: Full control
    - Con: Scattered across codebase
 
-Recommend approach #2 (Ent hooks) - same pattern as NavidromeAuth password.
+✅ Recommend approach #2 (Ent hooks) - same pattern as `NavidromeAuth` password.
 
 Acceptance Criteria:
-- The system MUST encrypt access_token and refresh_token fields using AES-256-GCM
-- The system MUST encrypt session_key field using AES-256-GCM
+- The system MUST encrypt `access_token` and `refresh_token` fields using AES-256-GCM
+- The system MUST encrypt `session_key` field using AES-256-GCM
 - The system MUST automatically decrypt tokens on query
 - Backward compatibility MUST be maintained (plaintext tokens continue to work)
 - The system SHOULD automatically re-encrypt plaintext tokens on next write
@@ -514,19 +593,19 @@ Acceptance Criteria:
 
 Notes:
 Reference Files:
-- internal/database/hooks.go:33-67 - NavidromeAuth encryption pattern (template)
-- internal/crypto/encrypt.go - AES-256-GCM utility (ready to use)
-- ent/schema/spotifyauth.go:21-23 - Fields to encrypt
-- ent/schema/lastfmauth.go:19 - Field to encrypt
+- `internal/database/hooks.go:33-67` - `NavidromeAuth` encryption pattern (template)
+- `internal/crypto/encrypt.go` - AES-256-GCM utility (ready to use)
+- `ent/schema/spotifyauth.go:21-23` - Fields to encrypt
+- `ent/schema/lastfmauth.go:19` - Field to encrypt
 
 Token Usage:
-- internal/providers/spotify/spotify.go:164,169 - Reads tokens for API calls
-- internal/providers/lastfm/lastfm.go:170 - Reads username (NOT session_key)
+- `internal/providers/spotify/spotify.go:164,169` - Reads tokens for API calls
+- `internal/providers/lastfm/lastfm.go:170` - Reads username (NOT `session_key`)
 
 Implementation Notes:
-- Use Ent hooks (OnCreate/OnUpdate for encryption)
-- Use Ent interceptors (AfterQuery for decryption)
-- IsEncrypted() heuristic enables backward compatibility
+- Use Ent hooks (`OnCreate`/`OnUpdate` for encryption)
+- Use Ent interceptors (`AfterQuery` for decryption)
+- `IsEncrypted()` heuristic enables backward compatibility
 - Remember to decrypt in returned entities (see NavidromeAuth pattern)
 
 Related:
