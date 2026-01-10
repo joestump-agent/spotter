@@ -284,11 +284,9 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 		}, nil
 	}
 
-	status := "missing"
+	status := "monitored"
 	if lTrack.HasFile {
 		status = "available"
-	} else {
-		status = "monitored"
 	}
 
 	if track.LidarrID == nil {

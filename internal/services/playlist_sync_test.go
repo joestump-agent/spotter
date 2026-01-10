@@ -174,9 +174,9 @@ func createNavidromeTracksForMatching(t *testing.T, client *ent.Client, user *en
 	ctx := context.Background()
 
 	tracks := []struct {
-		name         string
-		artist       string
-		navidromeID  string
+		name        string
+		artist      string
+		navidromeID string
 	}{
 		{"Song One", "Artist A", "nav-track-1"},
 		{"Song Two", "Artist B", "nav-track-2"},
@@ -244,7 +244,6 @@ func TestPlaylistSyncService_SyncPlaylistToNavidrome_NewPlaylist(t *testing.T) {
 				receivedSyncedNotification = true
 			}
 		case <-time.After(100 * time.Millisecond):
-			break
 		}
 	}
 	assert.True(t, receivedSyncedNotification, "Expected 'Playlist Synced' notification")
@@ -351,7 +350,6 @@ func TestPlaylistSyncService_SyncPlaylistToNavidrome_SyncError(t *testing.T) {
 				receivedFailedNotification = true
 			}
 		case <-time.After(100 * time.Millisecond):
-			break
 		}
 	}
 	assert.True(t, receivedFailedNotification, "Expected 'Playlist Sync Failed' notification")
@@ -638,7 +636,6 @@ func TestPlaylistSyncService_RebuildPlaylistSync_Success(t *testing.T) {
 				receivedRebuildNotification = true
 			}
 		case <-time.After(100 * time.Millisecond):
-			break
 		}
 	}
 	assert.True(t, receivedRebuildNotification, "Expected 'Rebuilding Playlist' notification")
