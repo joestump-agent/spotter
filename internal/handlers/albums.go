@@ -23,6 +23,10 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+const (
+	timeframe30d = "30d"
+)
+
 func (h *Handler) AlbumShow(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -67,7 +71,7 @@ func (h *Handler) AlbumShow(w http.ResponseWriter, r *http.Request) {
 	// Get timeframe from query
 	timeframe := r.URL.Query().Get("timeframe")
 	if timeframe == "" {
-		timeframe = "30d"
+		timeframe = timeframe30d
 	}
 
 	// Get tracks with listen counts
@@ -107,7 +111,7 @@ func (h *Handler) AlbumChart(w http.ResponseWriter, r *http.Request) {
 
 	timeframe := r.URL.Query().Get("timeframe")
 	if timeframe == "" {
-		timeframe = "30d"
+		timeframe = timeframe30d
 	}
 
 	artistName := ""

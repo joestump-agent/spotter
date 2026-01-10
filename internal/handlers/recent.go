@@ -12,6 +12,10 @@ import (
 	"spotter/internal/views/recent"
 )
 
+const (
+	sortDirAsc = "asc"
+)
+
 // listenSortFields maps URL sort params to ent field selectors
 var listenSortFields = map[string]string{
 	"played_at": listen.FieldPlayedAt,
@@ -72,7 +76,7 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 
 	// Apply sorting
 	if field, ok := listenSortFields[sortCol]; ok {
-		if sortDir == "asc" {
+		if sortDir == sortDirAsc {
 			query = query.Order(ent.Asc(field))
 		} else {
 			query = query.Order(ent.Desc(field))

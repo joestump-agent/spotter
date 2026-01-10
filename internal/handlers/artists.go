@@ -26,6 +26,12 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+const (
+	groupByDay   = "day"
+	groupByWeek  = "week"
+	groupByMonth = "month"
+)
+
 func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -56,7 +62,7 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 	// Get timeframe from query
 	timeframe := r.URL.Query().Get("timeframe")
 	if timeframe == "" {
-		timeframe = "30d"
+		timeframe = timeframe30d
 	}
 
 	// Get similar artists
@@ -141,7 +147,7 @@ func (h *Handler) ArtistChart(w http.ResponseWriter, r *http.Request) {
 
 	timeframe := r.URL.Query().Get("timeframe")
 	if timeframe == "" {
-		timeframe = "30d"
+		timeframe = timeframe30d
 	}
 
 	data := h.getProviderHistory(r.Context(), u.ID, a.Name, "", "", timeframe)
@@ -344,22 +350,22 @@ func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName
 	switch timeframe {
 	case "30d":
 		startDate = now.AddDate(0, 0, -30)
-		groupBy = "day"
+		groupBy = groupByDay
 	case "90d":
 		startDate = now.AddDate(0, 0, -90)
-		groupBy = "day"
+		groupBy = groupByDay
 	case "6m":
 		startDate = now.AddDate(0, -6, 0)
-		groupBy = "week"
+		groupBy = groupByWeek
 	case "1y":
 		startDate = now.AddDate(-1, 0, 0)
-		groupBy = "month"
+		groupBy = groupByMonth
 	case "all":
 		startDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-		groupBy = "month"
+		groupBy = groupByMonth
 	default:
 		startDate = now.AddDate(0, 0, -30)
-		groupBy = "day"
+		groupBy = groupByDay
 	}
 
 	// Build query
@@ -392,12 +398,12 @@ func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName
 	for _, l := range listens {
 		var dateKey string
 		switch groupBy {
-		case "day":
+		case groupByDay:
 			dateKey = l.PlayedAt.Local().Format("Jan 2")
-		case "week":
+		case groupByWeek:
 			year, week := l.PlayedAt.Local().ISOWeek()
 			dateKey = time.Date(year, 1, 1, 0, 0, 0, 0, time.Local).AddDate(0, 0, (week-1)*7).Format("Jan 2")
-		case "month":
+		case groupByMonth:
 			dateKey = l.PlayedAt.Local().Format("Jan 2006")
 		}
 
@@ -415,13 +421,13 @@ func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName
 		var dateKey string
 		var nextDate time.Time
 		switch groupBy {
-		case "day":
+		case groupByDay:
 			dateKey = current.Format("Jan 2")
 			nextDate = current.AddDate(0, 0, 1)
-		case "week":
+		case groupByWeek:
 			dateKey = current.Format("Jan 2")
 			nextDate = current.AddDate(0, 0, 7)
-		case "month":
+		case groupByMonth:
 			dateKey = current.Format("Jan 2006")
 			nextDate = current.AddDate(0, 1, 0)
 		}
