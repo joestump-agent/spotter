@@ -50,7 +50,7 @@ func (h *Handler) ArtistImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find the best image to serve
-	if a.Edges.Images == nil || len(a.Edges.Images) == 0 {
+	if len(a.Edges.Images) == 0 {
 		http.Error(w, "No image available", http.StatusNotFound)
 		return
 	}
@@ -113,7 +113,7 @@ func (h *Handler) AlbumImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find the best image to serve
-	if a.Edges.Images == nil || len(a.Edges.Images) == 0 {
+	if len(a.Edges.Images) == 0 {
 		http.Error(w, "No image available", http.StatusNotFound)
 		return
 	}
