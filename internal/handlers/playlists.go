@@ -245,7 +245,7 @@ func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 				h.Logger.Debug("starting async playlist sync",
 					"playlist_id", playlistID)
 
-				if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, playlistID); err != nil {
+				if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(syncCtx, playlistID); err != nil {
 					h.Logger.Error("failed to sync playlist to Navidrome",
 						"playlist_id", playlistID,
 						"playlist_name", pl.Name,
@@ -840,7 +840,7 @@ func (h *Handler) EnhanceVibes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	pl, err := h.Client.Playlist.Query().
+	playlistEntity, err := h.Client.Playlist.Query().
 		Where(
 			playlist.ID(playlistID),
 			playlist.HasUserWith(user.ID(u.ID)),
@@ -1084,14 +1084,14 @@ func (h *Handler) applyEnhancementToNavidrome(ctx context.Context, u *ent.User, 
 	}
 
 	// Update playlist track count
-	_, updateErr := h.Client.Playlist.UpdateOne(pl).
+	_, err = h.Client.Playlist.UpdateOne(pl).
 		SetTrackCount(len(trackIDs)).
 		SetUpdatedAt(time.Now()).
 		Save(ctx)
-	if updateErr != nil {
+	if err != nil {
 		h.Logger.Error("failed to update playlist track count",
 			"playlist_id", pl.ID,
-			"error", updateErr)
+			"error", err)
 	}
 
 	// Trigger sync to Navidrome

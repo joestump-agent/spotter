@@ -188,8 +188,8 @@ func main() {
 			}
 			for _, u := range users {
 				go func(user *ent.User) {
-					if syncErr := playlistSyncSvc.SyncAllEnabledPlaylists(loopCtx, user.ID); syncErr != nil {
-						logger.Error("playlist sync failed", "username", user.Username, "error", syncErr)
+					if err := playlistSyncSvc.SyncAllEnabledPlaylists(ctx, user.ID); err != nil {
+						logger.Error("playlist sync failed", "username", user.Username, "error", err)
 					}
 				}(u)
 			}
