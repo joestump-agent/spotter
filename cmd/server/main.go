@@ -121,16 +121,16 @@ func main() {
 		ticker := time.NewTicker(syncInterval)
 		defer ticker.Stop()
 		for range ticker.C {
-			ctx := context.Background()
-			users, err := client.User.Query().All(ctx)
+			loopCtx := context.Background()
+			users, err := client.User.Query().All(loopCtx)
 			if err != nil {
 				logger.Error("failed to fetch users for background sync", "error", err)
 				continue
 			}
 			for _, u := range users {
 				go func(user *ent.User) {
-					if err := syncer.Sync(ctx, user); err != nil {
-						logger.Error("background sync failed", "username", user.Username, "error", err)
+					if syncErr := syncer.Sync(loopCtx, user); syncErr != nil {
+						logger.Error("background sync failed", "username", user.Username, "error", syncErr)
 					}
 				}(u)
 			}
@@ -139,9 +139,9 @@ func main() {
 
 	// Background Metadata Enrichment Loop
 	if cfg.Metadata.Enabled {
-		metadataInterval, err := time.ParseDuration(cfg.Metadata.Interval)
-		if err != nil {
-			logger.Error("invalid metadata interval, using default 1h", "error", err, "value", cfg.Metadata.Interval)
+		metadataInterval, intervalErr := time.ParseDuration(cfg.Metadata.Interval)
+		if intervalErr != nil {
+			logger.Error("invalid metadata interval, using default 1h", "error", intervalErr, "value", cfg.Metadata.Interval)
 			metadataInterval = 1 * time.Hour
 		}
 		logger.Info("metadata enrichment configured",
@@ -180,8 +180,8 @@ func main() {
 		ticker := time.NewTicker(playlistSyncInterval)
 		defer ticker.Stop()
 		for range ticker.C {
-			ctx := context.Background()
-			users, err := client.User.Query().All(ctx)
+			loopCtx := context.Background()
+			users, err := client.User.Query().All(loopCtx)
 			if err != nil {
 				logger.Error("failed to fetch users for playlist sync", "error", err)
 				continue
