@@ -17,18 +17,24 @@ type Playlist struct {
 // Fields of the Playlist.
 func (Playlist) Fields() []ent.Field {
 	return []ent.Field{
-		field.String("remote_id"),
+		field.String("remote_id").
+			MaxLen(255),
 		field.String("name").
-			NotEmpty(),
+			NotEmpty().
+			MaxLen(500),
 		field.String("description").
-			Optional(),
+			Optional().
+			MaxLen(2000),
 		field.String("source").
-			NotEmpty(), // e.g. "spotify", "navidrome"
+			NotEmpty().
+			MaxLen(50), // e.g. "spotify", "navidrome"
 		field.String("image_url").
 			Optional().
+			MaxLen(2048).
 			Comment("URL to the playlist cover art"),
 		field.String("external_url").
 			Optional().
+			MaxLen(2048).
 			Comment("Deep link to the playlist on the provider's website"),
 		field.Int("track_count").
 			Default(0).
@@ -44,6 +50,7 @@ func (Playlist) Fields() []ent.Field {
 			Comment("Whether to sync this playlist to Navidrome (only for non-Navidrome sources)"),
 		field.String("navidrome_playlist_id").
 			Optional().
+			MaxLen(255).
 			Comment("The remote playlist ID in Navidrome if synced from another source"),
 		field.Time("last_synced_at").
 			Optional().
@@ -51,6 +58,7 @@ func (Playlist) Fields() []ent.Field {
 			Comment("When the playlist was last synced to Navidrome"),
 		field.String("sync_error").
 			Optional().
+			MaxLen(1000).
 			Comment("Last sync error message, empty if successful"),
 		field.Int("matched_track_count").
 			Default(0).

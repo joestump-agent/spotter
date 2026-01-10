@@ -28,27 +28,34 @@ type Album struct {
 func (Album) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("name").
-			NotEmpty(),
+			NotEmpty().
+			MaxLen(500),
 		field.String("sort_name").
 			Optional().
+			MaxLen(500).
 			Comment("Name used for sorting, e.g., 'White Album, The'"),
 		field.String("musicbrainz_id").
 			Optional().
+			MaxLen(36).
 			Comment("MusicBrainz release group ID"),
 		field.String("spotify_id").
 			Optional().
+			MaxLen(50).
 			Comment("Spotify album ID"),
 		field.String("lidarr_id").
 			Optional().
+			MaxLen(255).
 			Comment("Lidarr album ID"),
 		field.String("release_date").
 			Optional().
+			MaxLen(10).
 			Comment("Release date in ISO format (YYYY, YYYY-MM, or YYYY-MM-DD)"),
 		field.Int("year").
 			Optional().
 			Comment("Release year extracted from release_date"),
 		field.String("genre").
 			Optional().
+			MaxLen(255).
 			Comment("Primary genre of the album"),
 		field.JSON("tags", []string{}).
 			Optional().
@@ -61,9 +68,11 @@ func (Album) Fields() []ent.Field {
 			Comment("Total number of tracks on the album"),
 		field.String("album_type").
 			Optional().
+			MaxLen(50).
 			Comment("Type: album, single, compilation, ep"),
 		field.String("label").
 			Optional().
+			MaxLen(255).
 			Comment("Record label"),
 		field.Time("created_at").
 			Default(time.Now).
@@ -77,6 +86,7 @@ func (Album) Fields() []ent.Field {
 		// AI-generated fields
 		field.Text("ai_summary").
 			Optional().
+			MaxLen(10000).
 			Comment("AI-generated summary of the album including artist thoughts and context"),
 		field.JSON("ai_tags", []string{}).
 			Optional().
@@ -86,6 +96,7 @@ func (Album) Fields() []ent.Field {
 			Comment("AI-generated dominant colors from the cover art"),
 		field.Text("cover_art_commentary").
 			Optional().
+			MaxLen(10000).
 			Comment("AI-generated art critic commentary on the cover art"),
 		field.Time("last_ai_enriched_at").
 			Optional().

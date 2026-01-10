@@ -17,13 +17,18 @@ type User struct {
 func (User) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("username").
-			Unique(),
+			Unique().
+			NotEmpty().
+			MaxLen(255),
 		field.String("email").
-			Optional(),
+			Optional().
+			MaxLen(320), // RFC 5321 max email length
 		field.String("theme").
-			Default("dark"),
+			Default("dark").
+			MaxLen(50),
 		field.Text("system_prompt").
-			Optional(),
+			Optional().
+			MaxLen(10000), // Reasonable limit for AI prompts
 		field.Int("pagination_size").
 			Default(25),
 		field.Time("last_login_at").

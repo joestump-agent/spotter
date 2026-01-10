@@ -19,29 +19,37 @@ func (Artist) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("name").
 			NotEmpty().
+			MaxLen(500).
 			Comment("Artist name"),
 		field.String("sort_name").
 			Optional().
+			MaxLen(500).
 			Comment("Name used for sorting, e.g., 'Beatles, The'"),
 		field.String("musicbrainz_id").
 			Optional().
 			Unique().
+			MaxLen(36). // UUID format
 			Comment("MusicBrainz artist MBID"),
 		field.String("spotify_id").
 			Optional().
 			Unique().
+			MaxLen(50).
 			Comment("Spotify artist ID"),
 		field.String("lastfm_url").
 			Optional().
+			MaxLen(2048).
 			Comment("Last.fm artist page URL"),
 		field.String("navidrome_id").
 			Optional().
+			MaxLen(255).
 			Comment("Navidrome artist ID"),
 		field.String("lidarr_id").
 			Optional().
+			MaxLen(255).
 			Comment("Lidarr artist ID"),
 		field.Text("bio").
 			Optional().
+			MaxLen(50000). // Bios can be long
 			Comment("Artist biography from Last.fm or other sources"),
 		field.JSON("tags", []string{}).
 			Optional().
@@ -70,9 +78,11 @@ func (Artist) Fields() []ent.Field {
 		// AI-generated fields
 		field.Text("ai_summary").
 			Optional().
+			MaxLen(10000).
 			Comment("AI-generated summary of the artist"),
 		field.Text("ai_biography").
 			Optional().
+			MaxLen(50000).
 			Comment("AI-generated biography for the artist"),
 		field.JSON("ai_tags", []string{}).
 			Optional().
