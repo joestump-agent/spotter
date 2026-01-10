@@ -447,7 +447,6 @@ func TestTrackQueryIncludesAIEnrichmentCriteria(t *testing.T) {
 	assert.True(t, trackIDs[track2.ID], "Track with old LastAiEnrichedAt should be included")
 }
 
-
 // TestAIEnrichmentFieldsAreSaved verifies that AI enrichment data is properly saved to the database.
 func TestAIEnrichmentFieldsAreSaved(t *testing.T) {
 	// Setup

@@ -588,4 +588,3 @@ func imageSizeFromLastFM(size string) (width, height int) {
 		return 0, 0
 	}
 }
-

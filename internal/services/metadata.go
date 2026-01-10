@@ -1691,7 +1691,6 @@ func uniqueStrings(s []string) []string {
 	return result
 }
 
-
 // getImageExtension extracts the file extension from a URL.
 func getImageExtension(url string) string {
 	// Try to get extension from URL

@@ -1,7 +1,5 @@
 package lidarr
 
-import "strconv"
-
 import (
 	"bytes"
 	"context"
@@ -11,13 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
-	"time"
-
 	"spotter/ent"
 	"spotter/ent/syncevent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type Enricher struct {
