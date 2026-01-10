@@ -628,6 +628,7 @@ Before running `bd close <id>` or `git commit`, ALL of the following MUST pass:
 
 When ending a work session, complete ALL steps below. **Work is NOT complete until the feature branch is pushed.**
 
+
 **MANDATORY WORKFLOW:**
 
 1. **Verify quality gates** - Ensure all quality gates pass:
