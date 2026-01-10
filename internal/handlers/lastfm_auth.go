@@ -2,19 +2,30 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"net/http"
+	"time"
 
 	"spotter/ent/user"
 	"spotter/internal/events"
 	"spotter/internal/providers/lastfm"
 )
 
+const (
+	lastfmStateCookie = "lastfm_oauth_state"
+	lastfmStateTTL    = 10 * time.Minute
+)
+
 // LastFMLogin initiates the Last.fm authentication flow.
 func (h *Handler) LastFMLogin(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		h.Logger.Error("Last.fm login: no user in session",
+			"path", r.URL.Path,
+			"remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=session_required", http.StatusSeeOther)
 		return
 	}
 
@@ -25,31 +36,111 @@ func (h *Handler) LastFMLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create authenticator and get auth URL
-	// Last.fm doesn't support state parameter natively, so we pass empty string
+	// Generate state for session tracking (Last.fm doesn't use it for CSRF, but we use it for session recovery)
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		h.Logger.Error("failed to generate OAuth state", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	state := base64.URLEncoding.EncodeToString(b)
+
+	// Encrypt user ID to store in cookie for session recovery
+	encryptedUserID, err := h.Encryptor.EncryptInt(u.ID)
+	if err != nil {
+		h.Logger.Error("failed to encrypt user ID for OAuth state", "error", err, "username", u.Username)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Store state and encrypted user ID in cookie (format: "state:encrypted_user_id")
+	stateWithSession := fmt.Sprintf("%s:%s", state, encryptedUserID)
+	http.SetCookie(w, &http.Cookie{
+		Name:     lastfmStateCookie,
+		Value:    stateWithSession,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Now().Add(lastfmStateTTL),
+	})
+
+	// Create authenticator and get auth URL (Last.fm doesn't use state parameter)
 	authFactory := lastfm.NewAuthenticator(h.Logger, h.Config)
 	authenticator := authFactory()
 	authURL := authenticator.GetAuthURL("")
 
-	h.Logger.Info("redirecting user to Last.fm Auth", "username", u.Username)
+	h.Logger.Info("redirecting user to Last.fm Auth", "username", u.Username, "user_id", u.ID)
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 
 // LastFMCallback handles the callback from Last.fm.
 func (h *Handler) LastFMCallback(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
-	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-
 	// Get authorization token
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		h.Logger.Warn("missing authorization token in Last.fm callback")
-		http.Redirect(w, r, "/preferences/providers?error=missing_token", http.StatusSeeOther)
+		h.Logger.Warn("Last.fm callback: missing authorization token", "remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=missing_token", http.StatusSeeOther)
 		return
 	}
+
+	// Get session state from cookie
+	stateCookie, err := r.Cookie(lastfmStateCookie)
+	if err != nil {
+		h.Logger.Warn("Last.fm callback: missing OAuth state cookie", "error", err, "remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=session_expired", http.StatusSeeOther)
+		return
+	}
+
+	// Parse state cookie to extract encrypted user ID (format: "state:encrypted_user_id")
+	stateValue := stateCookie.Value
+	colonIdx := -1
+	for i := len(stateValue) - 1; i >= 0; i-- {
+		if stateValue[i] == ':' {
+			colonIdx = i
+			break
+		}
+	}
+
+	if colonIdx == -1 {
+		h.Logger.Error("Last.fm callback: invalid state format (missing colon)", "remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=invalid_state", http.StatusSeeOther)
+		return
+	}
+
+	encryptedUserID := stateValue[colonIdx+1:]
+
+	// Decrypt user ID from state
+	userID, err := h.Encryptor.DecryptInt(encryptedUserID)
+	if err != nil {
+		h.Logger.Error("Last.fm callback: failed to decrypt user ID from state",
+			"error", err,
+			"remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=session_expired", http.StatusSeeOther)
+		return
+	}
+
+	// Load user from database
+	u, err := h.Client.User.Query().
+		Where(user.ID(userID)).
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("Last.fm callback: failed to load user from database",
+			"error", err,
+			"user_id", userID,
+			"remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=session_expired", http.StatusSeeOther)
+		return
+	}
+
+	// Clear the state cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     lastfmStateCookie,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Expires:  time.Now().Add(-time.Hour),
+	})
 
 	// Exchange token for session
 	authFactory := lastfm.NewAuthenticator(h.Logger, h.Config)

@@ -17,6 +17,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/events"
 	"spotter/internal/handlers"
+	"spotter/internal/crypto"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,8 @@ func setupVibesHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events.Bu
 	// Create a no-op logger for tests
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	h := handlers.New(client, cfg, logger, nil, nil, nil, nil, nil, nil, bus)
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	h := handlers.New(client, cfg, logger, encryptor, nil, nil, nil, nil, nil, nil, bus)
 	return client, h, bus
 }
 

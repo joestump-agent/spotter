@@ -83,7 +83,10 @@ func generateToken(password, salt string) string {
 // generateSalt creates a random salt for Subsonic API authentication.
 func generateSalt() string {
 	b := make([]byte, 8)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to a less random salt if crypto/rand fails
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
 	return hex.EncodeToString(b)
 }
 

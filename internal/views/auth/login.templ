@@ -16,7 +16,7 @@ templ Login(navidromeURL string) {
 							</div>
 							<h1 class="text-4xl font-bold text-primary tracking-wide">Spotter</h1>
 						</div>
-						<form class="space-y-4" hx-post="/login" hx-target="body">
+						<form class="space-y-4" action="/login" method="POST" hx-post="/login" hx-target="body">
 							<div class="form-control">
 								<label class="label" for="username">
 									<span class="label-text font-medium">Username</span>
