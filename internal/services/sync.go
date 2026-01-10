@@ -215,7 +215,7 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 		var totalAdded, totalSkipped, totalFound int
 
-		err := fetcher.GetRecentListens(ctx, since, func(tracks []providers.Track) error {
+		err = fetcher.GetRecentListens(ctx, since, func(tracks []providers.Track) error {
 			if len(tracks) == 0 {
 				return nil
 			}
