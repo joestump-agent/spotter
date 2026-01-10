@@ -2,8 +2,6 @@ package lastfm
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -19,7 +17,8 @@ import (
 )
 
 const (
-	baseURL = "https://ws.audioscrobbler.com/2.0/"
+	baseURL          = "https://ws.audioscrobbler.com/2.0/"
+	imageSizeXLarge  = "extralarge"
 )
 
 // Enricher implements the Last.fm metadata enricher.
@@ -88,7 +87,11 @@ func (e *Enricher) doRequest(ctx context.Context, method string, params url.Valu
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			e.logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Last.fm API returned status %d", resp.StatusCode)
@@ -322,7 +325,7 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 			Source:    "lastfm",
 			Width:     width,
 			Height:    height,
-			IsPrimary: img.Size == "extralarge",
+			IsPrimary: img.Size == imageSizeXLarge,
 		})
 	}
 
@@ -453,7 +456,7 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 			Source:    "lastfm",
 			Width:     width,
 			Height:    height,
-			IsPrimary: img.Size == "extralarge",
+			IsPrimary: img.Size == imageSizeXLarge,
 		})
 	}
 
@@ -513,7 +516,9 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 
 	// Parse duration (Last.fm returns milliseconds as string)
 	var durationMs int
-	fmt.Sscanf(response.Track.Duration, "%d", &durationMs)
+	if _, err := fmt.Sscanf(response.Track.Duration, "%d", &durationMs); err != nil {
+		e.logger.Debug("failed to parse track duration", "duration", response.Track.Duration, "error", err)
+	}
 
 	result := &enrichers.TrackData{
 		Tags: tags,
@@ -587,27 +592,4 @@ func imageSizeFromLastFM(size string) (width, height int) {
 	default:
 		return 0, 0
 	}
-}
-
-// generateAPISignature creates an API signature for authenticated requests.
-// Not currently used but included for potential future write operations.
-func (e *Enricher) generateAPISignature(params map[string]string) string {
-	// Sort parameter names
-	keys := make([]string, 0, len(params))
-	for k := range params {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	// Build signature string
-	var sig strings.Builder
-	for _, k := range keys {
-		sig.WriteString(k)
-		sig.WriteString(params[k])
-	}
-	sig.WriteString(e.sharedSecret)
-
-	// MD5 hash
-	hash := md5.Sum([]byte(sig.String()))
-	return hex.EncodeToString(hash[:])
 }

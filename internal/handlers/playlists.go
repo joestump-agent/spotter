@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -19,6 +20,10 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
+)
+
+const (
+	sourceNavidrome = "navidrome"
 )
 
 func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +199,7 @@ func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only allow toggling sync for non-Navidrome playlists
-	if pl.Source == "navidrome" {
+	if pl.Source == sourceNavidrome {
 		h.Logger.Warn("attempted to toggle sync for Navidrome playlist",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
@@ -340,9 +345,12 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 	duration := time.Since(startTime)
 
 	// Reload playlist to get updated state
-	updatedPl, _ := h.Client.Playlist.Query().
+	updatedPl, err := h.Client.Playlist.Query().
 		Where(playlist.ID(playlistID)).
 		Only(ctx)
+	if err != nil {
+		h.Logger.Warn("failed to reload playlist after sync", "error", err)
+	}
 
 	response := map[string]interface{}{
 		"playlist_id":   playlistID,
@@ -473,7 +481,10 @@ func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) 
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		// Already wrote status, can't return error, just log
+		log.Printf("error encoding JSON response: %v", err)
+	}
 }
 
 // SyncPlaylist triggers an immediate sync of a playlist to Navidrome.
@@ -514,7 +525,7 @@ func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only allow syncing non-Navidrome playlists with sync enabled
-	if pl.Source == "navidrome" {
+	if pl.Source == sourceNavidrome {
 		h.Logger.Warn("attempted to sync Navidrome playlist",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
@@ -613,7 +624,7 @@ func (h *Handler) RebuildPlaylistSync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only allow rebuilding non-Navidrome playlists with sync enabled
-	if pl.Source == "navidrome" {
+	if pl.Source == sourceNavidrome {
 		h.Logger.Warn("attempted to rebuild Navidrome playlist",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
@@ -951,7 +962,7 @@ func (h *Handler) convertPlaylistToMixtape(ctx context.Context, u *ent.User, pl 
 		SetMaxTracks(len(trackIDs)).
 		SetTrackIds(trackIDs).
 		SetTrackCount(len(trackIDs)).
-		SetSyncToNavidrome(pl.SyncToNavidrome || pl.Source == "navidrome").
+		SetSyncToNavidrome(pl.SyncToNavidrome || pl.Source == sourceNavidrome).
 		SetNavidromePlaylistID(pl.NavidromePlaylistID).
 		SetLastGeneratedAt(time.Now()).
 		SetGenerationPrompt(result.PromptUsed).
@@ -991,7 +1002,7 @@ func (h *Handler) convertPlaylistToMixtape(ctx context.Context, u *ent.User, pl 
 // applyEnhancementToNavidrome applies the enhancement directly to Navidrome.
 func (h *Handler) applyEnhancementToNavidrome(ctx context.Context, u *ent.User, pl *ent.Playlist, result *vibes.EnhancementResult) {
 	// Only apply if the playlist has a Navidrome ID or is from Navidrome
-	if pl.NavidromePlaylistID == "" && pl.Source != "navidrome" {
+	if pl.NavidromePlaylistID == "" && pl.Source != sourceNavidrome {
 		h.Logger.Info("playlist not synced to Navidrome, skipping sync",
 			"playlist_id", pl.ID)
 
@@ -1084,7 +1095,7 @@ func (h *Handler) applyEnhancementToNavidrome(ctx context.Context, u *ent.User, 
 	}
 
 	// Trigger sync to Navidrome
-	if pl.SyncToNavidrome || pl.Source == "navidrome" {
+	if pl.SyncToNavidrome || pl.Source == sourceNavidrome {
 		go func() {
 			if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, pl.ID); err != nil {
 				h.Logger.Error("failed to sync enhanced playlist to Navidrome",

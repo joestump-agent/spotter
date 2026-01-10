@@ -77,7 +77,11 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			e.logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode == http.StatusNotFound {
 		// No data available for this entity
@@ -392,6 +396,8 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 // parseLikes converts the likes string to an integer.
 func parseLikes(s string) int {
 	var likes int
-	fmt.Sscanf(s, "%d", &likes)
+	if _, err := fmt.Sscanf(s, "%d", &likes); err != nil {
+		return 0
+	}
 	return likes
 }

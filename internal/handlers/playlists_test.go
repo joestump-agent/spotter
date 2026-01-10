@@ -18,6 +18,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/events"
 	"spotter/internal/handlers"
+	"spotter/internal/crypto"
 	"spotter/internal/services"
 
 	"github.com/go-chi/chi/v5"
@@ -42,7 +43,8 @@ func setupPlaylistHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events
 	bus := events.NewBus()
 	syncer := services.NewSyncer(client, cfg, logger, bus)
 	playlistSyncSvc := services.NewPlaylistSyncService(client, cfg, logger, bus)
-	h := handlers.New(client, cfg, logger, syncer, nil, playlistSyncSvc, nil, nil, nil, bus)
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	h := handlers.New(client, cfg, logger, encryptor, syncer, nil, playlistSyncSvc, nil, nil, nil, bus)
 	return client, h, bus
 }
 

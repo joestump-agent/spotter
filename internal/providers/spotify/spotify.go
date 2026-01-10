@@ -195,11 +195,14 @@ func (p *Provider) fetchUserProfile(ctx context.Context, accessToken string) (*s
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
+	    if err != nil {
+	        return nil, err
+	    }
+	    defer func() {
+	        if err := resp.Body.Close(); err != nil {
+	            p.logger.Warn("failed to close response body", "error", err)
+	        }
+	    }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("spotify API returned status %d", resp.StatusCode)
 	}
@@ -268,7 +271,11 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			p.logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("spotify API returned status %d", resp.StatusCode)
@@ -374,16 +381,20 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			if err := resp.Body.Close(); err != nil {
+				p.logger.Warn("failed to close response body", "error", err)
+			}
 			return nil, fmt.Errorf("spotify API returned status %d", resp.StatusCode)
 		}
 
 		var result playlistsResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
+			if err := resp.Body.Close(); err != nil {
+				p.logger.Warn("failed to close response body", "error", err)
+			}
 			return nil, err
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		for _, item := range result.Items {
 			// Get the best image (first one is usually the largest)
@@ -437,18 +448,22 @@ func (p *Provider) getPlaylistTracks(ctx context.Context, accessToken, playlistI
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			if err := resp.Body.Close(); err != nil {
+				p.logger.Warn("failed to close response body", "error", err)
+			}
 			p.logger.Debug("spotify API returned non-OK status for playlist tracks", "status", resp.StatusCode)
 			break
 		}
 
 		var result playlistTracksResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
+			if err := resp.Body.Close(); err != nil {
+				p.logger.Warn("failed to close response body", "error", err)
+			}
 			p.logger.Debug("failed to decode playlist tracks response", "error", err)
 			break
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		for _, item := range result.Items {
 			if item.Track.ID == "" {

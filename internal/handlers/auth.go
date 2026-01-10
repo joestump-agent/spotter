@@ -118,7 +118,14 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	w.Header().Set("HX-Redirect", "/")
+	// Check if this is an HTMX request
+	if r.Header.Get("HX-Request") == "true" {
+		// HTMX-enhanced request: use HX-Redirect header
+		w.Header().Set("HX-Redirect", "/")
+	} else {
+		// Regular form submission: use standard HTTP redirect
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +169,11 @@ func (h *Handler) authenticateNavidrome(username, password string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			h.Logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("navidrome returned status: %d", resp.StatusCode)

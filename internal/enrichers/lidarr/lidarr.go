@@ -1,7 +1,5 @@
 package lidarr
 
-import "strconv"
-
 import (
 	"bytes"
 	"context"
@@ -11,13 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
-	"time"
-
 	"spotter/ent"
 	"spotter/ent/syncevent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type Enricher struct {
@@ -238,7 +236,9 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 
 	// Parse year
 	if len(lAlbum.ReleaseDate) >= 4 {
-		fmt.Sscanf(lAlbum.ReleaseDate, "%d", &data.Year)
+		if _, err := fmt.Sscanf(lAlbum.ReleaseDate, "%d", &data.Year); err != nil {
+			e.logger.Debug("failed to parse year from release date", "date", lAlbum.ReleaseDate, "error", err)
+		}
 	}
 
 	return data, nil
@@ -282,11 +282,9 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 		}, nil
 	}
 
-	status := "missing"
+	status := "monitored"
 	if lTrack.HasFile {
 		status = "available"
-	} else {
-		status = "monitored"
 	}
 
 	if track.LidarrID == nil {
@@ -373,7 +371,11 @@ func (e *Enricher) doRequest(ctx context.Context, method, endpoint string, body 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			e.logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)

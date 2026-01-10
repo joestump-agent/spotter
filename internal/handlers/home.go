@@ -85,17 +85,26 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 	stats.UniqueTracks = len(trackSet)
 
 	// Get enriched catalog counts
-	stats.EnrichedArtistCount, _ = h.Client.Artist.Query().
+	stats.EnrichedArtistCount, err = h.Client.Artist.Query().
 		Where(artist.HasUserWith(user.ID(u.ID))).
 		Count(ctx)
+	if err != nil {
+		stats.EnrichedArtistCount = 0
+	}
 
-	stats.EnrichedAlbumCount, _ = h.Client.Album.Query().
+	stats.EnrichedAlbumCount, err = h.Client.Album.Query().
 		Where(album.HasUserWith(user.ID(u.ID))).
 		Count(ctx)
+	if err != nil {
+		stats.EnrichedAlbumCount = 0
+	}
 
-	stats.EnrichedTrackCount, _ = h.Client.Track.Query().
+	stats.EnrichedTrackCount, err = h.Client.Track.Query().
 		Where(track.HasArtistWith(artist.HasUserWith(user.ID(u.ID)))).
 		Count(ctx)
+	if err != nil {
+		stats.EnrichedTrackCount = 0
+	}
 
 	// Calculate top artists
 	type artistStat struct {
@@ -155,11 +164,14 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 		navidromeStats.LastSyncedAt = u.Edges.NavidromeAuth.LastSyncedAt
 		navidromeStats.ServerURL = h.Config.Navidrome.BaseURL
 		navidromeStats.ServerOnline = h.checkNavidromeOnline(u.Username, u.Edges.NavidromeAuth.Password)
-		navidromeStats.TotalListens, _ = h.Client.Listen.Query().
+		navidromeStats.TotalListens, err = h.Client.Listen.Query().
 			Where(
 				listen.HasUserWith(user.ID(u.ID)),
 				listen.Source("navidrome"),
 			).Count(ctx)
+		if err != nil {
+			navidromeStats.TotalListens = 0
+		}
 		navidromeStats.UniqueArtists = h.countUniqueArtists(ctx, u.ID, "navidrome")
 		navidromeStats.UniqueAlbums = h.countUniqueAlbums(ctx, u.ID, "navidrome")
 	}
@@ -176,11 +188,14 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 			spotifyStats.Username = "Connected"
 		}
 		spotifyStats.LastSyncedAt = u.Edges.SpotifyAuth.LastSyncedAt
-		spotifyStats.TotalListens, _ = h.Client.Listen.Query().
+		spotifyStats.TotalListens, err = h.Client.Listen.Query().
 			Where(
 				listen.HasUserWith(user.ID(u.ID)),
 				listen.Source("spotify"),
 			).Count(ctx)
+		if err != nil {
+			spotifyStats.TotalListens = 0
+		}
 		spotifyStats.UniqueArtists = h.countUniqueArtists(ctx, u.ID, "spotify")
 		spotifyStats.UniqueAlbums = h.countUniqueAlbums(ctx, u.ID, "spotify")
 	}
@@ -194,11 +209,14 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 	if u.Edges.LastfmAuth != nil {
 		lastfmStats.Username = u.Edges.LastfmAuth.Username
 		lastfmStats.LastSyncedAt = u.Edges.LastfmAuth.LastSyncedAt
-		lastfmStats.TotalListens, _ = h.Client.Listen.Query().
+		lastfmStats.TotalListens, err = h.Client.Listen.Query().
 			Where(
 				listen.HasUserWith(user.ID(u.ID)),
 				listen.Source("lastfm"),
 			).Count(ctx)
+		if err != nil {
+			lastfmStats.TotalListens = 0
+		}
 		lastfmStats.UniqueArtists = h.countUniqueArtists(ctx, u.ID, "lastfm")
 		lastfmStats.UniqueAlbums = h.countUniqueAlbums(ctx, u.ID, "lastfm")
 	}
@@ -263,7 +281,11 @@ func (h *Handler) checkNavidromeOnline(username, password string) bool {
 		h.Logger.Debug("navidrome ping failed", "error", err)
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			h.Logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	return resp.StatusCode == http.StatusOK
 }
@@ -277,5 +299,7 @@ func (h *Handler) GeneratePlaylist(w http.ResponseWriter, r *http.Request) {
 	// Simulate work
 	time.Sleep(2 * time.Second)
 
-	w.Write([]byte("<div class=\"alert alert-success\" role=\"alert\"><span class=\"icon-[heroicons--check-circle] w-5 h-5\"></span><span>Playlist generation started based on prompt: \"" + prompt + "\". Check Navidrome shortly.</span></div>"))
+	if _, err := w.Write([]byte("<div class=\"alert alert-success\" role=\"alert\"><span class=\"icon-[heroicons--check-circle] w-5 h-5\"></span><span>Playlist generation started based on prompt: \"" + prompt + "\". Check Navidrome shortly.</span></div>")); err != nil {
+		h.Logger.Error("failed to write response", "error", err)
+	}
 }

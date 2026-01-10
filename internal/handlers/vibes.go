@@ -635,9 +635,11 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 				"error", err)
 
 			// Update mixtape with error
-			h.Client.Mixtape.UpdateOneID(m.ID).
+			if _, saveErr := h.Client.Mixtape.UpdateOneID(m.ID).
 				SetGenerationError(err.Error()).
-				Save(ctx)
+				Save(ctx); saveErr != nil {
+				h.Logger.Error("failed to save mixtape error", "error", saveErr)
+			}
 
 			// Publish error event
 			if h.Bus != nil {
@@ -807,7 +809,9 @@ func (h *Handler) GenreSuggestions(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.Logger.Error("failed to query listens for genres", "error", err)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]string{})
+		if encErr := json.NewEncoder(w).Encode([]string{}); encErr != nil {
+			h.Logger.Error("failed to encode empty genres response", "error", encErr)
+		}
 		return
 	}
 
@@ -846,7 +850,9 @@ func (h *Handler) GenreSuggestions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(suggestions)
+	if err := json.NewEncoder(w).Encode(suggestions); err != nil {
+		h.Logger.Error("failed to encode genre suggestions", "error", err)
+	}
 }
 
 // ArtistSuggestions returns artist suggestions based on user's library
@@ -868,7 +874,9 @@ func (h *Handler) ArtistSuggestions(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.Logger.Error("failed to query artists", "error", err)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]string{})
+		if encErr := json.NewEncoder(w).Encode([]string{}); encErr != nil {
+			h.Logger.Error("failed to encode empty artists response", "error", encErr)
+		}
 		return
 	}
 
@@ -886,7 +894,9 @@ func (h *Handler) ArtistSuggestions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(suggestions)
+	if err := json.NewEncoder(w).Encode(suggestions); err != nil {
+		h.Logger.Error("failed to encode artist suggestions", "error", err)
+	}
 }
 
 // parseCommaSeparated splits a comma-separated string into a slice of trimmed strings

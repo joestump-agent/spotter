@@ -66,8 +66,11 @@ func main() {
 		logger.Error("failed to connect to database", "error", err)
 		os.Exit(1)
 	}
-	defer client.Close()
-
+	        defer func() {
+	                if err := client.Close(); err != nil {
+	                        logger.Error("failed to close database client", "error", err)
+	                }
+	        }()
 	// Initialize Event Bus
 	bus := events.NewBus()
 
@@ -107,7 +110,7 @@ func main() {
 	logger.Info("similar artists service initialized")
 
 	// Initialize Handlers
-	h := handlers.New(client, cfg, logger, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, playlistEnhancer, similarArtistsSvc, bus)
+	h := handlers.New(client, cfg, logger, encryptor, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, playlistEnhancer, similarArtistsSvc, bus)
 
 	// Background Sync Loop for listens/playlists
 	syncInterval, err := time.ParseDuration(cfg.Sync.Interval)
@@ -219,6 +222,12 @@ func main() {
 		r.Get("/auth/login", h.Login)
 		r.Post("/login", h.PostLogin)
 		r.Get("/logout", h.Logout)
+		r.Get("/auth/logout", h.Logout) // Alias for consistency
+
+		// OAuth callbacks must be public (no session required)
+		// They will validate session internally
+		r.Get("/auth/spotify/callback", h.SpotifyCallback)
+		r.Get("/auth/lastfm/callback", h.LastFMCallback)
 	})
 
 	// Protected Routes
@@ -254,13 +263,9 @@ func main() {
 		r.Post("/preferences/tasks/reset", h.TaskResetData)
 		r.Post("/preferences/tasks/cleanup", h.TaskCleanup)
 
-		// Spotify OAuth
+		// OAuth login initiators (require existing session)
 		r.Get("/auth/spotify/login", h.SpotifyLogin)
-		r.Get("/auth/spotify/callback", h.SpotifyCallback)
-
-		// Last.fm Auth
 		r.Get("/auth/lastfm/login", h.LastFMLogin)
-		r.Get("/auth/lastfm/callback", h.LastFMCallback)
 
 		r.Get("/recent", h.RecentListens)
 		r.Get("/playlists", h.Playlists)

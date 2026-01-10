@@ -117,7 +117,11 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string, params url.Va
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			e.logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests {
 		return nil, fmt.Errorf("rate limited by MusicBrainz API")
@@ -428,7 +432,9 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 	// Parse year from first release date
 	year := 0
 	if len(rg.FirstReleaseDate) >= 4 {
-		fmt.Sscanf(rg.FirstReleaseDate, "%d", &year)
+		if _, err := fmt.Sscanf(rg.FirstReleaseDate, "%d", &year); err != nil {
+			e.logger.Debug("failed to parse year from release date", "date", rg.FirstReleaseDate, "error", err)
+		}
 	}
 
 	return &enrichers.AlbumData{
@@ -464,7 +470,11 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			e.logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode == http.StatusNotFound {
 		// No cover art available

@@ -16,6 +16,7 @@ import (
 	"spotter/ent"
 	"spotter/ent/schema"
 	"spotter/internal/config"
+	"spotter/internal/crypto"
 	"spotter/internal/events"
 	"spotter/internal/handlers"
 	"spotter/internal/services"
@@ -39,7 +40,9 @@ func setupAlbumHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events.Bu
 	cfg := &config.Config{}
 	bus := events.NewBus()
 	syncer := services.NewSyncer(client, cfg, logger, bus)
-	h := handlers.New(client, cfg, logger, syncer, nil, nil, nil, nil, nil, bus)
+	// Create test encryptor with a dummy key
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	h := handlers.New(client, cfg, logger, encryptor, syncer, nil, nil, nil, nil, nil, bus)
 	return client, h, bus
 }
 

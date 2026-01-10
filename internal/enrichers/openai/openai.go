@@ -37,6 +37,7 @@ func (h nopHandler) WithGroup(string) slog.Handler           { return h }
 
 const (
 	defaultTimeout = 120 * time.Second
+	defaultModel   = "gpt-4o"
 )
 
 // Enricher implements the OpenAI metadata enricher.
@@ -307,7 +308,7 @@ func (e *Enricher) callOpenAI(ctx context.Context, prompt string, images []strin
 
 	model := e.config.OpenAI.Model
 	if model == "" {
-		model = "gpt-4o"
+		model = defaultModel
 	}
 
 	e.logger.Debug("preparing OpenAI request", "base_url", baseURL, "model", model, "prompt_length", len(prompt), "image_count", len(images))
@@ -372,7 +373,11 @@ func (e *Enricher) callOpenAI(ctx context.Context, prompt string, images []strin
 		e.logger.Error("OpenAI request failed", "error", err)
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			e.logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -409,7 +414,11 @@ func (e *Enricher) loadImageAsBase64(imagePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open image: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			e.logger.Warn("failed to close file", "error", err)
+		}
+	}()
 
 	img, _, err := image.Decode(file)
 	if err != nil {

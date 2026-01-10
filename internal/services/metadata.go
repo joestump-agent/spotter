@@ -1480,7 +1480,7 @@ func (s *MetadataService) downloadFile(ctx context.Context, url, localPath strin
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
@@ -1490,7 +1490,7 @@ func (s *MetadataService) downloadFile(ctx context.Context, url, localPath strin
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	_, err = io.Copy(file, resp.Body)
 	return err
@@ -1554,11 +1554,13 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 				Only(ctx)
 			if err == nil {
 				// Check if already linked by querying the edge
-				hasArtist, _ := s.Client.Listen.Query().
+				hasArtist, err := s.Client.Listen.Query().
 					Where(listen.ID(l.ID)).
 					QueryArtist().
 					Exist(ctx)
-				if !hasArtist {
+				if err != nil {
+					s.Logger.Warn("failed to check artist link", "listen_id", l.ID, "error", err)
+				} else if !hasArtist {
 					_, err = l.Update().SetArtist(art).Save(ctx)
 					if err != nil {
 						s.Logger.Warn("failed to link listen to artist", "listen_id", l.ID, "artist", l.ArtistName, "error", err)
@@ -1588,11 +1590,13 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 					Only(ctx)
 				if err == nil {
 					// Check if already linked
-					hasAlbum, _ := s.Client.Listen.Query().
+					hasAlbum, err := s.Client.Listen.Query().
 						Where(listen.ID(l.ID)).
 						QueryAlbum().
 						Exist(ctx)
-					if !hasAlbum {
+					if err != nil {
+						s.Logger.Warn("failed to check album link", "listen_id", l.ID, "error", err)
+					} else if !hasAlbum {
 						_, err = l.Update().SetAlbum(alb).Save(ctx)
 						if err != nil {
 							s.Logger.Warn("failed to link listen to album", "listen_id", l.ID, "album", l.AlbumName, "error", err)
@@ -1636,11 +1640,13 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 				trk, err := query.Only(ctx)
 				if err == nil {
 					// Check if already linked
-					hasTrack, _ := s.Client.Listen.Query().
+					hasTrack, err := s.Client.Listen.Query().
 						Where(listen.ID(l.ID)).
 						QueryTrack().
 						Exist(ctx)
-					if !hasTrack {
+					if err != nil {
+						s.Logger.Warn("failed to check track link", "listen_id", l.ID, "error", err)
+					} else if !hasTrack {
 						_, err = l.Update().SetTrack(trk).Save(ctx)
 						if err != nil {
 							s.Logger.Warn("failed to link listen to track", "listen_id", l.ID, "track", l.TrackName, "error", err)
@@ -1683,30 +1689,6 @@ func uniqueStrings(s []string) []string {
 		}
 	}
 	return result
-}
-
-// sanitizeFilename makes a string safe for use as a filename.
-func sanitizeFilename(s string) string {
-	// Replace problematic characters
-	replacer := strings.NewReplacer(
-		"/", "_",
-		"\\", "_",
-		":", "_",
-		"*", "_",
-		"?", "_",
-		"\"", "_",
-		"<", "_",
-		">", "_",
-		"|", "_",
-	)
-	s = replacer.Replace(s)
-	// Trim whitespace
-	s = strings.TrimSpace(s)
-	// Limit length
-	if len(s) > 100 {
-		s = s[:100]
-	}
-	return s
 }
 
 // getImageExtension extracts the file extension from a URL.

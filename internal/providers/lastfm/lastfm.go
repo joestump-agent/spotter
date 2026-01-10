@@ -329,7 +329,11 @@ func (p *Provider) doRequest(ctx context.Context, method string, params map[stri
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				p.logger.Warn("failed to close response body", "error", err)
+			}
+		}()
 
 		if resp.StatusCode == http.StatusOK {
 			if result != nil {

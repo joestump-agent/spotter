@@ -115,3 +115,23 @@ func IsEncrypted(data string) bool {
 	// Minimum encrypted data would be nonce(12) + tag(16) + at least 1 byte = 29 bytes
 	return len(decoded) >= 29
 }
+
+// EncryptInt encrypts an integer value and returns base64-encoded ciphertext
+func (e *Encryptor) EncryptInt(value int) (string, error) {
+	return e.Encrypt(fmt.Sprintf("%d", value))
+}
+
+// DecryptInt decrypts base64-encoded ciphertext and returns an integer value
+func (e *Encryptor) DecryptInt(ciphertext string) (int, error) {
+	plaintext, err := e.Decrypt(ciphertext)
+	if err != nil {
+		return 0, err
+	}
+
+	var value int
+	if _, err := fmt.Sscanf(plaintext, "%d", &value); err != nil {
+		return 0, fmt.Errorf("failed to parse decrypted integer: %w", err)
+	}
+
+	return value, nil
+}

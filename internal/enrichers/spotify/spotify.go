@@ -134,7 +134,11 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			e.logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return nil, fmt.Errorf("Spotify API rate limited")
@@ -481,7 +485,9 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 	// Parse year from release date
 	year := 0
 	if len(sp.ReleaseDate) >= 4 {
-		fmt.Sscanf(sp.ReleaseDate, "%d", &year)
+		if _, err := fmt.Sscanf(sp.ReleaseDate, "%d", &year); err != nil {
+			e.logger.Debug("failed to parse year from release date", "date", sp.ReleaseDate, "error", err)
+		}
 	}
 
 	return &enrichers.AlbumData{
