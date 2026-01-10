@@ -19,12 +19,15 @@ func (Mixtape) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("name").
 			NotEmpty().
+			MaxLen(500).
 			Comment("User-given name for this mixtape"),
 		field.String("description").
 			Optional().
+			MaxLen(2000).
 			Comment("Optional description of the mixtape"),
 		field.String("image_url").
 			Optional().
+			MaxLen(2048).
 			Comment("URL to the mixtape cover art"),
 		field.Enum("schedule").
 			Values("none", "daily", "weekly", "monthly").
@@ -35,6 +38,7 @@ func (Mixtape) Fields() []ent.Field {
 			Comment("Whether to sync this mixtape as a playlist in Navidrome"),
 		field.String("navidrome_playlist_id").
 			Optional().
+			MaxLen(255).
 			Comment("The remote playlist ID in Navidrome if synced"),
 		field.Int("track_count").
 			Default(0).
@@ -54,12 +58,15 @@ func (Mixtape) Fields() []ent.Field {
 			Comment("Number of tokens used in the last generation"),
 		field.String("generation_model").
 			Optional().
+			MaxLen(100).
 			Comment("The AI model used for the last generation"),
 		field.String("generation_error").
 			Optional().
+			MaxLen(1000).
 			Comment("Error message from the last generation attempt, empty if successful"),
 		field.String("seed_type").
 			Optional().
+			MaxLen(50).
 			Comment("Type of seed data used: artist, album, tracks, or empty for DJ-only"),
 		field.Int("seed_id").
 			Optional().

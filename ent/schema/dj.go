@@ -19,9 +19,11 @@ func (DJ) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("name").
 			NotEmpty().
+			MaxLen(255).
 			Comment("User-given name for this DJ"),
 		field.Text("system_prompt").
 			Optional().
+			MaxLen(10000).
 			Comment("Custom system prompt defining the DJ's personality"),
 		field.Strings("genres_include").
 			Optional().

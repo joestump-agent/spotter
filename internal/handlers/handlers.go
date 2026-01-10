@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"spotter/ent"
 	"spotter/internal/config"
@@ -13,6 +15,14 @@ import (
 	"spotter/internal/vibes"
 
 	"github.com/a-h/templ"
+)
+
+// Input validation constants
+const (
+	MaxNameLength        = 255
+	MaxDescriptionLength = 2000
+	MaxPromptLength      = 10000
+	MaxURLLength         = 2048
 )
 
 type contextKey string
@@ -63,4 +73,63 @@ func (h *Handler) GetUser(ctx context.Context) *ent.User {
 		return nil
 	}
 	return u
+}
+
+// ValidationError represents an input validation error
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Field, e.Message)
+}
+
+// ValidateRequired checks that a string field is not empty
+func ValidateRequired(field, value string) *ValidationError {
+	if value == "" {
+		return &ValidationError{Field: field, Message: "is required"}
+	}
+	return nil
+}
+
+// ValidateMaxLength checks that a string doesn't exceed the maximum length
+func ValidateMaxLength(field, value string, maxLen int) *ValidationError {
+	if len(value) > maxLen {
+		return &ValidationError{Field: field, Message: fmt.Sprintf("exceeds maximum length of %d characters", maxLen)}
+	}
+	return nil
+}
+
+// ValidateRange checks that an integer is within the specified range
+func ValidateRange(field string, value, min, max int) *ValidationError {
+	if value < min || value > max {
+		return &ValidationError{Field: field, Message: fmt.Sprintf("must be between %d and %d", min, max)}
+	}
+	return nil
+}
+
+// BadRequest sends a 400 response with the validation error message
+func (h *Handler) BadRequest(w http.ResponseWriter, err *ValidationError) {
+	http.Error(w, err.Error(), http.StatusBadRequest)
+}
+
+// ValidateTimestamp checks that a string is a valid RFC3339 timestamp
+func ValidateTimestamp(field, value string) *ValidationError {
+	if value == "" {
+		return nil // Empty is ok if field is optional
+	}
+	if _, err := time.Parse(time.RFC3339, value); err != nil {
+		return &ValidationError{Field: field, Message: "must be a valid RFC3339 timestamp (e.g., 2006-01-02T15:04:05Z)"}
+	}
+	return nil
+}
+
+// ParseTimestamp parses a string as RFC3339 timestamp, returning an error if invalid
+func ParseTimestamp(field, value string) (time.Time, *ValidationError) {
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, &ValidationError{Field: field, Message: "must be a valid RFC3339 timestamp (e.g., 2006-01-02T15:04:05Z)"}
+	}
+	return t, nil
 }

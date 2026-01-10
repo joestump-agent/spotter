@@ -93,12 +93,21 @@ func (h *Handler) CreateDJ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := strings.TrimSpace(r.FormValue("name"))
-	if name == "" {
-		http.Error(w, "Name is required", http.StatusBadRequest)
+	if err := ValidateRequired("name", name); err != nil {
+		h.BadRequest(w, err)
+		return
+	}
+	if err := ValidateMaxLength("name", name, MaxNameLength); err != nil {
+		h.BadRequest(w, err)
 		return
 	}
 
 	systemPrompt := strings.TrimSpace(r.FormValue("system_prompt"))
+	if err := ValidateMaxLength("system_prompt", systemPrompt, MaxPromptLength); err != nil {
+		h.BadRequest(w, err)
+		return
+	}
+
 	genresInclude := parseCommaSeparated(r.FormValue("genres_include"))
 	genresExclude := parseCommaSeparated(r.FormValue("genres_exclude"))
 	vibesTags := parseCommaSeparated(r.FormValue("vibes"))
@@ -155,12 +164,21 @@ func (h *Handler) UpdateDJ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := strings.TrimSpace(r.FormValue("name"))
-	if name == "" {
-		http.Error(w, "Name is required", http.StatusBadRequest)
+	if err := ValidateRequired("name", name); err != nil {
+		h.BadRequest(w, err)
+		return
+	}
+	if err := ValidateMaxLength("name", name, MaxNameLength); err != nil {
+		h.BadRequest(w, err)
 		return
 	}
 
 	systemPrompt := strings.TrimSpace(r.FormValue("system_prompt"))
+	if err := ValidateMaxLength("system_prompt", systemPrompt, MaxPromptLength); err != nil {
+		h.BadRequest(w, err)
+		return
+	}
+
 	genresInclude := parseCommaSeparated(r.FormValue("genres_include"))
 	genresExclude := parseCommaSeparated(r.FormValue("genres_exclude"))
 	vibesTags := parseCommaSeparated(r.FormValue("vibes"))
@@ -303,12 +321,21 @@ func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := strings.TrimSpace(r.FormValue("name"))
-	if name == "" {
-		http.Error(w, "Name is required", http.StatusBadRequest)
+	if err := ValidateRequired("name", name); err != nil {
+		h.BadRequest(w, err)
+		return
+	}
+	if err := ValidateMaxLength("name", name, MaxNameLength); err != nil {
+		h.BadRequest(w, err)
 		return
 	}
 
 	description := strings.TrimSpace(r.FormValue("description"))
+	if err := ValidateMaxLength("description", description, MaxDescriptionLength); err != nil {
+		h.BadRequest(w, err)
+		return
+	}
+
 	schedule := r.FormValue("schedule")
 	if schedule == "" {
 		schedule = "none"
@@ -394,12 +421,21 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := strings.TrimSpace(r.FormValue("name"))
-	if name == "" {
-		http.Error(w, "Name is required", http.StatusBadRequest)
+	if err := ValidateRequired("name", name); err != nil {
+		h.BadRequest(w, err)
+		return
+	}
+	if err := ValidateMaxLength("name", name, MaxNameLength); err != nil {
+		h.BadRequest(w, err)
 		return
 	}
 
 	description := strings.TrimSpace(r.FormValue("description"))
+	if err := ValidateMaxLength("description", description, MaxDescriptionLength); err != nil {
+		h.BadRequest(w, err)
+		return
+	}
+
 	schedule := r.FormValue("schedule")
 	if schedule == "" {
 		schedule = "none"

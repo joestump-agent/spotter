@@ -33,6 +33,12 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate input lengths to prevent abuse
+	if err := ValidateMaxLength("username", username, MaxNameLength); err != nil {
+		h.BadRequest(w, err)
+		return
+	}
+
 	// 1. Authenticate against Navidrome
 	if err := h.authenticateNavidrome(username, password); err != nil {
 		h.Logger.Error("Navidrome authentication failed", "error", err)
