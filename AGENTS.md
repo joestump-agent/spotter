@@ -814,6 +814,12 @@ Enrichers add metadata, images, and AI-generated content to local entities.
 - **Mocking**: Use `httptest.NewServer` to mock external APIs
 - **No Network**: Tests must not make real network calls
 - **Coverage**: Test happy paths, 401/403 (Auth), 429 (Rate Limits), and 404s
+- **Regression Tests**: **MANDATORY** for all bug fixes
+  - Write regression test BEFORE fixing the bug
+  - Test MUST fail without the fix
+  - Test MUST pass with the fix
+  - Test name MUST include "Regression" prefix (e.g., `TestLogin_Regression_WhiteScreen`)
+  - Test MUST document the original issue and bead ID in comments
 
 ### External API Etiquette
 - **Rate Limiting**: Handle 429 responses gracefully (exponential backoff or error)
@@ -830,12 +836,14 @@ Before running `bd close <id>` or `git commit`, ALL of the following MUST pass:
 4. **Build**: `make build` - Project MUST build successfully
 5. **Code Generation**: Run `go generate ./ent` if schema changed
 6. **Standards**: Code follows all standards above (error handling, context, testing, etc.)
+7. **Regression Tests**: If fixing a bug, regression test MUST be written and passing
 
 **CRITICAL:**
 - Run `make test` before EVERY `git commit`
 - Run `make run` and verify application starts before EVERY `git commit`
 - Run `make lint` before EVERY `git commit`
 - Run `make test` before EVERY `git push`
+- **ALWAYS write regression tests for bug fixes BEFORE implementing the fix**
 - DO NOT close beads until quality gates pass
 - DO NOT commit code that breaks tests, linting, or fails to start
 
