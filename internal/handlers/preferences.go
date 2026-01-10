@@ -536,7 +536,7 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 	}
 
 	// Get last sync_completed event for listens
-	lastListenSync, _ := h.Client.SyncEvent.Query().
+	lastListenSync, err := h.Client.SyncEvent.Query().
 		Where(
 			syncevent.HasUserWith(user.ID(u.ID)),
 			syncevent.EventTypeEQ(syncevent.EventTypeSyncCompleted),
@@ -544,12 +544,15 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 		).
 		Order(ent.Desc(syncevent.FieldCreatedAt)).
 		First(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		h.Logger.Warn("failed to query last listen sync event", "error", err)
+	}
 	if lastListenSync != nil {
 		tasks[0].LastRanAt = &lastListenSync.CreatedAt
 	}
 
 	// Get last sync_completed event for playlists
-	lastPlaylistSync, _ := h.Client.SyncEvent.Query().
+	lastPlaylistSync, err := h.Client.SyncEvent.Query().
 		Where(
 			syncevent.HasUserWith(user.ID(u.ID)),
 			syncevent.EventTypeEQ(syncevent.EventTypeSyncCompleted),
@@ -557,24 +560,30 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 		).
 		Order(ent.Desc(syncevent.FieldCreatedAt)).
 		First(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		h.Logger.Warn("failed to query last playlist sync event", "error", err)
+	}
 	if lastPlaylistSync != nil {
 		tasks[1].LastRanAt = &lastPlaylistSync.CreatedAt
 	}
 
 	// Get last metadata_completed event
-	lastMetadata, _ := h.Client.SyncEvent.Query().
+	lastMetadata, err := h.Client.SyncEvent.Query().
 		Where(
 			syncevent.HasUserWith(user.ID(u.ID)),
 			syncevent.EventTypeEQ(syncevent.EventTypeMetadataCompleted),
 		).
 		Order(ent.Desc(syncevent.FieldCreatedAt)).
 		First(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		h.Logger.Warn("failed to query last metadata event", "error", err)
+	}
 	if lastMetadata != nil {
 		tasks[2].LastRanAt = &lastMetadata.CreatedAt
 	}
 
 	// Get last artist image sync event
-	lastArtistImages, _ := h.Client.SyncEvent.Query().
+	lastArtistImages, err := h.Client.SyncEvent.Query().
 		Where(
 			syncevent.HasUserWith(user.ID(u.ID)),
 			syncevent.EventTypeEQ(syncevent.EventTypeImageDownloaded),
@@ -582,12 +591,15 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 		).
 		Order(ent.Desc(syncevent.FieldCreatedAt)).
 		First(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		h.Logger.Warn("failed to query last artist images event", "error", err)
+	}
 	if lastArtistImages != nil {
 		tasks[3].LastRanAt = &lastArtistImages.CreatedAt
 	}
 
 	// Get last album image sync event
-	lastAlbumImages, _ := h.Client.SyncEvent.Query().
+	lastAlbumImages, err := h.Client.SyncEvent.Query().
 		Where(
 			syncevent.HasUserWith(user.ID(u.ID)),
 			syncevent.EventTypeEQ(syncevent.EventTypeImageDownloaded),
@@ -595,30 +607,39 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 		).
 		Order(ent.Desc(syncevent.FieldCreatedAt)).
 		First(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		h.Logger.Warn("failed to query last album images event", "error", err)
+	}
 	if lastAlbumImages != nil {
 		tasks[4].LastRanAt = &lastAlbumImages.CreatedAt
 	}
 
 	// Get last data_reset event
-	lastReset, _ := h.Client.SyncEvent.Query().
+	lastReset, err := h.Client.SyncEvent.Query().
 		Where(
 			syncevent.HasUserWith(user.ID(u.ID)),
 			syncevent.EventTypeEQ(syncevent.EventTypeDataReset),
 		).
 		Order(ent.Desc(syncevent.FieldCreatedAt)).
 		First(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		h.Logger.Warn("failed to query last reset event", "error", err)
+	}
 	if lastReset != nil {
 		tasks[5].LastRanAt = &lastReset.CreatedAt
 	}
 
 	// Get last cleanup_completed event
-	lastCleanup, _ := h.Client.SyncEvent.Query().
+	lastCleanup, err := h.Client.SyncEvent.Query().
 		Where(
 			syncevent.HasUserWith(user.ID(u.ID)),
 			syncevent.EventTypeEQ(syncevent.EventTypeCleanupCompleted),
 		).
 		Order(ent.Desc(syncevent.FieldCreatedAt)).
 		First(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		h.Logger.Warn("failed to query last cleanup event", "error", err)
+	}
 	if lastCleanup != nil {
 		tasks[6].LastRanAt = &lastCleanup.CreatedAt
 	}
@@ -865,29 +886,42 @@ func (h *Handler) TaskResetData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete all tracks (cascade from artists/albums handled by foreign keys)
-	deletedTracks, _ := h.Client.Track.Delete().
+	deletedTracks, err := h.Client.Track.Delete().
 		Where(track.HasArtistWith(artist.HasUserWith(user.ID(u.ID)))).
 		Exec(ctx)
+	if err != nil {
+		h.Logger.Error("failed to delete tracks", "error", err)
+	}
 
 	// Delete all album images
-	h.Client.AlbumImage.Delete().
+	if _, err := h.Client.AlbumImage.Delete().
 		Where(albumimage.HasAlbumWith(album.HasUserWith(user.ID(u.ID)))).
-		Exec(ctx)
+		Exec(ctx); err != nil {
+		h.Logger.Error("failed to delete album images", "error", err)
+	}
 
 	// Delete all albums
-	deletedAlbums, _ := h.Client.Album.Delete().
+	deletedAlbums, err := h.Client.Album.Delete().
 		Where(album.HasUserWith(user.ID(u.ID))).
 		Exec(ctx)
+	if err != nil {
+		h.Logger.Error("failed to delete albums", "error", err)
+	}
 
 	// Delete all artist images
-	h.Client.ArtistImage.Delete().
+	if _, err := h.Client.ArtistImage.Delete().
 		Where(artistimage.HasArtistWith(artist.HasUserWith(user.ID(u.ID)))).
-		Exec(ctx)
+		Exec(ctx); err != nil {
+		h.Logger.Error("failed to delete artist images", "error", err)
+	}
 
 	// Delete all artists
-	deletedArtists, _ := h.Client.Artist.Delete().
+	deletedArtists, err := h.Client.Artist.Delete().
 		Where(artist.HasUserWith(user.ID(u.ID))).
 		Exec(ctx)
+	if err != nil {
+		h.Logger.Error("failed to delete artists", "error", err)
+	}
 
 	h.Logger.Info("reset all data for user",
 		"username", u.Username,

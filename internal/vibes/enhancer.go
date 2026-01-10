@@ -503,7 +503,7 @@ func (e *PlaylistEnhancer) callOpenAI(ctx context.Context, prompt string) (strin
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -602,7 +602,11 @@ func (e *PlaylistEnhancer) buildResult(ctx context.Context, aiResp *EnhancementA
 		}
 
 		prefix := matches[1]
-		id, _ := strconv.Atoi(matches[2])
+		id, err := strconv.Atoi(matches[2])
+		if err != nil {
+			e.logger.Debug("failed to parse track ID", "id_string", matches[2], "error", err)
+			continue
+		}
 
 		if prefix == "EXISTING" {
 			if t, ok := existingByID[id]; ok {
@@ -627,7 +631,12 @@ func (e *PlaylistEnhancer) buildResult(ctx context.Context, aiResp *EnhancementA
 		matches := idRegex.FindStringSubmatch(nt.ID)
 		var id int
 		if matches != nil && matches[1] == "ADD" {
-			id, _ = strconv.Atoi(matches[2])
+			var err error
+			id, err = strconv.Atoi(matches[2])
+			if err != nil {
+				e.logger.Debug("failed to parse ADD track ID", "id", nt.ID, "error", err)
+				continue
+			}
 		} else if numID, err := strconv.Atoi(nt.ID); err == nil {
 			id = numID
 		}

@@ -372,7 +372,7 @@ func (e *Enricher) callOpenAI(ctx context.Context, prompt string, images []strin
 		e.logger.Error("OpenAI request failed", "error", err)
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -409,7 +409,7 @@ func (e *Enricher) loadImageAsBase64(imagePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open image: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	img, _, err := image.Decode(file)
 	if err != nil {

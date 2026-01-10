@@ -88,7 +88,7 @@ func (e *Enricher) doRequest(ctx context.Context, method string, params url.Valu
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Last.fm API returned status %d", resp.StatusCode)
@@ -513,7 +513,9 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 
 	// Parse duration (Last.fm returns milliseconds as string)
 	var durationMs int
-	fmt.Sscanf(response.Track.Duration, "%d", &durationMs)
+	if _, err := fmt.Sscanf(response.Track.Duration, "%d", &durationMs); err != nil {
+		e.logger.Debug("failed to parse track duration", "duration", response.Track.Duration, "error", err)
+	}
 
 	result := &enrichers.TrackData{
 		Tags: tags,

@@ -256,8 +256,10 @@ func (g *MixtapeGenerator) loadSeedData(ctx context.Context, req *GenerationRequ
 		if err == nil {
 			req.Seed.Album = album
 			// Load artist
-			albumArtist, _ := album.QueryArtist().Only(ctx)
-			if albumArtist != nil {
+			albumArtist, err := album.QueryArtist().Only(ctx)
+			if err != nil {
+				g.logger.Debug("failed to load album artist", "album_id", album.ID, "error", err)
+			} else if albumArtist != nil {
 				_ = albumArtist // Album already has artist info we need
 			}
 		}
@@ -645,7 +647,7 @@ func (g *MixtapeGenerator) callOpenAI(ctx context.Context, prompt string) (strin
 		g.logger.Error("OpenAI request failed", "error", err)
 		return "", 0, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

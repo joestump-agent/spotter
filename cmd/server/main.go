@@ -66,7 +66,7 @@ func main() {
 		logger.Error("failed to connect to database", "error", err)
 		os.Exit(1)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Initialize Event Bus
 	bus := events.NewBus()

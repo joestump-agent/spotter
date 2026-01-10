@@ -23,7 +23,7 @@ func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client,
 
 	// Run the auto migration tool.
 	if err := client.Schema.Create(context.Background()); err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, fmt.Errorf("failed creating schema resources: %v", err)
 	}
 

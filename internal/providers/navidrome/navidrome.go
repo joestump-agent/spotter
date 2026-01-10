@@ -111,7 +111,7 @@ func (p *Provider) authenticateInternalAPI(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute login request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("navidrome login failed with status: %d", resp.StatusCode)
@@ -160,7 +160,7 @@ func (p *Provider) getRecentlyPlayedFromInternalAPI(ctx context.Context, since t
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		// Token might be expired, clear it and return error to fall back
@@ -266,7 +266,7 @@ func (p *Provider) getNowPlayingFromSubsonic(ctx context.Context, since time.Tim
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("navidrome API returned status: %d", resp.StatusCode)
@@ -372,7 +372,7 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("navidrome API returned status: %d", resp.StatusCode)
@@ -480,7 +480,7 @@ func (p *Provider) getPlaylistTracks(ctx context.Context, playlistID string) (tr
 		p.logger.Debug("failed to fetch playlist details", "error", err)
 		return nil, 0, 0
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		p.logger.Debug("navidrome API returned non-OK status for playlist details", "status", resp.StatusCode)
@@ -606,7 +606,7 @@ func (p *Provider) SyncPlaylist(ctx context.Context, playlist providers.SyncPlay
 			"error", err)
 		return "", fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	p.logger.Debug("received navidrome API response",
 		"status_code", resp.StatusCode,
@@ -687,7 +687,7 @@ func (p *Provider) updatePlaylistMetadata(ctx context.Context, playlistID, name,
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("navidrome API returned status: %d", resp.StatusCode)
@@ -752,7 +752,7 @@ func (p *Provider) DeletePlaylist(ctx context.Context, remotePlaylistID string) 
 			"error", err)
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	p.logger.Debug("received navidrome API response",
 		"status_code", resp.StatusCode,
@@ -861,7 +861,7 @@ func (p *Provider) UpdatePlaylistTracks(ctx context.Context, remotePlaylistID st
 			"error", err)
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	p.logger.Debug("received navidrome API response",
 		"status_code", resp.StatusCode,

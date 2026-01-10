@@ -79,7 +79,7 @@ func generateToken(password, salt string) string {
 // generateSalt creates a random salt for Subsonic API authentication.
 func generateSalt() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
@@ -111,7 +111,7 @@ func (e *Enricher) doRequest(ctx context.Context, method string, params url.Valu
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Navidrome API returned status %d", resp.StatusCode)
