@@ -11,7 +11,6 @@ import (
 	"spotter/ent/enttest"
 	"spotter/ent/track"
 	"spotter/ent/user"
-	"spotter/internal/enrichers"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
@@ -446,50 +445,6 @@ func TestTrackQueryIncludesAIEnrichmentCriteria(t *testing.T) {
 
 	assert.True(t, trackIDs[track1.ID], "Track with nil LastAiEnrichedAt should be included")
 	assert.True(t, trackIDs[track2.ID], "Track with old LastAiEnrichedAt should be included")
-}
-
-// mockAIEnricher is a mock enricher for testing
-type mockAIEnricher struct {
-	enrichArtistCalled bool
-	enrichAlbumCalled  bool
-	enrichTrackCalled  bool
-}
-
-func (m *mockAIEnricher) Type() enrichers.Type { return enrichers.TypeOpenAI }
-func (m *mockAIEnricher) Name() string         { return "MockAI" }
-func (m *mockAIEnricher) IsAvailable() bool    { return true }
-
-func (m *mockAIEnricher) EnrichArtist(ctx context.Context, art *ent.Artist) (*enrichers.ArtistData, error) {
-	m.enrichArtistCalled = true
-	return &enrichers.ArtistData{
-		AISummary:   "Test AI summary",
-		AIBiography: "Test AI biography",
-		AITags:      []string{"ai-tag-1", "ai-tag-2"},
-	}, nil
-}
-
-func (m *mockAIEnricher) GetArtistImages(ctx context.Context, art *ent.Artist) ([]enrichers.ImageData, error) {
-	return nil, nil
-}
-
-func (m *mockAIEnricher) EnrichAlbum(ctx context.Context, alb *ent.Album) (*enrichers.AlbumData, error) {
-	m.enrichAlbumCalled = true
-	return &enrichers.AlbumData{
-		AISummary: "Test album AI summary",
-		AITags:    []string{"album-ai-tag"},
-	}, nil
-}
-
-func (m *mockAIEnricher) GetAlbumImages(ctx context.Context, alb *ent.Album) ([]enrichers.ImageData, error) {
-	return nil, nil
-}
-
-func (m *mockAIEnricher) EnrichTrack(ctx context.Context, tr *ent.Track) (*enrichers.TrackData, error) {
-	m.enrichTrackCalled = true
-	return &enrichers.TrackData{
-		AISummary: "Test track AI summary",
-		AITags:    []string{"track-ai-tag"},
-	}, nil
 }
 
 // TestAIEnrichmentFieldsAreSaved verifies that AI enrichment data is properly saved to the database.

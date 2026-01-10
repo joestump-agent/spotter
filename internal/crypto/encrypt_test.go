@@ -138,7 +138,7 @@ func TestDecryptInvalid(t *testing.T) {
 	}{
 		{"empty string", "", false}, // Empty is allowed
 		{"not base64", "not-base64-data!@#", true},
-		{"too short", "YWJj", true},                        // "abc" in base64, too short for GCM
+		{"too short", "YWJj", true},                             // "abc" in base64, too short for GCM
 		{"random base64", "YWJjZGVmZ2hpamtsbW5vcHFyc3Q=", true}, // Valid base64 but invalid ciphertext
 	}
 

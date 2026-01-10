@@ -1,7 +1,5 @@
 package lidarr
 
-import "strconv"
-
 import (
 	"bytes"
 	"context"
@@ -11,13 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strings"
-	"time"
-
 	"spotter/ent"
 	"spotter/ent/syncevent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type Enricher struct {
@@ -284,11 +282,9 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 		}, nil
 	}
 
-	status := "missing"
+	status := "monitored"
 	if lTrack.HasFile {
 		status = "available"
-	} else {
-		status = "monitored"
 	}
 
 	if track.LidarrID == nil {

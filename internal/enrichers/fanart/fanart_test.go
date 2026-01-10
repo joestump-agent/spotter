@@ -139,11 +139,10 @@ func TestGetArtistImages_Success(t *testing.T) {
 	}
 
 	artistEnricher := enricher.(enrichers.ArtistEnricher)
-	images, err := artistEnricher.GetArtistImages(context.Background(), artist)
+	_, _ = artistEnricher.GetArtistImages(context.Background(), artist)
 
 	// This will fail in actual execution due to hardcoded baseURL
 	// but demonstrates the test structure
-	_ = images
 	_ = e
 }
 

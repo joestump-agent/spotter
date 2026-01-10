@@ -2,8 +2,6 @@ package lastfm
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -589,27 +587,4 @@ func imageSizeFromLastFM(size string) (width, height int) {
 	default:
 		return 0, 0
 	}
-}
-
-// generateAPISignature creates an API signature for authenticated requests.
-// Not currently used but included for potential future write operations.
-func (e *Enricher) generateAPISignature(params map[string]string) string {
-	// Sort parameter names
-	keys := make([]string, 0, len(params))
-	for k := range params {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	// Build signature string
-	var sig strings.Builder
-	for _, k := range keys {
-		sig.WriteString(k)
-		sig.WriteString(params[k])
-	}
-	sig.WriteString(e.sharedSecret)
-
-	// MD5 hash
-	hash := md5.Sum([]byte(sig.String()))
-	return hex.EncodeToString(hash[:])
 }
