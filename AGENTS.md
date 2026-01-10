@@ -288,6 +288,7 @@ This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get sta
 2. 🏷️ **3-5 Labels** - Including exactly ONE work category label (feature/research/toil/cleanup/refactor/other)
 3. 📝 **Markdown Formatting** - All file names, paths, code, and commands MUST use backticks (`` `code` ``)
 4. 😊 **Optional Emojis** - Use 2-3 emojis per bead for clarity (don't overdo it)
+5. 🔍 **Research Beads** - MUST NOT mutate code; ONLY generate new beads with actionable work items
 
 **Example label usage:**
 ```bash
@@ -469,6 +470,9 @@ Comments create a timeline of progress. Notes are evergreen reference material.
 **All beads MUST be labeled with exactly one category:**
 - **feature** - New functionality or capability
 - **research** - Investigation, exploration, or proof-of-concept
+  - ⚠️ **CRITICAL**: Research beads MUST NOT mutate code
+  - Research beads MUST ONLY generate concrete tasks/bugs/stories for other agents
+  - Output: Create new beads with actionable work items
 - **toil** - Repetitive maintenance work (updates, migrations)
 - **cleanup** - Code quality improvements, debt reduction
 - **refactor** - Restructuring existing code without behavior changes
@@ -537,6 +541,7 @@ bd blocked                        # Show all blocked issues
 - **ALWAYS use Markdown** for file names, paths, code, and commands
 - **Include RFC 2119 acceptance criteria** in every bead
 - **Add 3-5 labels** including exactly one work category label
+- **Research beads: CREATE new beads, NEVER mutate code**
 - Add file paths and line numbers to notes (with backticks)
 - Break large work into smaller dependent beads
 - Close beads immediately when quality gates pass
@@ -546,6 +551,7 @@ bd blocked                        # Show all blocked issues
 **DON'T:**
 - Create beads for trivial one-line changes
 - Forget to add work category label (feature/research/toil/cleanup/refactor/other)
+- **Mutate code in research beads** - research generates new beads only
 - Use fewer than 3 or more than 5 labels
 - Skip RFC 2119 acceptance criteria
 - Forget Markdown formatting for code/paths/files
@@ -614,6 +620,59 @@ Related:
 
 Dependencies:
 None (crypto infrastructure already exists)
+```
+
+### Example: Research Bead
+
+**CRITICAL**: Research beads MUST NOT mutate code. Output = new beads only.
+
+```
+Title: 🔍 Audit external API usage for rate limiting and etiquette
+Type: task
+Priority: P2
+Status: open
+Labels: research, api, rate-limiting, etiquette
+
+Description:
+🔍 Audit external API usage for proper rate limiting and etiquette per AGENTS.md requirements.
+
+**APIs to audit:**
+- Spotify API
+- MusicBrainz API
+- Last.fm API
+- Fanart.tv API
+- OpenAI API
+
+**Check for:**
+- Rate limit handling (429 responses)
+- User-Agent headers
+- Respect for API quotas
+- Exponential backoff
+- Batch requests where available
+
+Acceptance Criteria:
+- All external APIs MUST be reviewed for rate limiting compliance
+- Issues found MUST be tracked as separate beads (NOT fixed in this bead)
+- Review MUST document current state for each API
+- Review MUST create actionable beads for violations
+- This bead MUST close with NO code changes
+
+Notes:
+**Files to audit:**
+- `internal/providers/spotify/spotify.go`
+- `internal/providers/lastfm/lastfm.go`
+- `internal/enrichers/musicbrainz/musicbrainz.go`
+- `internal/enrichers/fanart/fanart.go`
+- `internal/enrichers/openai/openai.go`
+
+**AGENTS.md requirements:**
+- **ERR-010**: Handle rate limit errors with appropriate delays
+- User-Agent: Set descriptive string
+- Batching: Use batch APIs (Spotify Audio Features)
+
+**Output format:**
+For each violation found, create a bead:
+- `bd create --title="Fix X rate limiting" --type=bug --priority=2 --labels="cleanup,api,rate-limiting,X"`
 ```
 
 ## Tech Stack
