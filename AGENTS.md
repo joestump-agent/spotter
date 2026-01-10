@@ -826,6 +826,208 @@ Enrichers add metadata, images, and AI-generated content to local entities.
 - **Batching**: Use batch APIs where possible (e.g., Spotify Audio Features)
 - **User Agent**: Set a descriptive User-Agent string
 
+## Linting & Code Quality
+
+Spotter uses multiple linters to enforce code quality standards across all languages and file types. **Linting is mandatory before committing code.**
+
+### Running Linters
+
+```bash
+make lint          # Run all linters (RECOMMENDED)
+make lint-go       # Go code only (golangci-lint)
+make lint-templ    # Templ templates only
+make lint-yaml     # YAML files only
+make lint-md       # Markdown documentation only
+make lint-docker   # Dockerfile only
+```
+
+**When to run linters:**
+- Before every `git commit`
+- After making code changes
+- When CI fails on linting
+- Before closing beads
+
+### Linters in Use
+
+#### 1. **golangci-lint** (Go Code)
+- **Purpose**: Meta-linter running 14+ Go linters in parallel
+- **Config**: `.golangci.yml`
+- **Enabled linters**: govet, staticcheck, errcheck, gosimple, ineffassign, unused, gofmt, goimports, misspell, revive, typecheck, goconst, unconvert, gocritic
+- **Exclusions**: Generated code (`ent/`, `*_gen.go`, `*_templ.go`)
+- **Timeout**: 5 minutes
+
+**Common issues:**
+```go
+// ❌ BAD: Unchecked error
+defer resp.Body.Close()
+
+// ✅ GOOD: Check error
+defer func() {
+    if err := resp.Body.Close(); err != nil {
+        log.Error("failed to close response body", "error", err)
+    }
+}()
+```
+
+#### 2. **templ fmt** (Templ Templates)
+- **Purpose**: Format validation for `.templ` files
+- **Config**: Built-in templ formatter
+- **Files**: All 38 `.templ` files in `internal/views/`
+- **Auto-fix**: Run `templ fmt .` (without `-fail`) to auto-format
+
+#### 3. **yamllint** (YAML Files)
+- **Purpose**: YAML syntax and formatting validation
+- **Config**: `.yamllint.yml`
+- **Standards**: 2-space indentation, 120 char line length
+- **Exclusions**: `.beads/`, `node_modules/`, `.git/`
+- **Files**: `.github/workflows/`, config files
+
+#### 4. **markdownlint** (Markdown Documentation)
+- **Purpose**: Consistent documentation formatting
+- **Config**: `.markdownlint.json`
+- **Files**: `README.md`, `AGENTS.md`, `SECURITY.md`, all `internal/*/README.md`
+- **Standards**:
+  - Line length: Disabled (too strict)
+  - Allow inline HTML: `<details>`, `<summary>`, `<br>`, `<img>`
+  - First line heading requirement: Disabled
+
+#### 5. **hadolint** (Dockerfile)
+- **Purpose**: Dockerfile best practices and security
+- **Config**: `.hadolint.yaml`
+- **Method**: Docker-based (hadolint/hadolint:latest)
+- **Threshold**: Error-level only (warnings won't fail build)
+
+### CI Integration
+
+Linting runs automatically in GitHub Actions on:
+- All pull requests to `main`
+- All pushes to `main`
+
+**CI Workflow:**
+```
+lint job (runs first)
+  ├─ Set up Go 1.24 with caching
+  ├─ Set up Node.js 20 with npm caching
+  ├─ Install dependencies (golangci-lint, templ, yamllint, markdownlint)
+  ├─ Run `make lint`
+  └─ Fail-fast on first linting error
+       ↓
+test job (requires lint to pass)
+  └─ Run `make test`
+       ↓
+build-and-push job (requires test to pass)
+  └─ Build and push Docker image
+```
+
+**If linting fails in CI:**
+1. Check the GitHub Actions log for specific errors
+2. Run `make lint` locally to reproduce
+3. Fix the issues or run auto-fixers (see below)
+4. Commit fixes and push
+
+### Auto-Fixing Linting Issues
+
+Some linters can automatically fix issues:
+
+```bash
+# Go formatting
+gofmt -w .
+go run golang.org/x/tools/cmd/goimports@latest -w .
+
+# Templ formatting
+templ fmt .
+
+# Markdown formatting (manual fixes usually required)
+# YAML formatting (manual fixes usually required)
+```
+
+**IMPORTANT:** Always run `make lint` and `make test` after auto-fixing to ensure no breakage.
+
+### Common Linting Errors
+
+**Go (errcheck):**
+```go
+// ❌ Error: Error return value not checked
+defer file.Close()
+
+// ✅ Fix: Check and handle error
+defer func() {
+    if err := file.Close(); err != nil {
+        slog.Error("failed to close file", "error", err)
+    }
+}()
+```
+
+**Go (shadow):**
+```go
+// ❌ Error: Variable shadows outer declaration
+err := someFunc()
+if err != nil {
+    err := anotherFunc()  // shadows outer err
+}
+
+// ✅ Fix: Use different variable name or check inline
+err := someFunc()
+if err != nil {
+    if err2 := anotherFunc(); err2 != nil {
+        // ...
+    }
+}
+```
+
+**YAML:**
+```yaml
+# ❌ Error: Line too long
+some_key: this is a very long value that exceeds the 120 character limit and should be wrapped
+
+# ✅ Fix: Break into multiple lines
+some_key: |
+  this is a very long value that exceeds the limit
+  and is now wrapped properly
+```
+
+**Markdown:**
+```markdown
+<!-- ❌ Error: MD033 - Inline HTML -->
+<div>Some content</div>
+
+<!-- ✅ Fix: Use allowed elements or convert to Markdown -->
+<details>
+<summary>Some content</summary>
+...
+</details>
+```
+
+### Troubleshooting
+
+**"golangci-lint not found"**
+```bash
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+```
+
+**"templ not found"**
+```bash
+go install github.com/a-h/templ/cmd/templ@latest
+```
+
+**"yamllint not found"**
+```bash
+# macOS
+brew install yamllint
+
+# Ubuntu/Debian
+pip install yamllint
+```
+
+**"markdownlint not found"**
+```bash
+npm install
+```
+
+**"Docker daemon not running" (hadolint)**
+- Start Docker Desktop
+- Or skip Docker linting locally (CI will catch it)
+
 ## Quality Gates (MANDATORY)
 
 Before running `bd close <id>` or `git commit`, ALL of the following MUST pass:
@@ -839,6 +1041,7 @@ Before running `bd close <id>` or `git commit`, ALL of the following MUST pass:
 7. **Regression Tests**: If fixing a bug, regression test MUST be written and passing
 
 **CRITICAL:**
+- Run `make lint` before EVERY `git commit`
 - Run `make test` before EVERY `git commit`
 - Run `make run` and verify application starts before EVERY `git commit`
 - Run `make lint` before EVERY `git commit`
@@ -856,6 +1059,7 @@ When ending a work session, complete ALL steps below. **Work is NOT complete unt
 
 1. **Verify quality gates** - Ensure all quality gates pass:
    ```bash
+   make lint               # MUST pass - runs all linters
    make test               # MUST pass before proceeding
    make run                # MUST start without errors (Ctrl+C to stop)
    make lint               # MUST pass before proceeding
@@ -866,6 +1070,7 @@ When ending a work session, complete ALL steps below. **Work is NOT complete unt
 3. **Close completed issues** - Run `bd close <id>` ONLY if quality gates passed
 4. **PUSH FEATURE BRANCH** - This is MANDATORY:
    ```bash
+   make lint               # MANDATORY - final linting check
    make test               # MANDATORY - final verification
    make run                # MANDATORY - verify app starts (Ctrl+C to stop)
    make lint               # MANDATORY - verify all linters pass
