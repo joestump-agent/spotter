@@ -19,6 +19,10 @@ import (
 	"spotter/internal/providers"
 )
 
+const (
+	statusFailed = "failed"
+)
+
 type Provider struct {
 	logger   *slog.Logger
 	config   *config.Config
@@ -297,7 +301,7 @@ func (p *Provider) getNowPlayingFromSubsonic(ctx context.Context, since time.Tim
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if result.SubsonicResponse.Status == "failed" {
+	if result.SubsonicResponse.Status == statusFailed {
 		return nil, fmt.Errorf("navidrome API error: %s", result.SubsonicResponse.Error.Message)
 	}
 
@@ -405,7 +409,7 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if result.SubsonicResponse.Status == "failed" {
+	if result.SubsonicResponse.Status == statusFailed {
 		return nil, fmt.Errorf("navidrome API error: %s", result.SubsonicResponse.Error.Message)
 	}
 
@@ -636,7 +640,7 @@ func (p *Provider) SyncPlaylist(ctx context.Context, playlist providers.SyncPlay
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if result.SubsonicResponse.Status == "failed" {
+	if result.SubsonicResponse.Status == statusFailed {
 		p.logger.Error("navidrome API returned error",
 			"error_code", result.SubsonicResponse.Error.Code,
 			"error_message", result.SubsonicResponse.Error.Message)
@@ -707,7 +711,7 @@ func (p *Provider) updatePlaylistMetadata(ctx context.Context, playlistID, name,
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if result.SubsonicResponse.Status == "failed" {
+	if result.SubsonicResponse.Status == statusFailed {
 		return fmt.Errorf("navidrome API error: %s", result.SubsonicResponse.Error.Message)
 	}
 
@@ -778,7 +782,7 @@ func (p *Provider) DeletePlaylist(ctx context.Context, remotePlaylistID string) 
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if result.SubsonicResponse.Status == "failed" {
+	if result.SubsonicResponse.Status == statusFailed {
 		p.logger.Error("navidrome API returned error",
 			"error_code", result.SubsonicResponse.Error.Code,
 			"error_message", result.SubsonicResponse.Error.Message)
@@ -887,7 +891,7 @@ func (p *Provider) UpdatePlaylistTracks(ctx context.Context, remotePlaylistID st
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if result.SubsonicResponse.Status == "failed" {
+	if result.SubsonicResponse.Status == statusFailed {
 		p.logger.Error("navidrome API returned error",
 			"error_code", result.SubsonicResponse.Error.Code,
 			"error_message", result.SubsonicResponse.Error.Message)

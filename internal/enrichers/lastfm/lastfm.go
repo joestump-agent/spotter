@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	baseURL = "https://ws.audioscrobbler.com/2.0/"
+	baseURL          = "https://ws.audioscrobbler.com/2.0/"
+	imageSizeXLarge  = "extralarge"
 )
 
 // Enricher implements the Last.fm metadata enricher.
@@ -320,7 +321,7 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 			Source:    "lastfm",
 			Width:     width,
 			Height:    height,
-			IsPrimary: img.Size == "extralarge",
+			IsPrimary: img.Size == imageSizeXLarge,
 		})
 	}
 
@@ -451,7 +452,7 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 			Source:    "lastfm",
 			Width:     width,
 			Height:    height,
-			IsPrimary: img.Size == "extralarge",
+			IsPrimary: img.Size == imageSizeXLarge,
 		})
 	}
 

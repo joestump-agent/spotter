@@ -17,6 +17,10 @@ import (
 	"spotter/internal/enrichers"
 )
 
+const (
+	staticSalt = "static"
+)
+
 // Enricher implements the Navidrome metadata enricher.
 // It uses the Subsonic API to fetch ID3 tags and local metadata.
 type Enricher struct {
@@ -380,7 +384,7 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 
 	// Add images from artist info
 	if coverArtID := info.SubsonicResponse.ArtistInfo.LargeImageURL; coverArtID != "" {
-		salt := "static"
+		salt := staticSalt
 		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
 			e.config.Navidrome.BaseURL,
 			coverArtID,
@@ -404,7 +408,7 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	}
 
 	if coverArtID := info.SubsonicResponse.ArtistInfo.MediumImageURL; coverArtID != "" && coverArtID != info.SubsonicResponse.ArtistInfo.LargeImageURL {
-		salt := "static"
+		salt := staticSalt
 		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
 			e.config.Navidrome.BaseURL,
 			coverArtID,
@@ -427,7 +431,7 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	}
 
 	if coverArtID := info.SubsonicResponse.ArtistInfo.SmallImageURL; coverArtID != "" && coverArtID != info.SubsonicResponse.ArtistInfo.MediumImageURL {
-		salt := "static"
+		salt := staticSalt
 		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
 			e.config.Navidrome.BaseURL,
 			coverArtID,
@@ -565,7 +569,7 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 
 	if coverArt := response.SubsonicResponse.Album.CoverArt; coverArt != "" {
 		// Build URL to fetch cover art - use user.Username from User entity
-		salt := "static"
+		salt := staticSalt
 		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
 			e.config.Navidrome.BaseURL,
 			coverArt,

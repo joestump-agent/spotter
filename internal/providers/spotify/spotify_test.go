@@ -183,8 +183,7 @@ func TestAuthenticatorImplementsInterface(t *testing.T) {
 	authenticator := authFactory()
 
 	// Check that authenticator implements the Authenticator interface
-	_, ok := authenticator.(providers.Authenticator)
-	assert.True(t, ok, "Authenticator should implement providers.Authenticator")
+	var _ providers.Authenticator = authenticator
 }
 
 func TestGetPlaylists(t *testing.T) {

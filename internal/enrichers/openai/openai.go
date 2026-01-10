@@ -37,6 +37,7 @@ func (h nopHandler) WithGroup(string) slog.Handler           { return h }
 
 const (
 	defaultTimeout = 120 * time.Second
+	defaultModel   = "gpt-4o"
 )
 
 // Enricher implements the OpenAI metadata enricher.
@@ -307,7 +308,7 @@ func (e *Enricher) callOpenAI(ctx context.Context, prompt string, images []strin
 
 	model := e.config.OpenAI.Model
 	if model == "" {
-		model = "gpt-4o"
+		model = defaultModel
 	}
 
 	e.logger.Debug("preparing OpenAI request", "base_url", baseURL, "model", model, "prompt_length", len(prompt), "image_count", len(images))
