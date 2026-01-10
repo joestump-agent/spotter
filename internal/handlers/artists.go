@@ -27,9 +27,13 @@ import (
 )
 
 const (
-	groupByDay   = "day"
-	groupByWeek  = "week"
-	groupByMonth = "month"
+	groupByDay    = "day"
+	groupByWeek   = "week"
+	groupByMonth  = "month"
+	timeframe90d  = "90d"
+	timeframe6m   = "6m"
+	timeframe1y   = "1y"
+	timeframeAll  = "all"
 )
 
 func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
@@ -348,19 +352,19 @@ func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName
 	var groupBy string
 
 	switch timeframe {
-	case "30d":
+	case timeframe30d:
 		startDate = now.AddDate(0, 0, -30)
 		groupBy = groupByDay
-	case "90d":
+	case timeframe90d:
 		startDate = now.AddDate(0, 0, -90)
 		groupBy = groupByDay
-	case "6m":
+	case timeframe6m:
 		startDate = now.AddDate(0, -6, 0)
 		groupBy = groupByWeek
-	case "1y":
+	case timeframe1y:
 		startDate = now.AddDate(-1, 0, 0)
 		groupBy = groupByMonth
-	case "all":
+	case timeframeAll:
 		startDate = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 		groupBy = groupByMonth
 	default:
