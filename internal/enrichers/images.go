@@ -66,8 +66,8 @@ func DownloadAndSaveImage(url, localPath string, logger *slog.Logger) (string, e
 
 	// Ensure the destination directory exists.
 	dir := filepath.Dir(localPath)
-	if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
-		return "", fmt.Errorf("failed to create image directory %s: %w", dir, mkdirErr)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create image directory %s: %w", dir, err)
 	}
 
 	// Create the destination file.
