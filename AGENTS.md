@@ -284,11 +284,12 @@ This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get sta
 
 **Every bead MUST meet these requirements:**
 
-1. ✅ **RFC 2119 Acceptance Criteria** - All beads MUST include acceptance criteria using RFC 2119 keywords (MUST/SHOULD/MAY)
-2. 🏷️ **3-5 Labels** - Including exactly ONE work category label (feature/research/toil/cleanup/refactor/other)
-3. 📝 **Markdown Formatting** - All file names, paths, code, and commands MUST use backticks (`` `code` ``)
-4. 😊 **Optional Emojis** - Use 2-3 emojis per bead for clarity (don't overdo it)
-5. 🔍 **Research Beads** - MUST NOT mutate code; ONLY generate new beads with actionable work items
+1. 🗂️ **Separate Fields** - Use separate fields/sections for Description, Acceptance Criteria, and Notes (DO NOT dump everything in description)
+2. ✅ **RFC 2119 Acceptance Criteria** - All beads MUST include acceptance criteria using RFC 2119 keywords (MUST/SHOULD/MAY)
+3. 🏷️ **3-5 Labels** - Including exactly ONE work category label (feature/research/toil/cleanup/refactor/other)
+4. 📝 **Markdown Formatting** - All file names, paths, code, and commands MUST use backticks (`` `code` ``)
+5. 😊 **Optional Emojis** - Use 2-3 emojis per bead for clarity (don't overdo it)
+6. 🔍 **Research Beads** - MUST NOT mutate code; ONLY generate new beads with actionable work items
 
 **Example label usage:**
 ```bash
@@ -335,6 +336,77 @@ bd sync
 
 ### Creating Quality Beads
 
+#### ⚠️ CRITICAL: Beads Have Separate Fields
+
+**Beads have FOUR separate fields. Each field serves a specific purpose. DO NOT dump everything into the description field.**
+
+**The Four Fields (Separate Sections in Bead Data):**
+
+1. **Description** (shown when you run `bd show <id>`)
+   - **Purpose**: Brief summary of the problem and why it matters
+   - **Content**: What needs to be done, why it's needed, context (2-4 paragraphs)
+   - **May include**: Brief mention of approaches if relevant to problem understanding
+   - **Example**: "OAuth tokens stored in plaintext. This violates AUTH-008 and creates security risk."
+
+2. **Acceptance Criteria** (separate section in bead, use markdown headers in description)
+   - **Purpose**: RFC 2119 requirements that define "done"
+   - **Content**: MUST/SHOULD/MAY statements as bulleted list
+   - **Example**: "- System MUST encrypt tokens using AES-256-GCM\n- All tests MUST pass"
+
+3. **Notes** (separate section in bead for static reference material)
+   - **Purpose**: File paths, line numbers, related issues, libraries
+   - **Content**: Organized reference material (files, symbols, links)
+   - **Example**: "Files:\n- `ent/schema/spotifyauth.go:21-23`\n\nRelated: spotter-ahw"
+
+4. **Design** (optional section in description or notes for implementation approach)
+   - **Purpose**: How you plan to implement the solution
+   - **Content**: Approaches considered, recommendation, architecture notes
+   - **Example**: "Approach: Use Ent hooks (same as NavidromeAuth pattern at line 33-67)"
+
+**WRONG - Everything Dumped Together:**
+```bash
+bd create --title "Fix encryption" \
+  --description "OAuth tokens not encrypted. Files are spotifyauth.go line 21 and \
+lastfmauth.go. Use hooks from navidromeauth.go lines 33-67. Must encrypt with AES-256. \
+Should auto-decrypt on query. Related to spotter-ahw. Could use handler-level or hooks \
+or app-level but hooks is best because..."
+# ❌ This is a mess! Problem, solution, files, and requirements all jumbled together.
+```
+
+**RIGHT - Well-Organized with Sections:**
+```bash
+bd create --title "🔒 Encrypt OAuth tokens at rest" \
+  --type bug --priority 1 \
+  --labels "security,database,auth,cleanup" \
+  --description "$(cat <<'EOF'
+OAuth tokens stored in plaintext in SpotifyAuth and LastFMAuth tables. Should be
+encrypted per AUTH-008 requirement. Currently vulnerable if database is compromised.
+
+## Acceptance Criteria
+- System MUST encrypt access_token and refresh_token using AES-256-GCM
+- System MUST automatically decrypt tokens on query
+- Backward compatibility MUST be maintained (plaintext → encrypted migration)
+- All tests MUST pass
+
+## Notes
+Files:
+- `ent/schema/spotifyauth.go:21-23` - Fields to encrypt
+- `internal/database/hooks.go:33-67` - NavidromeAuth pattern (reference)
+
+Related: spotter-ahw
+EOF
+)"
+# ✅ Clear sections! Problem, acceptance criteria, and notes are separate and organized.
+```
+
+**Why This Matters:**
+- **Readability**: Each field has a clear purpose, easy to scan
+- **Organization**: Design doesn't clutter the problem statement
+- **Maintenance**: Notes can be updated without touching description
+- **Tooling**: bd can format/display fields appropriately
+
+**ALWAYS use separate fields. NEVER dump everything into description.**
+
 #### When to Create a Bead
 
 Create beads for:
@@ -351,9 +423,9 @@ Do NOT create beads for:
 - Work you can complete in the current session
 - Temporary reminders (use TodoWrite for single-session tasks)
 
-#### 1. Outline Multiple Approaches
+#### 1. Outline Multiple Approaches (in Description Field)
 
-Before creating a bead, consider 2-3 viable implementation approaches that comply with AGENTS.md requirements. Include in the description or notes.
+Before creating a bead, consider 2-3 viable implementation approaches that comply with AGENTS.md requirements. Include these in the **description field** as a separate markdown section (e.g., "## Approaches"). Keep the problem statement and approaches logically separated.
 
 **Example:**
 ```
@@ -401,9 +473,9 @@ Acceptance Criteria:
 - All tests MUST pass including backward compatibility tests
 ```
 
-#### 3. Use Notes for Context (Not Updates)
+#### 3. Use Notes for Context (Not Updates) - Separate Field
 
-Notes should contain **static reference material**:
+Notes is a **separate field** from Description. When you run `bd show <id>`, Notes appears in its own section. Notes should contain **static reference material**:
 - Relevant file paths and line numbers
 - Key symbols, functions, classes involved
 - Library choices and rationale
@@ -538,6 +610,7 @@ bd blocked                        # Show all blocked issues
 
 **DO:**
 - Create beads proactively when discovering new work
+- **Use SEPARATE fields** for description, design, notes, and acceptance criteria
 - **ALWAYS use Markdown** for file names, paths, code, and commands
 - **Include RFC 2119 acceptance criteria** in every bead
 - **Add 3-5 labels** including exactly one work category label
@@ -550,6 +623,7 @@ bd blocked                        # Show all blocked issues
 
 **DON'T:**
 - Create beads for trivial one-line changes
+- **Dump everything into the description field** - use separate fields!
 - Forget to add work category label (feature/research/toil/cleanup/refactor/other)
 - **Mutate code in research beads** - research generates new beads only
 - Use fewer than 3 or more than 5 labels
