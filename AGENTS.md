@@ -872,7 +872,6 @@ When ending a work session, complete ALL steps below. **Work is NOT complete unt
 7. **Hand off** - Provide context for next session
 
 **CRITICAL RULES:**
-- **🔐 NEVER DISABLE GPG SIGNING** - NEVER use `--no-gpg-sign` or `commit.gpgSign=false` under ANY circumstances
 - **ALWAYS run `make test` before EVERY `git commit` and `git push`**
 - Work is NOT complete until feature branch is pushed
 - NEVER stop before pushing - that leaves work stranded locally

@@ -45,8 +45,8 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 	// Get page number from query
 	page := 1
 	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if pageNum, parseErr := strconv.Atoi(pageStr); parseErr == nil && pageNum > 0 {
-			page = pageNum
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
 		}
 	}
 
