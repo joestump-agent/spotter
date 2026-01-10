@@ -31,7 +31,10 @@ func generateState() (string, error) {
 func (h *Handler) SpotifyLogin(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		h.Logger.Error("Spotify login: no user in session",
+			"path", r.URL.Path,
+			"remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=session_required", http.StatusSeeOther)
 		return
 	}
 
@@ -50,7 +53,18 @@ func (h *Handler) SpotifyLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store state in cookie
+	// Encrypt user ID to embed in state for session recovery
+	encryptedUserID, err := h.Encryptor.EncryptInt(u.ID)
+	if err != nil {
+		h.Logger.Error("failed to encrypt user ID for OAuth state", "error", err, "username", u.Username)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Combine state and encrypted user ID (format: "state:encrypted_user_id")
+	stateWithSession := fmt.Sprintf("%s:%s", state, encryptedUserID)
+
+	// Store state in cookie for validation (without encrypted user ID)
 	http.SetCookie(w, &http.Cookie{
 		Name:     spotifyStateCookie,
 		Value:    state,
@@ -61,42 +75,88 @@ func (h *Handler) SpotifyLogin(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Now().Add(spotifyStateTTL),
 	})
 
-	// Create authenticator and get auth URL
+	// Create authenticator and get auth URL with state containing session info
 	authFactory := spotify.NewAuthenticator(h.Logger, h.Config)
 	authenticator := authFactory()
-	authURL := authenticator.GetAuthURL(state)
+	authURL := authenticator.GetAuthURL(stateWithSession)
 
-	h.Logger.Info("redirecting user to Spotify OAuth", "username", u.Username)
+	h.Logger.Info("redirecting user to Spotify OAuth", "username", u.Username, "user_id", u.ID)
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 
 // SpotifyCallback handles the OAuth callback from Spotify.
 func (h *Handler) SpotifyCallback(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
-	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-
 	// Check for error from Spotify
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
-		h.Logger.Warn("Spotify OAuth error", "error", errParam, "username", u.Username)
+		h.Logger.Warn("Spotify OAuth error", "error", errParam, "remote_ip", r.RemoteAddr)
 		http.Redirect(w, r, "/preferences/providers?error=spotify_denied", http.StatusSeeOther)
 		return
 	}
 
-	// Verify state
-	stateCookie, err := r.Cookie(spotifyStateCookie)
-	if err != nil {
-		h.Logger.Warn("missing OAuth state cookie", "error", err)
-		http.Redirect(w, r, "/preferences/providers?error=invalid_state", http.StatusSeeOther)
+	// Get state parameter from URL (format: "state:encrypted_user_id")
+	stateParam := r.URL.Query().Get("state")
+	if stateParam == "" {
+		h.Logger.Error("Spotify callback: missing state parameter", "remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=invalid_state", http.StatusSeeOther)
 		return
 	}
 
-	stateParam := r.URL.Query().Get("state")
-	if stateParam == "" || stateParam != stateCookie.Value {
-		h.Logger.Warn("OAuth state mismatch", "expected", stateCookie.Value, "got", stateParam)
-		http.Redirect(w, r, "/preferences/providers?error=invalid_state", http.StatusSeeOther)
+	// Parse state to extract CSRF token and encrypted user ID
+	parts := fmt.Sprintf("%s", stateParam)
+	colonIdx := -1
+	for i := len(parts) - 1; i >= 0; i-- {
+		if parts[i] == ':' {
+			colonIdx = i
+			break
+		}
+	}
+
+	if colonIdx == -1 {
+		h.Logger.Error("Spotify callback: invalid state format (missing colon)", "remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=invalid_state", http.StatusSeeOther)
+		return
+	}
+
+	csrfState := stateParam[:colonIdx]
+	encryptedUserID := stateParam[colonIdx+1:]
+
+	// Verify CSRF state against cookie
+	stateCookie, err := r.Cookie(spotifyStateCookie)
+	if err != nil {
+		h.Logger.Warn("Spotify callback: missing OAuth state cookie", "error", err, "remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=session_expired", http.StatusSeeOther)
+		return
+	}
+
+	if csrfState != stateCookie.Value {
+		h.Logger.Warn("Spotify callback: OAuth state mismatch",
+			"expected", stateCookie.Value,
+			"got", csrfState,
+			"remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=invalid_state", http.StatusSeeOther)
+		return
+	}
+
+	// Decrypt user ID from state
+	userID, err := h.Encryptor.DecryptInt(encryptedUserID)
+	if err != nil {
+		h.Logger.Error("Spotify callback: failed to decrypt user ID from state",
+			"error", err,
+			"remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=session_expired", http.StatusSeeOther)
+		return
+	}
+
+	// Load user from database
+	u, err := h.Client.User.Query().
+		Where(user.ID(userID)).
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("Spotify callback: failed to load user from database",
+			"error", err,
+			"user_id", userID,
+			"remote_ip", r.RemoteAddr)
+		http.Redirect(w, r, "/auth/login?error=session_expired", http.StatusSeeOther)
 		return
 	}
 

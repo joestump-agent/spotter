@@ -16,6 +16,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/events"
 	"spotter/internal/handlers"
+	"spotter/internal/crypto"
 	"spotter/internal/services"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -39,7 +40,8 @@ func TestLogin_Get(t *testing.T) {
 	cfg := &config.Config{}
 	bus := events.NewBus()
 	syncer := services.NewSyncer(client, cfg, logger, bus)
-	h := handlers.New(client, cfg, logger, syncer, nil, nil, nil, nil, nil, bus)
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	h := handlers.New(client, cfg, logger, encryptor, syncer, nil, nil, nil, nil, nil, bus)
 
 	req := httptest.NewRequest("GET", "/auth/login", nil)
 	w := httptest.NewRecorder()
@@ -77,7 +79,8 @@ func TestPostLogin_Success(t *testing.T) {
 	cfg.Navidrome.BaseURL = ts.URL
 	bus := events.NewBus()
 	syncer := services.NewSyncer(client, cfg, logger, bus)
-	h := handlers.New(client, cfg, logger, syncer, nil, nil, nil, nil, nil, bus)
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	h := handlers.New(client, cfg, logger, encryptor, syncer, nil, nil, nil, nil, nil, bus)
 
 	// 3. Request
 	form := url.Values{}
@@ -136,7 +139,8 @@ func TestPostLogin_InvalidCredentials(t *testing.T) {
 	cfg.Navidrome.BaseURL = ts.URL
 	bus := events.NewBus()
 	syncer := services.NewSyncer(client, cfg, logger, bus)
-	h := handlers.New(client, cfg, logger, syncer, nil, nil, nil, nil, nil, bus)
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	h := handlers.New(client, cfg, logger, encryptor, syncer, nil, nil, nil, nil, nil, bus)
 
 	// 3. Request
 	form := url.Values{}

@@ -825,16 +825,19 @@ Enrichers add metadata, images, and AI-generated content to local entities.
 Before running `bd close <id>` or `git commit`, ALL of the following MUST pass:
 
 1. **Tests**: `make test` - All tests MUST pass
-2. **Linters**: Code passes all linter checks
-3. **Build**: Project builds successfully
-4. **Code Generation**: Run `go generate ./ent` if schema changed
-5. **Standards**: Code follows all standards above (error handling, context, testing, etc.)
+2. **Development Server**: `make run` - Application MUST start without errors
+3. **Linters**: `make lint` - All linters MUST pass
+4. **Build**: `make build` - Project MUST build successfully
+5. **Code Generation**: Run `go generate ./ent` if schema changed
+6. **Standards**: Code follows all standards above (error handling, context, testing, etc.)
 
 **CRITICAL:**
 - Run `make test` before EVERY `git commit`
+- Run `make run` and verify application starts before EVERY `git commit`
+- Run `make lint` before EVERY `git commit`
 - Run `make test` before EVERY `git push`
 - DO NOT close beads until quality gates pass
-- DO NOT commit code that breaks tests
+- DO NOT commit code that breaks tests, linting, or fails to start
 
 ## Completing Work (Landing the Plane)
 
@@ -846,14 +849,18 @@ When ending a work session, complete ALL steps below. **Work is NOT complete unt
 1. **Verify quality gates** - Ensure all quality gates pass:
    ```bash
    make test               # MUST pass before proceeding
+   make run                # MUST start without errors (Ctrl+C to stop)
+   make lint               # MUST pass before proceeding
+   make build              # MUST build successfully
    go generate ./ent       # If schema changed
-   # Run any linters
    ```
 2. **File issues for remaining work** - Create beads for anything that needs follow-up
 3. **Close completed issues** - Run `bd close <id>` ONLY if quality gates passed
 4. **PUSH FEATURE BRANCH** - This is MANDATORY:
    ```bash
    make test               # MANDATORY - final verification
+   make run                # MANDATORY - verify app starts (Ctrl+C to stop)
+   make lint               # MANDATORY - verify all linters pass
    git status              # Verify clean working tree
    git push -u origin bead/<id>  # Push feature branch to remote
    bd sync                 # Sync beads metadata
@@ -872,13 +879,14 @@ When ending a work session, complete ALL steps below. **Work is NOT complete unt
 7. **Hand off** - Provide context for next session
 
 **CRITICAL RULES:**
-- **ALWAYS run `make test` before EVERY `git commit` and `git push`**
+- **ALWAYS run `make test`, `make run`, and `make lint` before EVERY `git commit` and `git push`**
+- **ALWAYS verify `make run` starts the application without errors**
 - Work is NOT complete until feature branch is pushed
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 - DO NOT close beads unless ALL quality gates have passed
-- DO NOT commit or push code that breaks tests
+- DO NOT commit or push code that breaks tests, linting, or fails to start
 - ALWAYS create feature branch `bead/<id>` from `main` before starting work
 - DO NOT work directly on `main` or long-lived branches
 

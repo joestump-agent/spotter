@@ -7,6 +7,7 @@ import (
 
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/crypto"
 	"spotter/internal/events"
 	"spotter/internal/services"
 	"spotter/internal/vibes"
@@ -22,6 +23,7 @@ type Handler struct {
 	Client            *ent.Client
 	Config            *config.Config
 	Logger            *slog.Logger
+	Encryptor         *crypto.Encryptor
 	Syncer            *services.Syncer
 	MetadataSvc       *services.MetadataService
 	PlaylistSyncSvc   *services.PlaylistSyncService
@@ -31,11 +33,12 @@ type Handler struct {
 	Bus               *events.Bus
 }
 
-func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, mixtapeGen *vibes.MixtapeGenerator, playlistEnhancer *vibes.PlaylistEnhancer, similarArtistsSvc *services.SimilarArtistsService, bus *events.Bus) *Handler {
+func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, encryptor *crypto.Encryptor, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, mixtapeGen *vibes.MixtapeGenerator, playlistEnhancer *vibes.PlaylistEnhancer, similarArtistsSvc *services.SimilarArtistsService, bus *events.Bus) *Handler {
 	return &Handler{
 		Client:            client,
 		Config:            cfg,
 		Logger:            logger,
+		Encryptor:         encryptor,
 		Syncer:            syncer,
 		MetadataSvc:       metadataSvc,
 		PlaylistSyncSvc:   playlistSyncSvc,
