@@ -1691,29 +1691,6 @@ func uniqueStrings(s []string) []string {
 	return result
 }
 
-// sanitizeFilename makes a string safe for use as a filename.
-func sanitizeFilename(s string) string {
-	// Replace problematic characters
-	replacer := strings.NewReplacer(
-		"/", "_",
-		"\\", "_",
-		":", "_",
-		"*", "_",
-		"?", "_",
-		"\"", "_",
-		"<", "_",
-		">", "_",
-		"|", "_",
-	)
-	s = replacer.Replace(s)
-	// Trim whitespace
-	s = strings.TrimSpace(s)
-	// Limit length
-	if len(s) > 100 {
-		s = s[:100]
-	}
-	return s
-}
 
 // getImageExtension extracts the file extension from a URL.
 func getImageExtension(url string) string {
