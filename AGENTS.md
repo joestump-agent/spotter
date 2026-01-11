@@ -821,41 +821,9 @@ npm run deploy
 
 ### Documentation Linting
 
-Documentation is validated in two ways:
+Documentation markdown is linted by `make lint-md`. The `.markdownlint.json` config is set up for Docusaurus compatibility.
 
-1. **Markdown linting** (`make lint-md`) - Enforces consistent formatting
-2. **Docusaurus build** (`make lint-docs`) - Validates links and structure
-
-Both run automatically as part of `make lint`.
-
-**Running documentation checks:**
-```bash
-make lint          # Run all linters including docs build
-make lint-md       # Markdown formatting only
-make lint-docs     # Docusaurus build only (catches broken links)
-```
-
-**Before submitting PRs that touch `website/`:**
-```bash
-cd website && npm run build   # Or: make lint-docs
-```
-
-The Docusaurus build will **fail on broken links** (`onBrokenLinks: 'throw'` in config).
-
-**Common link patterns and pitfalls:**
-
-| Pattern | Correct | Incorrect |
-|---------|---------|-----------|
-| Internal docs | `/docs/getting-started/installation` | `/docs/getting-started` (missing page) |
-| Section links | `/docs/features/themes` | `/docs/configuration` (wrong path) |
-| Relative links | `./configuration` | `../configuration` (wrong level) |
-
-**Common link errors:**
-- Missing `/installation` or `/configuration` suffix on getting-started links
-- Linking to category folders instead of actual pages
-- Typos in document slugs
-
-**Markdown formatting fixes:**
+**Common fixes:**
 - Use allowed HTML elements (details, summary, div, span)
 - Avoid inline HTML when possible
 - Add blank lines around code blocks

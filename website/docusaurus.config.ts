@@ -93,11 +93,11 @@ const config: Config = {
           items: [
             {
               label: 'Getting Started',
-              to: '/docs/getting-started/installation',
+              to: '/docs/getting-started',
             },
             {
               label: 'Configuration',
-              to: '/docs/getting-started/configuration',
+              to: '/docs/configuration',
             },
           ],
         },
