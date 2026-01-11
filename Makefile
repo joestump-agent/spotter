@@ -6,7 +6,7 @@ endif
 BINARY_NAME=spotter-server
 MAIN_PATH=./cmd/server/main.go
 
-.PHONY: all help deps ci-deps docker-deps generate css build build-binary run dev test test-coverage lint lint-docker lint-go lint-md lint-templ lint-yaml clean docker-build docker-run docs-deps docs-build docs-serve docs-clean
+.PHONY: all help deps ci-deps docker-deps generate css build build-binary run dev test test-coverage lint lint-docker lint-docs lint-go lint-md lint-templ lint-yaml clean docker-build docker-run docs-deps docs-build docs-serve docs-clean
 
 all: build
 
@@ -111,6 +111,9 @@ lint: ## Run all linters
 	@echo "→ Dockerfile..."
 	@$(MAKE) lint-docker
 	@echo ""
+	@echo "→ Documentation (Docusaurus build)..."
+	@$(MAKE) lint-docs
+	@echo ""
 	@echo "✓ All linters passed"
 
 lint-yaml: ## Run yamllint on YAML files
@@ -132,6 +135,11 @@ lint-md: ## Run markdownlint on Markdown files
 	@echo "Linting Markdown files..."
 	@npx markdownlint "**/*.md" --ignore node_modules --ignore .beads --ignore "website/node_modules"
 	@echo "✓ Markdown linting passed"
+
+lint-docs: ## Build Docusaurus docs (checks for broken links)
+	@echo "Building documentation to check for broken links..."
+	@cd website && npm run build
+	@echo "✓ Documentation build passed"
 
 lint-go: generate ## Run golangci-lint on Go code
 	@echo "Running golangci-lint..."
