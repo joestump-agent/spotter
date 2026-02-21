@@ -19,6 +19,7 @@ const (
 )
 
 // LastFMLogin initiates the Last.fm authentication flow.
+// Governing: ADR-0005 (Navidrome primary identity), ADR-0006 (AES-256-GCM), ADR-0007 (event bus), SPEC user-authentication REQ "LASTFM-001" through "LASTFM-004"
 func (h *Handler) LastFMLogin(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -75,6 +76,7 @@ func (h *Handler) LastFMLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // LastFMCallback handles the callback from Last.fm.
+// Governing: ADR-0005, ADR-0006 (AES-256-GCM), ADR-0007 (event bus), SPEC user-authentication REQ "LASTFM-005", REQ "LASTFM-006"
 func (h *Handler) LastFMCallback(w http.ResponseWriter, r *http.Request) {
 	// Get authorization token
 	token := r.URL.Query().Get("token")
