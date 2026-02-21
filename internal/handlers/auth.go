@@ -25,6 +25,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
+	// Governing: ADR-0005 (Navidrome primary identity), ADR-0006 (AES-256-GCM), ADR-0002 (Chi router), SPEC user-authentication REQ "Navidrome Login Flow"
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
@@ -137,6 +138,7 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Governing: SPEC user-authentication REQ "SESSION-002", REQ "SESSION-003"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "spotter_user",
 		Value:    "",
@@ -150,6 +152,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) authenticateNavidrome(username, password string) error {
+	// Governing: ADR-0005 (Navidrome primary identity), SPEC user-authentication REQ "AUTH-005", REQ "AUTH-006"
 	baseURL := h.Config.Navidrome.BaseURL
 	if baseURL == "" {
 		// If base URL is not set, we might want to fail or allow bypass for dev?
