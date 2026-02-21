@@ -35,6 +35,9 @@ jobs:
       - name: Install Node dependencies
         run: npm install
 
+      - name: Install documentation dependencies
+        run: cd website && npm install
+
       - name: Install yamllint
         run: pip install yamllint
 
