@@ -73,6 +73,7 @@ func (h *Handler) Render(w http.ResponseWriter, r *http.Request, component templ
 	}
 }
 
+// Governing: SPEC user-authentication REQ "MIDDLEWARE-005"
 func (h *Handler) GetUser(ctx context.Context) *ent.User {
 	u, ok := ctx.Value(UserContextKey).(*ent.User)
 	if !ok {
