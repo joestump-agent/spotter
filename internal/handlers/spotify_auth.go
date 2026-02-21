@@ -1,3 +1,4 @@
+// Governing: ADR-0005 (Navidrome auth), ADR-0006 (AES-256-GCM encryption), SPEC user-authentication (Spotify OAuth flow)
 package handlers
 
 import (

@@ -1,3 +1,4 @@
+// Governing: ADR-0007 (event bus), ADR-0008 (OpenAI), ADR-0004 (Ent ORM), SPEC similar-artists-discovery
 package services
 
 import (
@@ -59,7 +60,8 @@ func NewSimilarArtistsService(client *ent.Client, cfg *config.Config, logger *sl
 
 	// Load templates
 	if err := svc.loadTemplates(); err != nil {
-		logger.Error("failed to load similar artists templates", "error", err)
+		// Governing: SPEC similar-artists-discovery REQ-SIM-002 (log warning, continue operating)
+		logger.Warn("failed to load similar artists templates", "error", err)
 	}
 
 	return svc

@@ -1,3 +1,4 @@
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-001 through REQ-PLSYNC-005 (track matching strategies)
 package services
 
 import (

@@ -1,3 +1,4 @@
+// Governing: ADR-0005 (Navidrome auth), ADR-0007 (event bus), SPEC playlist-sync-navidrome
 package services
 
 import (

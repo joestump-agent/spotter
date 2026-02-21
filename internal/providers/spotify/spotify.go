@@ -1,3 +1,4 @@
+// Governing: SPEC music-provider-integration, SPEC listen-playlist-sync
 package spotify
 
 import (

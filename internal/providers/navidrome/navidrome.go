@@ -1,3 +1,4 @@
+// Governing: ADR-0005 (Navidrome primary identity), SPEC music-provider-integration
 package navidrome
 
 import (

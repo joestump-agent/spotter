@@ -1,3 +1,4 @@
+// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-031 (JSON extraction from markdown code fences)
 package vibes
 
 import (

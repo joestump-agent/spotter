@@ -1,3 +1,4 @@
+// Governing: SPEC music-provider-integration
 package providers
 
 import (
