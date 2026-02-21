@@ -361,6 +361,7 @@ func runMetadataSync(client *ent.Client, metadataSvc *services.MetadataService, 
 	}
 }
 
+// Governing: ADR-0005 (Navidrome primary identity), ADR-0002 (Chi router), SPEC user-authentication REQ "MIDDLEWARE-001", REQ "MIDDLEWARE-002", REQ "MIDDLEWARE-003", REQ "MIDDLEWARE-004"
 func AuthMiddleware(client *ent.Client, jwtManager *auth.JWTManager, logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
