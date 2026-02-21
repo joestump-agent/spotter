@@ -28,6 +28,7 @@ func generateState() (string, error) {
 }
 
 // SpotifyLogin initiates the Spotify OAuth flow.
+// Governing: ADR-0005 (Navidrome primary identity), ADR-0006 (AES-256-GCM), ADR-0007 (event bus), SPEC user-authentication REQ "SPOTIFY-001" through "SPOTIFY-006"
 func (h *Handler) SpotifyLogin(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -85,6 +86,7 @@ func (h *Handler) SpotifyLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // SpotifyCallback handles the OAuth callback from Spotify.
+// Governing: ADR-0005, ADR-0006 (AES-256-GCM), ADR-0007 (event bus), SPEC user-authentication REQ "SPOTIFY-007", REQ "SPOTIFY-008"
 func (h *Handler) SpotifyCallback(w http.ResponseWriter, r *http.Request) {
 	// Check for error from Spotify
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
