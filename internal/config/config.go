@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -45,6 +46,22 @@ type VibesConfig struct {
 	MinMatchConfidence float64 `mapstructure:"min_match_confidence"`
 }
 
+// LastFMConfig holds Last.fm API credentials and redirect URL.
+type LastFMConfig struct {
+	APIKey       string `mapstructure:"api_key"`
+	SharedSecret string `mapstructure:"shared_secret"`
+	RedirectURL  string `mapstructure:"redirect_url"`
+}
+
+// Governing: SPEC user-authentication REQ "Config LogValue Sanitization"
+// LogValue redacts sensitive fields when logging LastFMConfig via slog.
+func (c LastFMConfig) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("api_key", "[REDACTED]"),
+		slog.String("shared_secret", "[REDACTED]"),
+	)
+}
+
 // Governing: ADR-0019 (structured metrics), ADR-0010 (slog), SPEC observability REQ "FMT-001", REQ "FMT-002"
 type Config struct {
 	Log struct {
@@ -82,11 +99,7 @@ type Config struct {
 		ClientSecret string `mapstructure:"client_secret"`
 		RedirectURL  string `mapstructure:"redirect_url"`
 	} `mapstructure:"spotify"`
-	LastFM struct {
-		APIKey       string `mapstructure:"api_key"`
-		SharedSecret string `mapstructure:"shared_secret"`
-		RedirectURL  string `mapstructure:"redirect_url"`
-	} `mapstructure:"lastfm"`
+	LastFM LastFMConfig `mapstructure:"lastfm"`
 	OpenAI struct {
 		APIKey  string `mapstructure:"api_key"`  // OpenAI API key (required for AI enrichment)
 		BaseURL string `mapstructure:"base_url"` // Base URL for API (for LiteLLM or compatible proxies)

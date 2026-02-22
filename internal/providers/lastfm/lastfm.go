@@ -116,7 +116,8 @@ func (p *Provider) GetAuthURL(state string) string {
 
 // ExchangeCode exchanges the authorization token for a session key.
 func (p *Provider) ExchangeCode(ctx context.Context, code string) (*providers.AuthResult, error) {
-	p.logger.Info("exchanging code for session key", "code", code)
+	// Governing: SPEC user-authentication REQ "Suppress Last.fm Token from Logs"
+	p.logger.Debug("exchanging code for session key")
 
 	params := map[string]string{
 		"method":  "auth.getSession",
