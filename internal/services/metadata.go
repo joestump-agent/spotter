@@ -521,6 +521,7 @@ func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) (
 	return active, nil
 }
 
+// Governing: SPEC graceful-shutdown REQ-REC-003 (metadata enrichment tracks per-entity state via LastEnrichedAt)
 // EnrichArtists runs enrichment on all artists that need it.
 func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, error) {
 	s.Logger.Info("enriching artists", "username", u.Username)
