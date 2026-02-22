@@ -312,6 +312,8 @@ templ MixtapeShow(m *ent.Mixtape, tracks []*ent.Track, djs []*ent.DJ, cfg *confi
 				</div>
 			}
 			<!-- Generation Prompt (collapsible) -->
+			// Governing: SPEC user-authentication REQ "Input Validation"
+			// GenerationPrompt rendered via Templ string interpolation {}, which auto-escapes HTML
 			if m.GenerationPrompt != "" {
 				<div class="collapse collapse-arrow bg-base-100 shadow-xl mb-8">
 					<input type="checkbox"/>

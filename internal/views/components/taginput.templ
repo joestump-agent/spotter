@@ -1,5 +1,7 @@
 package components
 
+import "encoding/json"
+
 type TagInputConfig struct {
 	// ID is the unique identifier for this input (used for form submission and JS targeting)
 	ID string
@@ -98,39 +100,29 @@ templ TagInput(cfg TagInputConfig) {
 	</div>
 }
 
+// Governing: SPEC user-authentication REQ "Input Validation"
+// Use encoding/json for tag values, suggestionsURL, and placeholder to prevent XSS via injection
 func tagInputData(cfg TagInputConfig) string {
-	// Build initial tags JSON
-	tagsJSON := "[]"
-	if len(cfg.InitialTags) > 0 {
-		tagsJSON = "["
-		for i, tag := range cfg.InitialTags {
-			if i > 0 {
-				tagsJSON += ","
-			}
-			// Escape single quotes in tag names
-			escapedTag := ""
-			for _, c := range tag {
-				if c == '\'' {
-					escapedTag += "\\'"
-				} else if c == '\\' {
-					escapedTag += "\\\\"
-				} else {
-					escapedTag += string(c)
-				}
-			}
-			tagsJSON += "'" + escapedTag + "'"
-		}
-		tagsJSON += "]"
+	tagsJSON, err := json.Marshal(cfg.InitialTags)
+	if err != nil {
+		tagsJSON = []byte("[]")
+	}
+	// Normalize nil to empty array
+	if cfg.InitialTags == nil {
+		tagsJSON = []byte("[]")
 	}
 
+	suggestionsURLJSON, _ := json.Marshal(cfg.SuggestionsURL)
+	placeholderJSON, _ := json.Marshal(cfg.Placeholder)
+
 	return `{
-		tags: ` + tagsJSON + `,
+		tags: ` + string(tagsJSON) + `,
 		query: '',
 		suggestions: [],
 		showSuggestions: false,
 		selectedIndex: -1,
-		suggestionsURL: '` + cfg.SuggestionsURL + `',
-		placeholderText: '` + cfg.Placeholder + `',
+		suggestionsURL: ` + string(suggestionsURLJSON) + `,
+		placeholderText: ` + string(placeholderJSON) + `,
 
 		get tagsString() {
 			return this.tags.join(', ');

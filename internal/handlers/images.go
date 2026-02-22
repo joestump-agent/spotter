@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -172,12 +173,22 @@ func (h *Handler) PlaylistImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Governing: SPEC user-authentication REQ "Input Validation"
+	// Validate URL scheme before redirect to prevent open redirect attacks (javascript:, data:, etc.)
+	parsed, err := url.Parse(p.ImageURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		h.Logger.Warn("blocked redirect to invalid image URL", "url", p.ImageURL)
+		http.Error(w, "invalid image URL", http.StatusBadRequest)
+		return
+	}
+
 	// Redirect to the external URL for playlists
 	http.Redirect(w, r, p.ImageURL, http.StatusTemporaryRedirect)
 }
 
 // serveImage serves an image from a local path
-// Governing: filepath.Abs + HasPrefix validates path stays within ./data to prevent traversal
+// Governing: SPEC user-authentication REQ "Input Validation"
+// filepath.Abs + HasPrefix validates path stays within ./data to prevent path traversal
 func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request, localPath string) {
 	// Try to serve local file first
 	if localPath != "" {
