@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"bytes"
+
 	"spotter/ent"
 	"spotter/internal/auth"
 	"spotter/internal/config"
@@ -65,12 +67,16 @@ func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, encryptor 
 	}
 }
 
+// Governing: SPEC graceful-shutdown REQ "prevent double-write on template render error"
 func (h *Handler) Render(w http.ResponseWriter, r *http.Request, component templ.Component) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := component.Render(r.Context(), w); err != nil {
+	var buf bytes.Buffer
+	if err := component.Render(r.Context(), &buf); err != nil {
 		h.Logger.Error("failed to render component", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
 }
 
 // Governing: SPEC user-authentication REQ "MIDDLEWARE-005"

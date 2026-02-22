@@ -656,24 +656,29 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 		UserID:  u.ID,
 	}
 
+	// Governing: SPEC graceful-shutdown, SPEC vibes-ai-mixtape-engine REQ "background goroutines use context.Background()"
+	// Capture value types to avoid stale *ent.User pointer in goroutine
+	userID := u.ID
+	mixtapeName := m.Name
+	djName := m.Edges.Dj.Name
+
 	// Run generation (this can take a while, so we do it in a goroutine for async UX)
 	go func() {
-		// Governing: context.Background() prevents premature cancellation when HTTP handler returns
 		ctx := context.Background()
 
 		// Publish generating event
 		if h.Bus != nil {
-			h.Bus.PublishMixtapeGenerating(u.ID, m.ID, m.Name, m.Edges.Dj.Name)
+			h.Bus.PublishMixtapeGenerating(userID, mixtapeID, mixtapeName, djName)
 		}
 
 		result, err := h.MixtapeGenerator.GenerateMixtape(ctx, req)
 		if err != nil {
 			h.Logger.Error("mixtape generation failed",
-				"mixtape_id", m.ID,
+				"mixtape_id", mixtapeID,
 				"error", err)
 
 			// Update mixtape with error
-			if _, saveErr := h.Client.Mixtape.UpdateOneID(m.ID).
+			if _, saveErr := h.Client.Mixtape.UpdateOneID(mixtapeID).
 				SetGenerationError(err.Error()).
 				Save(ctx); saveErr != nil {
 				h.Logger.Error("failed to save mixtape error", "error", saveErr)
@@ -681,7 +686,7 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 
 			// Publish error event
 			if h.Bus != nil {
-				h.Bus.PublishMixtapeError(u.ID, m.ID, m.Name, err.Error())
+				h.Bus.PublishMixtapeError(userID, mixtapeID, mixtapeName, err.Error())
 			}
 			return
 		}
@@ -690,7 +695,7 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 		trackIDs := result.GetMatchedTrackIDsAsStrings()
 
 		// Update the mixtape with the results
-		updater := h.Client.Mixtape.UpdateOneID(m.ID).
+		updater := h.Client.Mixtape.UpdateOneID(mixtapeID).
 			SetTrackIds(trackIDs).
 			SetTrackCount(len(trackIDs)).
 			SetLastGeneratedAt(time.Now()).
@@ -721,20 +726,20 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 		_, err = updater.Save(ctx)
 		if err != nil {
 			h.Logger.Error("failed to save mixtape generation results",
-				"mixtape_id", m.ID,
+				"mixtape_id", mixtapeID,
 				"error", err)
 			return
 		}
 
 		h.Logger.Info("mixtape generation complete",
-			"mixtape_id", m.ID,
+			"mixtape_id", mixtapeID,
 			"tracks_matched", result.MatchedCount,
 			"tracks_unmatched", result.UnmatchedCount,
 			"tokens_used", result.TokensUsed)
 
 		// Publish success event
 		if h.Bus != nil {
-			h.Bus.PublishMixtapeGenerated(u.ID, m.ID, m.Name, m.Edges.Dj.Name,
+			h.Bus.PublishMixtapeGenerated(userID, mixtapeID, mixtapeName, djName,
 				len(result.Tracks), result.MatchedCount, result.TokensUsed)
 		}
 	}()
