@@ -625,8 +625,16 @@ collectLoop:
 			receivedEvents = append(receivedEvents, event)
 		case err := <-done:
 			require.NoError(t, err)
-			// Give a little time for final events
-			time.Sleep(100 * time.Millisecond)
+			// Drain any events that were buffered before the done signal was received
+		drainLoop:
+			for {
+				select {
+				case event := <-eventChan:
+					receivedEvents = append(receivedEvents, event)
+				default:
+					break drainLoop
+				}
+			}
 			break collectLoop
 		case <-timeout:
 			t.Fatal("Timeout waiting for sync to complete")
