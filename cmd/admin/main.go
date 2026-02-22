@@ -89,7 +89,7 @@ func run(oldKeyHex, newKeyHex, dbDSN string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Attempt to acquire an exclusive lock to check if the server is running.
 	if _, err := db.Exec("PRAGMA locking_mode=EXCLUSIVE"); err != nil {
@@ -189,10 +189,10 @@ func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (bool, error) {
 			var id int
 			var val sql.NullString
 			if err := rows.Scan(&id, &val); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return false, fmt.Errorf("failed to scan %s.%s: %w", f.table, f.column, err)
 			}
-			rows.Close()
+			_ = rows.Close()
 
 			if val.Valid && val.String != "" {
 				_, err := oldEnc.Decrypt(val.String)
@@ -202,7 +202,7 @@ func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (bool, error) {
 				return true, nil
 			}
 		} else {
-			rows.Close()
+			_ = rows.Close()
 		}
 	}
 	return false, nil
@@ -248,7 +248,7 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor) (map[string]int,
 			}
 
 			if err := rows.Scan(scanDest...); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, 0, fmt.Errorf("failed to scan row from %s: %w", tf.table, err)
 			}
 
@@ -261,20 +261,20 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor) (map[string]int,
 				// REQ "ROT-040": Decrypt with old key
 				plaintext, err := oldEnc.Decrypt(vals[i].String)
 				if err != nil {
-					rows.Close()
+					_ = rows.Close()
 					return nil, 0, fmt.Errorf("decryption failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
 				}
 
 				// REQ "ROT-041": Encrypt with new key
 				newCipher, err := newEnc.Encrypt(plaintext)
 				if err != nil {
-					rows.Close()
+					_ = rows.Close()
 					return nil, 0, fmt.Errorf("encryption failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
 				}
 
 				updateSQL := fmt.Sprintf("UPDATE %s SET %s = ? WHERE id = ?", tf.table, col)
 				if _, err := tx.Exec(updateSQL, newCipher, id); err != nil {
-					rows.Close()
+					_ = rows.Close()
 					return nil, 0, fmt.Errorf("update failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
 				}
 				totalFields++
@@ -287,7 +287,7 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor) (map[string]int,
 		if err := rows.Err(); err != nil {
 			return nil, 0, fmt.Errorf("error iterating %s: %w", tf.table, err)
 		}
-		rows.Close()
+		_ = rows.Close()
 		counts[tf.table] = rowCount
 	}
 
@@ -309,22 +309,22 @@ func verifyNewKey(db *sql.DB, newEnc *crypto.Encryptor) error {
 			var id int
 			var val sql.NullString
 			if err := rows.Scan(&id, &val); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return fmt.Errorf("verification scan failed for %s.%s: %w", f.table, f.column, err)
 			}
 			if !val.Valid || val.String == "" {
 				continue
 			}
 			if _, err := newEnc.Decrypt(val.String); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return fmt.Errorf("verification decrypt failed for %s.%s (row id=%d): %w", f.table, f.column, id, err)
 			}
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return fmt.Errorf("verification iteration failed for %s.%s: %w", f.table, f.column, err)
 		}
-		rows.Close()
+		_ = rows.Close()
 	}
 	return nil
 }
