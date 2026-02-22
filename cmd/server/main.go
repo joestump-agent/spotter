@@ -37,6 +37,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -364,14 +365,19 @@ func main() {
 	fileServer := http.FileServer(http.Dir("./static"))
 	r.Handle("/static/*", http.StripPrefix("/static", fileServer))
 
-	// Data Files (images, etc.)
-	dataFileServer := http.FileServer(http.Dir("./data"))
-	r.Handle("/data/*", http.StripPrefix("/data", dataFileServer))
+	// Governing: issue #155 — rate limiting on login endpoint
+	// Configure per-IP rate limiter for auth endpoints
+	authRateLimit := cfg.Security.AuthRateLimit
+	if authRateLimit <= 0 {
+		authRateLimit = 10
+	}
+	loginLimiter := internalMiddleware.NewIPRateLimiter(rate.Every(time.Minute/time.Duration(authRateLimit)), authRateLimit)
 
 	// Public Routes
 	r.Group(func(r chi.Router) {
 		r.Get("/auth/login", h.Login)
-		r.Post("/login", h.PostLogin)
+		// Apply rate limiting only to POST /login
+		r.With(internalMiddleware.RateLimit(loginLimiter, logger)).Post("/login", h.PostLogin)
 		r.Get("/logout", h.Logout)
 		r.Get("/auth/logout", h.Logout) // Alias for consistency
 
@@ -384,6 +390,11 @@ func main() {
 	// Protected Routes
 	r.Group(func(r chi.Router) {
 		r.Use(AuthMiddleware(client, jwtManager, logger))
+
+		// Governing: issue #155 — /data/* moved behind auth to prevent unauthenticated access
+		dataFileServer := http.FileServer(http.Dir("./data"))
+		r.Handle("/data/*", http.StripPrefix("/data", dataFileServer))
+
 		r.Get("/", h.Home)
 
 		r.Get("/events", h.Events)

@@ -68,9 +68,10 @@ type Config struct {
 		Format string `mapstructure:"format"` // Log format: "json" or "text" (default: "text")
 	} `mapstructure:"log"`
 	Security struct {
-		EncryptionKey string `mapstructure:"encryption_key"` // 32-byte hex key for AES-256 encryption
-		SecureCookies bool   `mapstructure:"secure_cookies"` // Set Secure flag on cookies (requires HTTPS)
-		JWTSecret     string `mapstructure:"jwt_secret"`     // 32+ character secret for JWT signing
+		EncryptionKey string `mapstructure:"encryption_key"`  // 32-byte hex key for AES-256 encryption
+		SecureCookies bool   `mapstructure:"secure_cookies"`  // Set Secure flag on cookies (requires HTTPS)
+		JWTSecret     string `mapstructure:"jwt_secret"`      // 32+ character secret for JWT signing
+		AuthRateLimit int    `mapstructure:"auth_rate_limit"` // Login attempts per minute per IP (default: 10)
 	} `mapstructure:"security"`
 	Database struct {
 		Driver string `mapstructure:"driver"`
@@ -230,6 +231,7 @@ func Load() (*Config, error) {
 	v.SetDefault("security.encryption_key", "")   // Must be set via environment variable
 	v.SetDefault("security.secure_cookies", true) // Secure cookies by default (requires HTTPS)
 	v.SetDefault("security.jwt_secret", "")       // Must be set via environment variable
+	v.SetDefault("security.auth_rate_limit", 10)  // Login attempts per minute per IP
 	v.SetDefault("server.port", "8080")
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.read_header_timeout", "10s")
