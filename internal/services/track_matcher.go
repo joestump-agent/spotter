@@ -128,8 +128,10 @@ func (m *TrackMatcher) MatchTracks(ctx context.Context, userID int, tracks []pro
 		MatchMethodFuzzy: 0,
 	}
 
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "MATCH-001", REQ "MATCH-002", REQ "MATCH-003"
 	// Match each source track
 	for i, sourceTrack := range tracks {
+		trackMatchStart := time.Now()
 		result := MatchResult{
 			SourceTrack:     sourceTrack,
 			MatchConfidence: 0.0,
@@ -152,6 +154,12 @@ func (m *TrackMatcher) MatchTracks(ctx context.Context, userID int, tracks []pro
 						"source_title", sourceTrack.Name,
 						"isrc", sourceTrack.ISRC,
 						"navidrome_id", *matchedTrack.NavidromeID)
+					// REQ "MATCH-002": emit metric for the successful strategy only
+					m.Logger.Info("metric.track_match",
+						"strategy", "isrc",
+						"matched", true,
+						"confidence", 1.0,
+						"duration_ms", time.Since(trackMatchStart).Milliseconds())
 					continue
 				}
 			}
@@ -171,6 +179,12 @@ func (m *TrackMatcher) MatchTracks(ctx context.Context, userID int, tracks []pro
 					"source_artist", sourceTrack.Artist,
 					"source_title", sourceTrack.Name,
 					"navidrome_id", *matchedTrack.NavidromeID)
+				// REQ "MATCH-002": emit metric for the successful strategy only
+				m.Logger.Info("metric.track_match",
+					"strategy", "exact",
+					"matched", true,
+					"confidence", 1.0,
+					"duration_ms", time.Since(trackMatchStart).Milliseconds())
 				continue
 			}
 		}
@@ -196,6 +210,12 @@ func (m *TrackMatcher) MatchTracks(ctx context.Context, userID int, tracks []pro
 					"matched_title", bestMatch.Name,
 					"confidence", confidence,
 					"navidrome_id", *bestMatch.NavidromeID)
+				// REQ "MATCH-002": emit metric for the successful strategy only
+				m.Logger.Info("metric.track_match",
+					"strategy", "fuzzy",
+					"matched", true,
+					"confidence", confidence,
+					"duration_ms", time.Since(trackMatchStart).Milliseconds())
 			}
 		} else {
 			matchStats[MatchMethodNone]++
@@ -205,6 +225,12 @@ func (m *TrackMatcher) MatchTracks(ctx context.Context, userID int, tracks []pro
 				"source_title", sourceTrack.Name,
 				"best_confidence", confidence,
 				"min_required", m.MinMatchConfidence)
+			// REQ "MATCH-003": all strategies failed, emit strategy="fuzzy", matched=false, confidence=0.0
+			m.Logger.Info("metric.track_match",
+				"strategy", "fuzzy",
+				"matched", false,
+				"confidence", 0.0,
+				"duration_ms", time.Since(trackMatchStart).Milliseconds())
 		}
 
 		results[i] = result

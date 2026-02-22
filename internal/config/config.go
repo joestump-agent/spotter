@@ -45,7 +45,11 @@ type VibesConfig struct {
 	MinMatchConfidence float64 `mapstructure:"min_match_confidence"`
 }
 
+// Governing: ADR-0019 (structured metrics), ADR-0010 (slog), SPEC observability REQ "FMT-001", REQ "FMT-002"
 type Config struct {
+	Log struct {
+		Format string `mapstructure:"format"` // Log format: "json" or "text" (default: "text")
+	} `mapstructure:"log"`
 	Security struct {
 		EncryptionKey string `mapstructure:"encryption_key"` // 32-byte hex key for AES-256 encryption
 		SecureCookies bool   `mapstructure:"secure_cookies"` // Set Secure flag on cookies (requires HTTPS)
@@ -205,6 +209,7 @@ func Load() (*Config, error) {
 	v.AutomaticEnv()
 
 	// Defaults
+	v.SetDefault("log.format", "text")            // Log format: "json" or "text"
 	v.SetDefault("security.encryption_key", "")   // Must be set via environment variable
 	v.SetDefault("security.secure_cookies", true) // Secure cookies by default (requires HTTPS)
 	v.SetDefault("security.jwt_secret", "")       // Must be set via environment variable

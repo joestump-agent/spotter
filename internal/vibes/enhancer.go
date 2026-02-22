@@ -169,13 +169,31 @@ func (e *PlaylistEnhancer) EnhancePlaylist(ctx context.Context, req *Enhancement
 
 	e.logger.Debug("generated prompt", "prompt_length", len(prompt))
 
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "LLM-001", REQ "LLM-002", REQ "LLM-003"
 	// Call the AI
 	model := e.config.GetVibesModel()
+	llmStart := time.Now()
 	response, tokensUsed, err := e.callOpenAI(ctx, prompt)
+	llmDuration := time.Since(llmStart).Milliseconds()
 	if err != nil {
+		e.logger.Info("metric.llm",
+			"model", model,
+			"operation", "playlist_enhance",
+			"tokens_used", 0,
+			"duration_ms", llmDuration,
+			"success", false,
+			"error", err.Error())
 		e.publishError(req.UserID, req.PlaylistID, "AI service error: "+err.Error())
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}
+
+	e.logger.Info("metric.llm",
+		"model", model,
+		"operation", "playlist_enhance",
+		"tokens_used", tokensUsed,
+		"duration_ms", llmDuration,
+		"success", true,
+		"error", "")
 
 	e.logger.Info("AI enhancement complete",
 		"model", model,

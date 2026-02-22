@@ -28,6 +28,21 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, "light,dark,cupcake", cfg.Theme.Available)
 	assert.Equal(t, "dark", cfg.Theme.Default)
 	assert.Equal(t, []string{"light", "dark", "cupcake"}, cfg.AvailableThemes())
+	assert.Equal(t, "text", cfg.Log.Format)
+}
+
+func TestLogFormatConfig(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
+	t.Setenv("SPOTTER_LIDARR_BASE_URL", "http://localhost:8686")
+	t.Setenv("SPOTTER_LIDARR_API_KEY", "test-api-key")
+	t.Setenv("SPOTTER_SECURITY_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("SPOTTER_SECURITY_JWT_SECRET", "test-jwt-secret-at-least-32-chars")
+	t.Setenv("SPOTTER_LOG_FORMAT", "json")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "json", cfg.Log.Format)
 }
 
 func TestLoadEnvOverrides(t *testing.T) {

@@ -1,3 +1,4 @@
+// Governing: ADR-0008 (OpenAI API / LiteLLM backend), ADR-0007 (event bus), SPEC vibes-ai-mixtape-engine
 package vibes
 
 import (
@@ -189,8 +190,11 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 
 	// Call the AI
 	// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-030 — timeout enforced via httpClient
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "LLM-001", REQ "LLM-002", REQ "LLM-003"
 	model := g.config.GetVibesModel()
+	llmStart := time.Now()
 	response, tokensUsed, err := g.callOpenAI(ctx, prompt)
+	llmDuration := time.Since(llmStart).Milliseconds()
 	if err != nil {
 		// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-032 — structured error logging
 		g.logger.Error("AI call failed during mixtape generation",
@@ -198,9 +202,24 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 			"dj_id", req.DJ.ID,
 			"mixtape_id", req.Mixtape.ID,
 			"error", err)
+		g.logger.Info("metric.llm",
+			"model", model,
+			"operation", "mixtape_generate",
+			"tokens_used", 0,
+			"duration_ms", llmDuration,
+			"success", false,
+			"error", err.Error())
 		g.publishError(req.UserID, "AI service error: "+err.Error())
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}
+
+	g.logger.Info("metric.llm",
+		"model", model,
+		"operation", "mixtape_generate",
+		"tokens_used", tokensUsed,
+		"duration_ms", llmDuration,
+		"success", true,
+		"error", "")
 
 	g.logger.Info("AI generation complete",
 		"model", model,

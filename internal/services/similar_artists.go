@@ -1,4 +1,5 @@
 // Governing: ADR-0007 (event bus), ADR-0008 (OpenAI), ADR-0004 (Ent ORM), SPEC similar-artists-discovery
+
 package services
 
 import (
@@ -174,11 +175,30 @@ func (s *SimilarArtistsService) FindSimilarArtists(ctx context.Context, userID i
 		return fmt.Errorf("failed to render prompt: %w", err)
 	}
 
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "LLM-001", REQ "LLM-002", REQ "LLM-003"
 	// Call OpenAI
+	model := s.config.GetVibesModel()
+	llmStart := time.Now()
 	response, err := s.callOpenAI(ctx, prompt)
+	llmDuration := time.Since(llmStart).Milliseconds()
 	if err != nil {
+		s.logger.Info("metric.llm",
+			"model", model,
+			"operation", "similar_artists",
+			"tokens_used", 0,
+			"duration_ms", llmDuration,
+			"success", false,
+			"error", err.Error())
 		return fmt.Errorf("failed to call OpenAI: %w", err)
 	}
+
+	s.logger.Info("metric.llm",
+		"model", model,
+		"operation", "similar_artists",
+		"tokens_used", 0,
+		"duration_ms", llmDuration,
+		"success", true,
+		"error", "")
 
 	// Parse response
 	var aiResponse SimilarArtistResponse
