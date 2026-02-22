@@ -60,12 +60,12 @@ type Config struct {
 		Source string `mapstructure:"source"`
 	} `mapstructure:"database"`
 	Server struct {
-		Port               string `mapstructure:"port"`
-		Host               string `mapstructure:"host"`
-		ReadHeaderTimeout  string `mapstructure:"read_header_timeout"`  // Duration string for read header timeout (default: "10s")
-		ReadTimeout        string `mapstructure:"read_timeout"`         // Duration string for read timeout (default: "30s")
-		WriteTimeout       string `mapstructure:"write_timeout"`        // Duration string for write timeout (default: "60s")
-		IdleTimeout        string `mapstructure:"idle_timeout"`         // Duration string for idle timeout (default: "120s")
+		Port              string `mapstructure:"port"`
+		Host              string `mapstructure:"host"`
+		ReadHeaderTimeout string `mapstructure:"read_header_timeout"` // Duration string for read header timeout (default: "10s")
+		ReadTimeout       string `mapstructure:"read_timeout"`        // Duration string for read timeout (default: "30s")
+		WriteTimeout      string `mapstructure:"write_timeout"`       // Duration string for write timeout (default: "60s")
+		IdleTimeout       string `mapstructure:"idle_timeout"`        // Duration string for idle timeout (default: "120s")
 	} `mapstructure:"server"`
 	Navidrome struct {
 		BaseURL string `mapstructure:"base_url"`
