@@ -1,7 +1,9 @@
 # Binaries
 bin/
-spotter-server
-server
+/spotter-server
+/spotter-admin
+/admin
+/server
 *.exe
 *.test
 *.out
