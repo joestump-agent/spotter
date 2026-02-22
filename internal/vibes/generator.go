@@ -1,4 +1,3 @@
-// Governing: ADR-0008 (OpenAI API / LiteLLM backend), ADR-0007 (event bus), SPEC vibes-ai-mixtape-engine
 package vibes
 
 import (
@@ -44,12 +43,14 @@ type MixtapeGenerator struct {
 }
 
 // NewMixtapeGenerator creates a new MixtapeGenerator service.
+// Governing: ADR-0008 (OpenAI), SPEC vibes-ai-mixtape-engine REQ-VIBES-030 (configurable timeout)
 func NewMixtapeGenerator(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *MixtapeGenerator {
 	// Use a no-op logger if none provided
 	if logger == nil {
 		logger = slog.New(nopHandler{})
 	}
 
+	// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-030 — configurable HTTP timeout, default 120s
 	timeout := time.Duration(cfg.Vibes.TimeoutSeconds) * time.Second
 	if timeout == 0 {
 		timeout = 120 * time.Second
@@ -105,6 +106,7 @@ func (g *MixtapeGenerator) loadTemplates() error {
 }
 
 // GenerateMixtape generates tracks for a mixtape based on the DJ persona and optional seed.
+// Governing: ADR-0008 (OpenAI), SPEC vibes-ai-mixtape-engine REQ-VIBES-030 through REQ-VIBES-032
 func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationRequest) (*GenerationResult, error) {
 	startTime := time.Now()
 
@@ -116,12 +118,23 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 
 	// Validate the request
 	if err := g.validateRequest(req); err != nil {
+		// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-032 — structured error logging
+		g.logger.Error("mixtape generation validation failed",
+			"user_id", req.UserID,
+			"dj_id", req.DJ.ID,
+			"mixtape_id", req.Mixtape.ID,
+			"error", err)
 		g.publishError(req.UserID, "Invalid request: "+err.Error())
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
 	// Check if OpenAI is configured
 	if !g.config.IsOpenAIEnabled() {
+		// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-032 — structured error logging
+		g.logger.Error("OpenAI not configured for mixtape generation",
+			"user_id", req.UserID,
+			"dj_id", req.DJ.ID,
+			"mixtape_id", req.Mixtape.ID)
 		g.publishError(req.UserID, "AI service is not configured. Please configure OpenAI API key.")
 		return nil, fmt.Errorf("OpenAI API key not configured")
 	}
@@ -149,6 +162,12 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 	// Build the template data
 	templateData, err := g.buildTemplateData(ctx, req, maxTracks)
 	if err != nil {
+		// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-032 — structured error logging
+		g.logger.Error("failed to build template data for mixtape generation",
+			"user_id", req.UserID,
+			"dj_id", req.DJ.ID,
+			"mixtape_id", req.Mixtape.ID,
+			"error", err)
 		g.publishError(req.UserID, "Failed to prepare generation data: "+err.Error())
 		return nil, fmt.Errorf("failed to build template data: %w", err)
 	}
@@ -156,6 +175,12 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 	// Generate the prompt
 	prompt, err := g.renderPrompt(templateData)
 	if err != nil {
+		// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-032 — structured error logging
+		g.logger.Error("failed to render prompt for mixtape generation",
+			"user_id", req.UserID,
+			"dj_id", req.DJ.ID,
+			"mixtape_id", req.Mixtape.ID,
+			"error", err)
 		g.publishError(req.UserID, "Failed to generate prompt: "+err.Error())
 		return nil, fmt.Errorf("failed to render prompt: %w", err)
 	}
@@ -163,9 +188,16 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 	g.logger.Debug("generated prompt", "prompt_length", len(prompt))
 
 	// Call the AI
+	// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-030 — timeout enforced via httpClient
 	model := g.config.GetVibesModel()
 	response, tokensUsed, err := g.callOpenAI(ctx, prompt)
 	if err != nil {
+		// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-032 — structured error logging
+		g.logger.Error("AI call failed during mixtape generation",
+			"user_id", req.UserID,
+			"dj_id", req.DJ.ID,
+			"mixtape_id", req.Mixtape.ID,
+			"error", err)
 		g.publishError(req.UserID, "AI service error: "+err.Error())
 		return nil, fmt.Errorf("AI call failed: %w", err)
 	}
@@ -176,8 +208,15 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 		"response_length", len(response))
 
 	// Parse the response
+	// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-031 — JSON extraction from markdown code fences
 	aiResp, err := g.parseAIResponse(response)
 	if err != nil {
+		// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-032 — structured error logging
+		g.logger.Error("failed to parse AI response for mixtape generation",
+			"user_id", req.UserID,
+			"dj_id", req.DJ.ID,
+			"mixtape_id", req.Mixtape.ID,
+			"error", err)
 		g.publishError(req.UserID, "Failed to parse AI response")
 		return nil, fmt.Errorf("failed to parse AI response: %w", err)
 	}
@@ -185,6 +224,12 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 	// Match tracks to library
 	result, err := g.matchTracksToLibrary(ctx, req.UserID, aiResp, templateData.AvailableTracks)
 	if err != nil {
+		// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-032 — structured error logging
+		g.logger.Error("failed to match tracks to library",
+			"user_id", req.UserID,
+			"dj_id", req.DJ.ID,
+			"mixtape_id", req.Mixtape.ID,
+			"error", err)
 		g.publishError(req.UserID, "Failed to match tracks to library")
 		return nil, fmt.Errorf("failed to match tracks: %w", err)
 	}
@@ -692,6 +737,7 @@ func (g *MixtapeGenerator) callOpenAI(ctx context.Context, prompt string) (strin
 }
 
 // parseAIResponse parses the AI response JSON.
+// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-031 — handles markdown code fences via ExtractAndSanitizeJSON
 func (g *MixtapeGenerator) parseAIResponse(response string) (*AIResponse, error) {
 	// Extract JSON from potential markdown code blocks and sanitize trailing commas
 	jsonStr := ExtractAndSanitizeJSON(response)
