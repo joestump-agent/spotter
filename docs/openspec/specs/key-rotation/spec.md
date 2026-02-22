@@ -45,6 +45,7 @@ Out of scope: Automated key generation, key storage recommendations (documented 
 **REQ-ROT-010** — All re-encryption operations MUST execute within a single SQLite transaction (`BEGIN ... COMMIT`). If any operation fails, the entire transaction MUST be rolled back.
 
 **REQ-ROT-011** — The subcommand MUST re-encrypt the following fields:
+
 | Entity | Table | Field(s) |
 |--------|-------|----------|
 | `NavidromeAuth` | `navidrome_auths` | `password` |
