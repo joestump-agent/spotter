@@ -635,6 +635,10 @@ func (h *Handler) ArtistRegenerateAI(w http.ResponseWriter, r *http.Request) {
 
 // getAIEnricher returns the OpenAI enricher if available
 func (h *Handler) getAIEnricher(ctx context.Context, u *ent.User) ([]enrichers.Enricher, error) {
+	if h.MetadataSvc == nil {
+		return nil, nil
+	}
+
 	factory, ok := h.MetadataSvc.Registry.Get(enrichers.TypeOpenAI)
 	if !ok {
 		return nil, nil
