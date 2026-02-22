@@ -45,23 +45,48 @@ func (s *Syncer) Register(factory providers.Factory) {
 	s.Factories = append(s.Factories, factory)
 }
 
+// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
 // Sync performs a full synchronization (history and playlists) for the user.
 func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 	s.Logger.Info("starting full sync", "username", u.Username)
+	syncStart := time.Now()
 
 	refreshedUser, activeProviders, err := s.getActiveProviders(ctx, u)
 	if err != nil {
 		return err
 	}
 
+	var listensSynced, playlistsSynced int
+	syncSuccess := true
+	var syncErr string
+
 	// 1. History
-	if err := s.syncHistory(ctx, refreshedUser, activeProviders); err != nil {
-		s.Logger.Error("failed to sync history", "username", refreshedUser.Username, "error", err)
+	var histErr error
+	listensSynced, histErr = s.syncHistory(ctx, refreshedUser, activeProviders)
+	if histErr != nil {
+		s.Logger.Error("failed to sync history", "username", refreshedUser.Username, "error", histErr)
+		syncSuccess = false
+		syncErr = histErr.Error()
 	}
 
 	// 2. Playlists
-	if err := s.syncPlaylists(ctx, refreshedUser, activeProviders); err != nil {
-		s.Logger.Error("failed to sync playlists", "username", refreshedUser.Username, "error", err)
+	var plErr error
+	playlistsSynced, plErr = s.syncPlaylists(ctx, refreshedUser, activeProviders)
+	if plErr != nil {
+		s.Logger.Error("failed to sync playlists", "username", refreshedUser.Username, "error", plErr)
+		syncSuccess = false
+		syncErr = plErr.Error()
+	}
+
+	// Emit metric.sync for each active provider
+	for _, p := range activeProviders {
+		s.Logger.Info("metric.sync",
+			"provider", string(p.Type()),
+			"listens_synced", listensSynced,
+			"playlists_synced", playlistsSynced,
+			"duration_ms", time.Since(syncStart).Milliseconds(),
+			"success", syncSuccess,
+			"error", syncErr)
 	}
 
 	s.Logger.Info("full sync completed", "username", refreshedUser.Username)
@@ -91,12 +116,12 @@ func (s *Syncer) SyncProvider(ctx context.Context, u *ent.User, providerType pro
 	}
 
 	// 1. History
-	if err := s.syncHistory(ctx, refreshedUser, targetProviders); err != nil {
+	if _, err := s.syncHistory(ctx, refreshedUser, targetProviders); err != nil {
 		s.Logger.Error("failed to sync history", "username", refreshedUser.Username, "provider", providerType, "error", err)
 	}
 
 	// 2. Playlists
-	if err := s.syncPlaylists(ctx, refreshedUser, targetProviders); err != nil {
+	if _, err := s.syncPlaylists(ctx, refreshedUser, targetProviders); err != nil {
 		s.Logger.Error("failed to sync playlists", "username", refreshedUser.Username, "provider", providerType, "error", err)
 	}
 
@@ -110,7 +135,8 @@ func (s *Syncer) SyncRecentListens(ctx context.Context, u *ent.User) error {
 	if err != nil {
 		return err
 	}
-	return s.syncHistory(ctx, refreshedUser, activeProviders)
+	_, err = s.syncHistory(ctx, refreshedUser, activeProviders)
+	return err
 }
 
 // SyncPlaylists pulls playlists from all registered providers.
@@ -119,7 +145,8 @@ func (s *Syncer) SyncPlaylists(ctx context.Context, u *ent.User) error {
 	if err != nil {
 		return err
 	}
-	return s.syncPlaylists(ctx, refreshedUser, activeProviders)
+	_, err = s.syncPlaylists(ctx, refreshedUser, activeProviders)
+	return err
 }
 
 // getActiveProviders returns the refreshed user with all auth edges loaded and a list of active providers.
@@ -169,7 +196,8 @@ func (s *Syncer) logEvent(ctx context.Context, u *ent.User, eventType syncevent.
 	}
 }
 
-func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders []providers.Provider) error {
+func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders []providers.Provider) (int, error) {
+	allAdded := 0
 	for _, provider := range activeProviders {
 		// Check if provider supports history fetching
 		fetcher, ok := provider.(providers.HistoryFetcher)
@@ -270,6 +298,7 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 		// Governing: SPEC error-handling REQ-RECOVER-001, REQ-RECOVER-002
 		s.Backoff.RecordSuccess(backoffKey)
 
+		allAdded += totalAdded
 		if totalAdded > 0 {
 			s.Bus.Publish(u.ID, events.Event{
 				Type: events.EventTypeNotification,
@@ -298,10 +327,11 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			s.Logger.Warn("failed to update last_synced_at", "provider", provider.Type(), "error", err)
 		}
 	}
-	return nil
+	return allAdded, nil
 }
 
-func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders []providers.Provider) error {
+func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders []providers.Provider) (int, error) {
+	allAdded := 0
 	for _, provider := range activeProviders {
 		manager, ok := provider.(providers.PlaylistManager)
 		if !ok {
@@ -364,6 +394,7 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 			if err != nil {
 				s.Logger.Error("failed to persist playlists", "error", err)
 			}
+			allAdded += added
 
 			if added > 0 {
 				s.Bus.Publish(u.ID, events.Event{
@@ -391,7 +422,7 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 			s.Logger.Warn("failed to update last_synced_at", "provider", provider.Type(), "error", err)
 		}
 	}
-	return nil
+	return allAdded, nil
 }
 
 // publishFatalNotification publishes a user-visible notification for fatal provider errors.

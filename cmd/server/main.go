@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -39,10 +40,10 @@ import (
 )
 
 func main() {
-	opts := &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
+	// Governing: ADR-0019 (structured metrics), ADR-0010 (slog), SPEC observability REQ "FMT-001", REQ "FMT-002", REQ "FMT-003", REQ "FMT-004", REQ "FMT-005"
+	// Bootstrap logger with text handler; will be replaced after config load
+	bootstrapOpts := &slog.HandlerOptions{Level: slog.LevelDebug}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, bootstrapOpts))
 
 	// Load Config
 	cfg, err := config.Load()
@@ -50,6 +51,19 @@ func main() {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+
+	// Re-initialize logger with configured format
+	opts := &slog.HandlerOptions{Level: slog.LevelDebug}
+	format := strings.ToLower(cfg.Log.Format)
+	if format != "json" {
+		format = "text" // REQ "FMT-002": invalid values default to text
+	}
+	if format == "json" {
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, opts))
+	} else {
+		logger = slog.New(slog.NewTextHandler(os.Stdout, opts))
+	}
+	logger.Info("logger initialized", "format", format, "level", "debug")
 
 	// Initialize encryption for sensitive data
 	encryptionKey, err := cfg.GetEncryptionKeyBytes()
@@ -152,6 +166,7 @@ func main() {
 	}
 	logger.Info("background sync configured", "interval", syncInterval)
 
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-001", REQ "BG-002"
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -162,12 +177,14 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				tickStart := time.Now()
 				// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
 				users, err := client.User.Query().All(ctx)
 				if err != nil {
 					logger.Error("failed to fetch users for background sync", "error", err)
 					continue
 				}
+				syncErrors := 0
 				for _, u := range users {
 					// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
 					wg.Add(1)
@@ -182,9 +199,15 @@ func main() {
 						}
 						if err := syncer.Sync(ctx, user); err != nil {
 							logger.Error("background sync failed", "username", user.Username, "error", err)
+							syncErrors++
 						}
 					}(u)
 				}
+				logger.Info("metric.background_tick",
+					"loop", "sync",
+					"users_processed", len(users),
+					"duration_ms", time.Since(tickStart).Milliseconds(),
+					"errors", syncErrors)
 			}
 		}
 	}()
@@ -204,13 +227,16 @@ func main() {
 		go func() {
 			defer wg.Done()
 
+			// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-001", REQ "BG-002"
 			syncMetadataForUsers := func() {
+				tickStart := time.Now()
 				// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
 				users, err := client.User.Query().All(ctx)
 				if err != nil {
 					logger.Error("failed to fetch users for metadata sync", "error", err)
 					return
 				}
+				metadataErrors := 0
 				for _, u := range users {
 					// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
 					wg.Add(1)
@@ -225,9 +251,15 @@ func main() {
 						}
 						if err := metadataSvc.SyncAll(ctx, user); err != nil {
 							logger.Error("metadata sync failed", "username", user.Username, "error", err)
+							metadataErrors++
 						}
 					}(u)
 				}
+				logger.Info("metric.background_tick",
+					"loop", "metadata",
+					"users_processed", len(users),
+					"duration_ms", time.Since(tickStart).Milliseconds(),
+					"errors", metadataErrors)
 			}
 
 			// Initial delay to let the app start up
@@ -255,6 +287,7 @@ func main() {
 		logger.Info("metadata enrichment disabled")
 	}
 
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-001", REQ "BG-002"
 	// Background Playlist Sync Loop (for syncing playlists to Navidrome)
 	playlistSyncInterval, err := time.ParseDuration(cfg.PlaylistSync.SyncInterval)
 	if err != nil {
@@ -280,12 +313,14 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				tickStart := time.Now()
 				// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
 				users, err := client.User.Query().All(ctx)
 				if err != nil {
 					logger.Error("failed to fetch users for playlist sync", "error", err)
 					continue
 				}
+				plSyncErrors := 0
 				for _, u := range users {
 					// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
 					wg.Add(1)
@@ -300,9 +335,15 @@ func main() {
 						}
 						if err := playlistSyncSvc.SyncAllEnabledPlaylists(ctx, user.ID); err != nil {
 							logger.Error("playlist sync failed", "username", user.Username, "error", err)
+							plSyncErrors++
 						}
 					}(u)
 				}
+				logger.Info("metric.background_tick",
+					"loop", "playlist_sync",
+					"users_processed", len(users),
+					"duration_ms", time.Since(tickStart).Milliseconds(),
+					"errors", plSyncErrors)
 			}
 		}
 	}()

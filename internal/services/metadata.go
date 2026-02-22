@@ -1,4 +1,5 @@
 // Governing: ADR-0008 (OpenAI), ADR-0004 (Ent ORM), SPEC metadata-enrichment-pipeline
+
 package services
 
 import (
@@ -521,9 +522,10 @@ func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) (
 	return active, nil
 }
 
+// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
 // Governing: SPEC graceful-shutdown REQ-REC-003 (metadata enrichment tracks per-entity state via LastEnrichedAt)
-// EnrichArtists runs enrichment on all artists that need it.
 func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, error) {
+	enrichStart := time.Now()
 	s.Logger.Info("enriching artists", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
@@ -580,6 +582,20 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 		}
 		enrichedCount++
 	}
+
+	enrichSuccess := true
+	var enrichErr string
+	if enrichedCount < len(artists) && len(artists) > 0 {
+		enrichSuccess = false
+		enrichErr = fmt.Sprintf("%d of %d artists failed enrichment", len(artists)-enrichedCount, len(artists))
+	}
+	s.Logger.Info("metric.enricher",
+		"enricher", "artists",
+		"entity_type", "artist",
+		"entities_processed", len(artists),
+		"duration_ms", time.Since(enrichStart).Milliseconds(),
+		"success", enrichSuccess,
+		"error", enrichErr)
 
 	return enrichedCount, nil
 }
@@ -759,8 +775,10 @@ func (s *MetadataService) saveArtistImages(ctx context.Context, art *ent.Artist,
 	return nil
 }
 
+// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
 // EnrichAlbums runs enrichment on all albums that need it.
 func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, error) {
+	enrichStart := time.Now()
 	s.Logger.Info("enriching albums", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
@@ -814,6 +832,20 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 		}
 		enrichedCount++
 	}
+
+	enrichSuccess := true
+	var enrichErr string
+	if enrichedCount < len(albums) && len(albums) > 0 {
+		enrichSuccess = false
+		enrichErr = fmt.Sprintf("%d of %d albums failed enrichment", len(albums)-enrichedCount, len(albums))
+	}
+	s.Logger.Info("metric.enricher",
+		"enricher", "albums",
+		"entity_type", "album",
+		"entities_processed", len(albums),
+		"duration_ms", time.Since(enrichStart).Milliseconds(),
+		"success", enrichSuccess,
+		"error", enrichErr)
 
 	return enrichedCount, nil
 }
@@ -1127,8 +1159,10 @@ func (s *MetadataService) saveAlbumImages(ctx context.Context, alb *ent.Album, i
 	return nil
 }
 
+// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
 // EnrichTracks runs enrichment on all tracks that need it.
 func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, error) {
+	enrichStart := time.Now()
 	s.Logger.Info("enriching tracks", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
@@ -1181,6 +1215,20 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 		}
 		enrichedCount++
 	}
+
+	enrichSuccess := true
+	var enrichErr string
+	if enrichedCount < len(userTracks) && len(userTracks) > 0 {
+		enrichSuccess = false
+		enrichErr = fmt.Sprintf("%d of %d tracks failed enrichment", len(userTracks)-enrichedCount, len(userTracks))
+	}
+	s.Logger.Info("metric.enricher",
+		"enricher", "tracks",
+		"entity_type", "track",
+		"entities_processed", len(userTracks),
+		"duration_ms", time.Since(enrichStart).Milliseconds(),
+		"success", enrichSuccess,
+		"error", enrichErr)
 
 	return enrichedCount, nil
 }
