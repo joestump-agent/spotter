@@ -1,4 +1,3 @@
-// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-031 (JSON extraction from markdown code fences)
 package vibes
 
 import (
@@ -23,6 +22,7 @@ func SanitizeJSON(input string) string {
 
 // ExtractAndSanitizeJSON extracts JSON from text (handling markdown code blocks)
 // and sanitizes it for safe parsing.
+// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-031 — extract JSON from markdown code fences
 func ExtractAndSanitizeJSON(response string) string {
 	jsonStr := extractJSONFromText(response)
 	return SanitizeJSON(jsonStr)
