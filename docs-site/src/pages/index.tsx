@@ -144,6 +144,42 @@ export default function Home(): React.ReactElement {
         </div>
       </header>
 
+      {/* AI Disclosure */}
+      <div
+        style={{
+          background: 'linear-gradient(90deg, #1a1a2e 0%, #16213e 100%)',
+          borderTop: '1px solid #282828',
+          borderBottom: '1px solid #282828',
+          padding: '0.75rem 0',
+          textAlign: 'center',
+        }}
+      >
+        <div className="container">
+          <span style={{ color: '#B3B3B3', fontSize: '0.85rem' }}>
+            🤖{' '}
+            <strong style={{ color: '#fff' }}>Built by AI.</strong>{' '}
+            Spotter was written almost entirely by{' '}
+            <a
+              href="https://claude.ai/claude-code"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#1DB954', textDecoration: 'none', fontWeight: 600 }}
+            >
+              Claude Code
+            </a>
+            {' '}(Anthropic). The human provided direction and shipped it.{' '}
+            <a
+              href="https://github.com/joestump/spotter#ai-disclosure"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#B3B3B3', textDecoration: 'underline' }}
+            >
+              Learn more
+            </a>
+          </span>
+        </div>
+      </div>
+
       {/* Stats */}
       <div className="stats-bar">
         <div className="container">
