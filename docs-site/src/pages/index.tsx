@@ -167,7 +167,7 @@ export default function Home(): React.ReactElement {
             >
               Claude Code
             </a>
-            {' '}(Anthropic). The human provided direction and shipped it.{' '}
+            {' '}(Anthropic). Use at your own risk — no warranty provided.{' '}
             <a
               href="https://github.com/joestump/spotter#ai-disclosure"
               target="_blank"
