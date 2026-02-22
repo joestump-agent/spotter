@@ -74,7 +74,7 @@ templ Appearance(user *ent.User, cfg *config.Config) {
 				localStorage.setItem('spotter-theme', theme);
 			}
 
-			// Show toast notification
+			// Show toast notification using safe DOM APIs (no innerHTML)
 			function showToast(message, type) {
 				const container = document.getElementById('toasts');
 				if (!container) return;
@@ -92,11 +92,15 @@ templ Appearance(user *ent.User, cfg *config.Config) {
 				}
 
 				toast.classList.add(alertClass);
-				toast.innerHTML = `
-					<span class="${iconClass} w-6 h-6"></span>
-					<span>${message}</span>
-				`;
 
+				const icon = document.createElement('span');
+				icon.className = iconClass + ' w-6 h-6';
+
+				const text = document.createElement('span');
+				text.textContent = message;
+
+				toast.appendChild(icon);
+				toast.appendChild(text);
 				container.appendChild(toast);
 
 				// Auto-remove after 4 seconds
