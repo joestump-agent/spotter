@@ -19,12 +19,14 @@ import (
 	"spotter/internal/providers"
 )
 
+// Governing: ADR-0020 (exponential backoff and circuit breaker), ADR-0007 (event bus for notifications), SPEC error-handling
 type Syncer struct {
 	Client    *ent.Client
 	Config    *config.Config
 	Logger    *slog.Logger
 	Bus       *events.Bus
 	Factories []providers.Factory
+	Backoff   *BackoffManager
 }
 
 func NewSyncer(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *Syncer {
@@ -34,6 +36,7 @@ func NewSyncer(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus 
 		Logger:    logger,
 		Bus:       bus,
 		Factories: []providers.Factory{},
+		Backoff:   NewBackoffManager(),
 	}
 }
 
@@ -176,6 +179,14 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 		providerName := string(provider.Type())
 
+		// Check backoff state before calling provider
+		// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
+		backoffKey := BackoffKey{UserID: u.ID, ProviderType: provider.Type()}
+		if skip, reason := s.Backoff.ShouldSkip(backoffKey); skip {
+			s.Logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
+			continue
+		}
+
 		// Send sync starting notification
 		s.Bus.Publish(u.ID, events.Event{
 			Type: events.EventTypeNotification,
@@ -235,15 +246,29 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 		})
 
 		if err != nil {
+			// Classify error and record backoff state
+			// Governing: SPEC error-handling REQ-ERR-001 through REQ-ERR-004
+			errClass := ClassifyError(err)
+			s.Backoff.RecordFailure(backoffKey, err, errClass)
 			s.Logger.Error("failed to fetch/persist recent listens",
 				"provider", provider.Type(),
 				"username", u.Username,
 				"error", err,
+				"error_class", errClass.String(),
 			)
+			// Publish fatal error notification
+			// Governing: SPEC error-handling REQ-NOTIFY-001, REQ-NOTIFY-002
+			if errClass == ErrorClassFatal {
+				s.publishFatalNotification(u.ID, backoffKey, providerName, err)
+			}
 			// Log sync failed event
 			s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName, fmt.Sprintf("Failed to fetch listens from %s: %v", providerName, err), nil)
 			continue
 		}
+
+		// Record success to reset backoff state
+		// Governing: SPEC error-handling REQ-RECOVER-001, REQ-RECOVER-002
+		s.Backoff.RecordSuccess(backoffKey)
 
 		if totalAdded > 0 {
 			s.Bus.Publish(u.ID, events.Event{
@@ -285,6 +310,14 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 
 		providerName := string(provider.Type())
 
+		// Check backoff state before calling provider
+		// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
+		backoffKey := BackoffKey{UserID: u.ID, ProviderType: provider.Type()}
+		if skip, reason := s.Backoff.ShouldSkip(backoffKey); skip {
+			s.Logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
+			continue
+		}
+
 		// Send sync starting notification
 		s.Bus.Publish(u.ID, events.Event{
 			Type: events.EventTypeNotification,
@@ -301,15 +334,29 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 		s.Logger.Info("syncing playlists", "provider", provider.Type(), "username", u.Username)
 		playlists, err := manager.GetPlaylists(ctx)
 		if err != nil {
+			// Classify error and record backoff state
+			// Governing: SPEC error-handling REQ-ERR-001 through REQ-ERR-004
+			errClass := ClassifyError(err)
+			s.Backoff.RecordFailure(backoffKey, err, errClass)
 			s.Logger.Error("failed to get playlists",
 				"provider", provider.Type(),
 				"username", u.Username,
 				"error", err,
+				"error_class", errClass.String(),
 			)
+			// Publish fatal error notification
+			// Governing: SPEC error-handling REQ-NOTIFY-001, REQ-NOTIFY-002
+			if errClass == ErrorClassFatal {
+				s.publishFatalNotification(u.ID, backoffKey, providerName, err)
+			}
 			// Log sync failed event
 			s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName, fmt.Sprintf("Failed to fetch playlists from %s: %v", providerName, err), nil)
 			continue
 		}
+
+		// Record success to reset backoff state
+		// Governing: SPEC error-handling REQ-RECOVER-001, REQ-RECOVER-002
+		s.Backoff.RecordSuccess(backoffKey)
 		s.Logger.Info("fetched playlists", "provider", provider.Type(), "count", len(playlists))
 
 		if len(playlists) > 0 {
@@ -345,6 +392,30 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 		}
 	}
 	return nil
+}
+
+// publishFatalNotification publishes a user-visible notification for fatal provider errors.
+// It only publishes once per fatal error occurrence.
+// Governing: SPEC error-handling REQ-NOTIFY-001, REQ-NOTIFY-002
+func (s *Syncer) publishFatalNotification(userID int, key BackoffKey, providerName string, err error) {
+	state, ok := s.Backoff.GetState(key)
+	if !ok || state.NotifiedFatal {
+		return
+	}
+
+	title := fmt.Sprintf("%s Connection Failed", providerName)
+	message := fmt.Sprintf("Error from %s: %v. Please check your connection in Preferences.", providerName, err)
+
+	s.Bus.Publish(userID, events.Event{
+		Type: events.EventTypeNotification,
+		Payload: events.NotificationPayload{
+			Title:    title,
+			Message:  message,
+			IconType: "error",
+		},
+	})
+
+	s.Backoff.MarkNotified(key)
 }
 
 func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source providers.Type, tracks []providers.Track) (int, int, error) {
