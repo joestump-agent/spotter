@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -119,10 +120,28 @@ func main() {
 	// Initialize Handlers
 	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, playlistEnhancer, similarArtistsSvc, bus)
 
-	// Governing: ADR-0007 (graceful shutdown), SPEC graceful-shutdown REQ "SHUTDOWN-001"
+	// Governing: ADR-0007 (graceful shutdown), ADR-0018 (graceful shutdown), SPEC graceful-shutdown REQ "SHUTDOWN-001"
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
+	// Governing: SPEC graceful-shutdown REQ-TMO-005 (configurable shutdown timeout)
+	shutdownTimeout := 30 * time.Second
+	if s := os.Getenv("SPOTTER_SHUTDOWN_TIMEOUT"); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			shutdownTimeout = d
+		}
+	}
+
+	// Governing: SPEC graceful-shutdown REQ-SEM-001 through REQ-SEM-004 (bounded concurrency semaphore)
+	maxJobs := 10
+	if s := os.Getenv("SPOTTER_MAX_CONCURRENT_JOBS"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			maxJobs = n
+		}
+	}
+	sem := make(chan struct{}, maxJobs)
+
+	// Governing: SPEC graceful-shutdown REQ-WG-001 (single shared WaitGroup for all per-user goroutines)
 	var wg sync.WaitGroup
 
 	// Background Sync Loop for listens/playlists
@@ -136,8 +155,6 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		var innerWg sync.WaitGroup
-		defer innerWg.Wait()
 		ticker := time.NewTicker(syncInterval)
 		defer ticker.Stop()
 		for {
@@ -145,17 +162,25 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				bgCtx := context.Background()
-				users, err := client.User.Query().All(bgCtx)
+				// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
+				users, err := client.User.Query().All(ctx)
 				if err != nil {
 					logger.Error("failed to fetch users for background sync", "error", err)
 					continue
 				}
 				for _, u := range users {
-					innerWg.Add(1)
+					// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
+					wg.Add(1)
 					go func(user *ent.User) {
-						defer innerWg.Done()
-						if err := syncer.Sync(bgCtx, user); err != nil {
+						defer wg.Done()
+						// Governing: SPEC graceful-shutdown REQ-SEM-003, REQ-SEM-004 (semaphore acquire with ctx)
+						select {
+						case sem <- struct{}{}:
+							defer func() { <-sem }()
+						case <-ctx.Done():
+							return
+						}
+						if err := syncer.Sync(ctx, user); err != nil {
 							logger.Error("background sync failed", "username", user.Username, "error", err)
 						}
 					}(u)
@@ -178,21 +203,27 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var innerWg sync.WaitGroup
-			defer innerWg.Wait()
 
 			syncMetadataForUsers := func() {
-				bgCtx := context.Background()
-				users, err := client.User.Query().All(bgCtx)
+				// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
+				users, err := client.User.Query().All(ctx)
 				if err != nil {
 					logger.Error("failed to fetch users for metadata sync", "error", err)
 					return
 				}
 				for _, u := range users {
-					innerWg.Add(1)
+					// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
+					wg.Add(1)
 					go func(user *ent.User) {
-						defer innerWg.Done()
-						if err := metadataSvc.SyncAll(bgCtx, user); err != nil {
+						defer wg.Done()
+						// Governing: SPEC graceful-shutdown REQ-SEM-003, REQ-SEM-004 (semaphore acquire with ctx)
+						select {
+						case sem <- struct{}{}:
+							defer func() { <-sem }()
+						case <-ctx.Done():
+							return
+						}
+						if err := metadataSvc.SyncAll(ctx, user); err != nil {
 							logger.Error("metadata sync failed", "username", user.Username, "error", err)
 						}
 					}(u)
@@ -235,8 +266,6 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		var innerWg sync.WaitGroup
-		defer innerWg.Wait()
 		// Initial delay to let the app start up
 		select {
 		case <-ctx.Done():
@@ -251,17 +280,25 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				bgCtx := context.Background()
-				users, err := client.User.Query().All(bgCtx)
+				// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
+				users, err := client.User.Query().All(ctx)
 				if err != nil {
 					logger.Error("failed to fetch users for playlist sync", "error", err)
 					continue
 				}
 				for _, u := range users {
-					innerWg.Add(1)
+					// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
+					wg.Add(1)
 					go func(user *ent.User) {
-						defer innerWg.Done()
-						if err := playlistSyncSvc.SyncAllEnabledPlaylists(bgCtx, user.ID); err != nil {
+						defer wg.Done()
+						// Governing: SPEC graceful-shutdown REQ-SEM-003, REQ-SEM-004 (semaphore acquire with ctx)
+						select {
+						case sem <- struct{}{}:
+							defer func() { <-sem }()
+						case <-ctx.Done():
+							return
+						}
+						if err := playlistSyncSvc.SyncAllEnabledPlaylists(ctx, user.ID); err != nil {
 							logger.Error("playlist sync failed", "username", user.Username, "error", err)
 						}
 					}(u)
@@ -420,16 +457,34 @@ func main() {
 
 	// Wait for shutdown signal
 	<-ctx.Done()
-	logger.Info("shutting down, waiting for background jobs to finish")
+	logger.Info("shutdown initiated, waiting for background jobs to finish")
 
-	// Give server and background jobs up to 30 seconds to finish
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Governing: SPEC graceful-shutdown REQ-SIG-004 (second signal -> hard exit)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		if _, ok := <-sigCh; ok {
+			logger.Error("second signal received, forcing exit")
+			os.Exit(1)
+		}
+	}()
+
+	// Governing: SPEC graceful-shutdown REQ-TMO-002 (hard exit timer)
+	timer := time.AfterFunc(shutdownTimeout, func() {
+		logger.Error("shutdown timeout exceeded, forcing exit")
+		os.Exit(1)
+	})
+	defer timer.Stop()
+
+	// Shut down the HTTP server
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("server shutdown error", "error", err)
 	}
 
+	// Governing: SPEC graceful-shutdown REQ-WG-003 (wait for all per-user goroutines to drain)
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -440,7 +495,7 @@ func main() {
 	case <-done:
 		logger.Info("all background jobs finished cleanly")
 	case <-shutdownCtx.Done():
-		logger.Warn("shutdown timeout exceeded, forcing exit")
+		logger.Warn("shutdown timeout exceeded")
 	}
 }
 

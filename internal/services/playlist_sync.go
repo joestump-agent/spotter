@@ -201,6 +201,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 		"unmatched_tracks", unmatchedCount,
 		"match_rate", fmt.Sprintf("%.1f%%", float64(matchedCount)/float64(len(sourceTracks))*100))
 
+	// Governing: SPEC graceful-shutdown REQ-REC-004 (playlist sync compares desired vs current Navidrome state)
 	// Decide what to do with the playlist
 	var navidromePlaylistID string
 

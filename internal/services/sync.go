@@ -188,6 +188,7 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 		// Log sync started event
 		s.logEvent(ctx, u, syncevent.EventTypeSyncStarted, providerName, fmt.Sprintf("Started syncing listens from %s", providerName), nil)
 
+		// Governing: SPEC graceful-shutdown REQ-REC-001, REQ-REC-002 (idempotent listen sync via timestamp watermark)
 		// Determine the last sync time for this provider/source to optimize fetching.
 		// We query the latest listen for this specific user and source.
 		lastListen, err := s.Client.Listen.Query().
