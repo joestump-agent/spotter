@@ -199,13 +199,14 @@ templ EnhanceVibesModalContent(params EnhanceVibesModalParams) {
 
 // EnhanceVibesButton renders the button that opens the enhance vibes modal.
 // This replaces the old "Enhance" button on playlist views.
+// Governing: SPEC vibes-ai-mixtape-engine REQ "modal opens only after HTMX content is loaded"
 templ EnhanceVibesButton(playlistID int, size string) {
 	<button
 		class={ "btn btn-accent gap-2", templ.KV("btn-sm", size == "sm") }
 		hx-get={ fmt.Sprintf("/playlists/%d/enhance-vibes-modal", playlistID) }
 		hx-target="#enhance-vibes-modal"
 		hx-swap="innerHTML"
-		onclick="document.getElementById('enhance-vibes-modal').showModal()"
+		_="on htmx:afterSettle from #enhance-vibes-modal call #enhance-vibes-modal.showModal()"
 	>
 		<span class="icon-[heroicons--sparkles] w-4 h-4"></span>
 		Enhance Vibes

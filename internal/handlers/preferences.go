@@ -165,6 +165,7 @@ func (h *Handler) DisconnectLastFM(w http.ResponseWriter, r *http.Request) {
 }
 
 // SyncNavidrome triggers a sync for Navidrome data
+// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 func (h *Handler) SyncNavidrome(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -181,8 +182,15 @@ func (h *Handler) SyncNavidrome(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		if err := h.Syncer.SyncProvider(context.Background(), u, providers.TypeNavidrome); err != nil {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for navidrome sync", "error", err)
+			return
+		}
+		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeNavidrome); err != nil {
 			h.Logger.Error("failed to sync navidrome", "error", err)
 		}
 	}()
@@ -245,8 +253,15 @@ func (h *Handler) RebuildNavidrome(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		if err := h.Syncer.SyncProvider(context.Background(), u, providers.TypeNavidrome); err != nil {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for navidrome rebuild sync", "error", err)
+			return
+		}
+		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeNavidrome); err != nil {
 			h.Logger.Error("failed to sync navidrome after rebuild", "error", err)
 		}
 	}()
@@ -255,6 +270,7 @@ func (h *Handler) RebuildNavidrome(w http.ResponseWriter, r *http.Request) {
 }
 
 // SyncSpotify triggers a sync for Spotify data
+// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 func (h *Handler) SyncSpotify(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -271,8 +287,15 @@ func (h *Handler) SyncSpotify(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		if err := h.Syncer.SyncProvider(context.Background(), u, providers.TypeSpotify); err != nil {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for spotify sync", "error", err)
+			return
+		}
+		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeSpotify); err != nil {
 			h.Logger.Error("failed to sync spotify", "error", err)
 		}
 	}()
@@ -335,8 +358,15 @@ func (h *Handler) RebuildSpotify(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		if err := h.Syncer.SyncProvider(context.Background(), u, providers.TypeSpotify); err != nil {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for spotify rebuild sync", "error", err)
+			return
+		}
+		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeSpotify); err != nil {
 			h.Logger.Error("failed to sync spotify after rebuild", "error", err)
 		}
 	}()
@@ -345,6 +375,7 @@ func (h *Handler) RebuildSpotify(w http.ResponseWriter, r *http.Request) {
 }
 
 // SyncLastFM triggers a sync for Last.fm data
+// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 func (h *Handler) SyncLastFM(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -361,8 +392,15 @@ func (h *Handler) SyncLastFM(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		if err := h.Syncer.SyncProvider(context.Background(), u, providers.TypeLastFM); err != nil {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for lastfm sync", "error", err)
+			return
+		}
+		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeLastFM); err != nil {
 			h.Logger.Error("failed to sync lastfm", "error", err)
 		}
 	}()
@@ -412,8 +450,15 @@ func (h *Handler) RebuildLastFM(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		if err := h.Syncer.SyncProvider(context.Background(), u, providers.TypeLastFM); err != nil {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for lastfm rebuild sync", "error", err)
+			return
+		}
+		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeLastFM); err != nil {
 			h.Logger.Error("failed to sync lastfm after rebuild", "error", err)
 		}
 	}()
@@ -648,6 +693,7 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 }
 
 // TaskSyncListens triggers a sync of all listens
+// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 func (h *Handler) TaskSyncListens(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -664,8 +710,15 @@ func (h *Handler) TaskSyncListens(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		if err := h.Syncer.SyncRecentListens(context.Background(), u); err != nil {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for listen sync", "error", err)
+			return
+		}
+		if err := h.Syncer.SyncRecentListens(ctx, freshUser); err != nil {
 			h.Logger.Error("failed to sync listens", "error", err)
 		}
 	}()
@@ -674,6 +727,7 @@ func (h *Handler) TaskSyncListens(w http.ResponseWriter, r *http.Request) {
 }
 
 // TaskSyncPlaylists triggers a sync of all playlists
+// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 func (h *Handler) TaskSyncPlaylists(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {
@@ -690,8 +744,15 @@ func (h *Handler) TaskSyncPlaylists(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		if err := h.Syncer.SyncPlaylists(context.Background(), u); err != nil {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for playlist sync", "error", err)
+			return
+		}
+		if err := h.Syncer.SyncPlaylists(ctx, freshUser); err != nil {
 			h.Logger.Error("failed to sync playlists", "error", err)
 		}
 	}()
@@ -729,8 +790,15 @@ func (h *Handler) TaskEnrichMetadata(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		if err := h.MetadataSvc.SyncAll(context.Background(), u); err != nil {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for metadata enrichment", "error", err)
+			return
+		}
+		if err := h.MetadataSvc.SyncAll(ctx, freshUser); err != nil {
 			h.Logger.Error("failed to run metadata enrichment", "error", err)
 		}
 	}()
@@ -768,11 +836,18 @@ func (h *Handler) TaskSyncArtistImages(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		count, err := h.MetadataSvc.SyncAllArtistImages(context.Background(), u)
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for artist image sync", "error", err)
+			return
+		}
+		count, err := h.MetadataSvc.SyncAllArtistImages(ctx, freshUser)
 		if err != nil {
 			h.Logger.Error("failed to sync artist images", "error", err)
-			h.Bus.Publish(u.ID, events.Event{
+			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
 				Payload: events.NotificationPayload{
 					Title:    "Sync Failed",
@@ -782,7 +857,7 @@ func (h *Handler) TaskSyncArtistImages(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(u.ID, events.Event{
+		h.Bus.Publish(userID, events.Event{
 			Type: events.EventTypeNotification,
 			Payload: events.NotificationPayload{
 				Title:    "Sync Complete",
@@ -825,11 +900,18 @@ func (h *Handler) TaskSyncAlbumImages(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	userID := u.ID
 	go func() {
-		count, err := h.MetadataSvc.SyncAllAlbumImages(context.Background(), u)
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for album image sync", "error", err)
+			return
+		}
+		count, err := h.MetadataSvc.SyncAllAlbumImages(ctx, freshUser)
 		if err != nil {
 			h.Logger.Error("failed to sync album images", "error", err)
-			h.Bus.Publish(u.ID, events.Event{
+			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
 				Payload: events.NotificationPayload{
 					Title:    "Sync Failed",
@@ -839,7 +921,7 @@ func (h *Handler) TaskSyncAlbumImages(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(u.ID, events.Event{
+		h.Bus.Publish(userID, events.Event{
 			Type: events.EventTypeNotification,
 			Payload: events.NotificationPayload{
 				Title:    "Sync Complete",
@@ -952,14 +1034,21 @@ func (h *Handler) TaskResetData(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Re-sync everything in the background
+	// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
+	userID := u.ID
 	go func() {
 		bgCtx := context.Background()
-		if err := h.Syncer.Sync(bgCtx, u); err != nil {
+		freshUser, err := h.Client.User.Get(bgCtx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for reset sync", "error", err)
+			return
+		}
+		if err := h.Syncer.Sync(bgCtx, freshUser); err != nil {
 			h.Logger.Error("failed to sync after reset", "error", err)
 		}
 		// Also run metadata enrichment if available
 		if h.MetadataSvc != nil {
-			if err := h.MetadataSvc.SyncAll(bgCtx, u); err != nil {
+			if err := h.MetadataSvc.SyncAll(bgCtx, freshUser); err != nil {
 				h.Logger.Error("failed to run metadata after reset", "error", err)
 			}
 		}
@@ -989,21 +1078,28 @@ func (h *Handler) TaskCleanup(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
+	userID := u.ID
 	go func() {
 		bgCtx := context.Background()
+		freshUser, err := h.Client.User.Get(bgCtx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for cleanup", "error", err)
+			return
+		}
 
 		// Delete events older than 30 days
 		cutoff := time.Now().AddDate(0, 0, -30)
 		deleted, err := h.Client.SyncEvent.Delete().
 			Where(
-				syncevent.HasUserWith(user.ID(u.ID)),
+				syncevent.HasUserWith(user.ID(userID)),
 				syncevent.CreatedAtLT(cutoff),
 			).
 			Exec(bgCtx)
 
 		if err != nil {
 			h.Logger.Error("failed to delete old events", "error", err)
-			h.Bus.Publish(u.ID, events.Event{
+			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
 				Payload: events.NotificationPayload{
 					Title:    "Cleanup Failed",
@@ -1014,13 +1110,13 @@ func (h *Handler) TaskCleanup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.Logger.Info("cleanup completed", "username", u.Username, "events_deleted", deleted)
+		h.Logger.Info("cleanup completed", "username", freshUser.Username, "events_deleted", deleted)
 
-		h.logEvent(bgCtx, u, syncevent.EventTypeCleanupCompleted, "system",
+		h.logEvent(bgCtx, freshUser, syncevent.EventTypeCleanupCompleted, "system",
 			fmt.Sprintf("Cleanup completed: deleted %d events older than 30 days", deleted),
 			map[string]interface{}{"events_deleted": deleted})
 
-		h.Bus.Publish(u.ID, events.Event{
+		h.Bus.Publish(userID, events.Event{
 			Type: events.EventTypeNotification,
 			Payload: events.NotificationPayload{
 				Title:    "Cleanup Complete",
