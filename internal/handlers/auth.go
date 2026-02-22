@@ -22,7 +22,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	h.Render(w, r, auth.Login(h.Config.Navidrome.BaseURL))
+	errorMsg := r.URL.Query().Get("error")
+	h.Render(w, r, auth.Login(h.Config.Navidrome.BaseURL, errorMsg))
 }
 
 func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
@@ -44,9 +45,8 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 	// 1. Authenticate against Navidrome
 	if err := h.authenticateNavidrome(username, password); err != nil {
 		h.Logger.Error("Navidrome authentication failed", "error", err)
-		// Return error to HTMX
-		w.Header().Set("HX-Retarget", "body") // Optionally retarget to show error
-		http.Error(w, "Invalid credentials or Navidrome error", http.StatusUnauthorized)
+		w.WriteHeader(http.StatusUnauthorized)
+		h.Render(w, r, auth.Login(h.Config.Navidrome.BaseURL, "Invalid username or password. Please try again."))
 		return
 	}
 

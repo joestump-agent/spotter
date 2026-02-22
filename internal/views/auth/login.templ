@@ -2,7 +2,7 @@ package auth
 
 import "spotter/internal/views/layouts"
 
-templ Login(navidromeURL string) {
+templ Login(navidromeURL string, errorMsg string) {
 	@layouts.Base("Login | Spotter") {
 		<div class="hero min-h-screen bg-base-200">
 			<div class="hero-content flex-col">
@@ -16,6 +16,12 @@ templ Login(navidromeURL string) {
 							</div>
 							<h1 class="text-4xl font-bold text-primary tracking-wide">Spotter</h1>
 						</div>
+						if errorMsg != "" {
+							<div class="alert alert-error shadow-sm">
+								<span class="icon-[heroicons--exclamation-triangle] w-5 h-5"></span>
+								<span>{ errorMsg }</span>
+							</div>
+						}
 						<form class="space-y-4" action="/login" method="POST" hx-post="/login" hx-target="body">
 							<div class="form-control">
 								<label class="label" for="username">
