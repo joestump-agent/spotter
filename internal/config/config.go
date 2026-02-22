@@ -158,7 +158,7 @@ func (c *Config) AvailableThemes() []string {
 // Falls back to default order if not configured.
 func (c *Config) MetadataEnricherOrder() []string {
 	if c.Metadata.Order == "" {
-		return []string{"lidarr", "musicbrainz", "navidrome", "spotify", "lastfm", "fanart", "openai"}
+		return []string{"musicbrainz", "lidarr", "navidrome", "spotify", "lastfm", "fanart", "openai"}
 	}
 	parts := strings.Split(c.Metadata.Order, ",")
 	result := make([]string, 0, len(parts))
@@ -282,7 +282,7 @@ func Load() (*Config, error) {
 	// Metadata enrichment defaults
 	v.SetDefault("metadata.enabled", true)
 	v.SetDefault("metadata.interval", "1h")
-	v.SetDefault("metadata.order", "lidarr,musicbrainz,navidrome,spotify,lastfm,fanart,openai")
+	v.SetDefault("metadata.order", "musicbrainz,lidarr,navidrome,spotify,lastfm,fanart,openai")
 	v.SetDefault("metadata.musicbrainz.user_agent", "Spotter/1.0.0 (https://github.com/spotter)")
 	v.SetDefault("metadata.fanart.api_key", "")
 	v.SetDefault("metadata.images.download", true)
