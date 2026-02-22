@@ -1,3 +1,4 @@
+// Governing: ADR-0005 (Navidrome primary identity), ADR-0006 (AES-256-GCM encryption), ADR-0002 (Chi router), SPEC user-authentication
 package handlers
 
 import (

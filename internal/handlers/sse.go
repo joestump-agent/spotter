@@ -1,3 +1,4 @@
+// Governing: ADR-0007 (in-memory event bus), SPEC event-bus-sse
 package handlers
 
 import (

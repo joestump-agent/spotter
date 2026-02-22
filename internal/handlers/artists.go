@@ -652,6 +652,7 @@ func (h *Handler) getAIEnricher(ctx context.Context, u *ent.User) ([]enrichers.E
 }
 
 // ArtistFindSimilar finds similar artists for the given artist using AI.
+// Governing: SPEC similar-artists-discovery REQ-SIM-070 through REQ-SIM-081 (handler integration, event bus)
 func (h *Handler) ArtistFindSimilar(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
 	if u == nil {

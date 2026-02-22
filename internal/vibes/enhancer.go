@@ -1,3 +1,4 @@
+// Governing: ADR-0008 (OpenAI API / LiteLLM backend), ADR-0007 (event bus), SPEC vibes-ai-mixtape-engine
 package vibes
 
 import (

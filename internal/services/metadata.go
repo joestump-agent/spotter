@@ -1,3 +1,4 @@
+// Governing: ADR-0008 (OpenAI), ADR-0004 (Ent ORM), SPEC metadata-enrichment-pipeline
 package services
 
 import (
