@@ -354,6 +354,8 @@ func main() {
 	// Middleware
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
+	// Governing: SPEC-0014 REQ "HTTP Server Timeouts", SPEC user-authentication REQ "Security Headers"
+	r.Use(internalMiddleware.SecurityHeaders)
 	r.Use(internalMiddleware.Logger(logger))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
@@ -482,9 +484,37 @@ func main() {
 	})
 
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
+
+	// Governing: SPEC-0014 REQ "HTTP Server Timeouts", SPEC user-authentication REQ "Security Headers"
+	// Parse server timeouts from config with sensible defaults to protect against slowloris DoS
+	readHeaderTimeout, err := time.ParseDuration(cfg.Server.ReadHeaderTimeout)
+	if err != nil {
+		logger.Error("invalid server.read_header_timeout, using default 10s", "error", err, "value", cfg.Server.ReadHeaderTimeout)
+		readHeaderTimeout = 10 * time.Second
+	}
+	readTimeout, err := time.ParseDuration(cfg.Server.ReadTimeout)
+	if err != nil {
+		logger.Error("invalid server.read_timeout, using default 30s", "error", err, "value", cfg.Server.ReadTimeout)
+		readTimeout = 30 * time.Second
+	}
+	writeTimeout, err := time.ParseDuration(cfg.Server.WriteTimeout)
+	if err != nil {
+		logger.Error("invalid server.write_timeout, using default 60s", "error", err, "value", cfg.Server.WriteTimeout)
+		writeTimeout = 60 * time.Second
+	}
+	idleTimeout, err := time.ParseDuration(cfg.Server.IdleTimeout)
+	if err != nil {
+		logger.Error("invalid server.idle_timeout, using default 120s", "error", err, "value", cfg.Server.IdleTimeout)
+		idleTimeout = 120 * time.Second
+	}
+
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: r,
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 
 	// Start the HTTP server in a goroutine

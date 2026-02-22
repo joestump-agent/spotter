@@ -60,8 +60,12 @@ type Config struct {
 		Source string `mapstructure:"source"`
 	} `mapstructure:"database"`
 	Server struct {
-		Port string `mapstructure:"port"`
-		Host string `mapstructure:"host"`
+		Port               string `mapstructure:"port"`
+		Host               string `mapstructure:"host"`
+		ReadHeaderTimeout  string `mapstructure:"read_header_timeout"`  // Duration string for read header timeout (default: "10s")
+		ReadTimeout        string `mapstructure:"read_timeout"`         // Duration string for read timeout (default: "30s")
+		WriteTimeout       string `mapstructure:"write_timeout"`        // Duration string for write timeout (default: "60s")
+		IdleTimeout        string `mapstructure:"idle_timeout"`         // Duration string for idle timeout (default: "120s")
 	} `mapstructure:"server"`
 	Navidrome struct {
 		BaseURL string `mapstructure:"base_url"`
@@ -215,6 +219,10 @@ func Load() (*Config, error) {
 	v.SetDefault("security.jwt_secret", "")       // Must be set via environment variable
 	v.SetDefault("server.port", "8080")
 	v.SetDefault("server.host", "0.0.0.0")
+	v.SetDefault("server.read_header_timeout", "10s")
+	v.SetDefault("server.read_timeout", "30s")
+	v.SetDefault("server.write_timeout", "60s")
+	v.SetDefault("server.idle_timeout", "120s")
 	v.SetDefault("sync.interval", "5m")
 	v.SetDefault("theme.available", "light,dark,cupcake")
 	v.SetDefault("theme.default", "dark")
