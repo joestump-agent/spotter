@@ -357,11 +357,8 @@ func TestBackoffManager_ConsecutiveFailuresEscalate(t *testing.T) {
 	key := services.BackoffKey{UserID: 1, ProviderType: providers.TypeSpotify}
 	err := fmt.Errorf("service unavailable")
 
-	var delays []time.Duration
 	for i := 0; i < 5; i++ {
 		mgr.RecordFailure(key, err, services.ErrorClassRetriable)
-		state, _ := mgr.GetState(key)
-		delays = append(delays, time.Until(state.NextRetryAt))
 	}
 
 	// Verify that failures increment

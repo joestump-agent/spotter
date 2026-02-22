@@ -105,8 +105,8 @@ func ClassifyError(err error) ErrorClass {
 func classifyHTTPStatus(statusCode int) ErrorClass {
 	switch statusCode {
 	case http.StatusTooManyRequests, // 429
-		http.StatusBadGateway,         // 502
-		http.StatusServiceUnavailable, // 503
+		http.StatusBadGateway,          // 502
+		http.StatusServiceUnavailable,  // 503
 		http.StatusInternalServerError: // 500
 		return ErrorClassRetriable
 	case http.StatusUnauthorized, // 401
