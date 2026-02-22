@@ -1,7 +1,8 @@
 ---
-status: proposed
+status: superseded
 date: 2026-02-21
 decision-makers: joestump
+superseded-by: ADR-0023
 ---
 
 # ADR-0003: Chose SQLite as Embedded Database over PostgreSQL
