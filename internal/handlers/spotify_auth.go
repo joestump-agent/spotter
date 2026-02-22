@@ -72,7 +72,8 @@ func (h *Handler) SpotifyLogin(w http.ResponseWriter, r *http.Request) {
 		Value:    state,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		// Governing: SPEC user-authentication REQ "OAuth Secure Cookie Flag"
+		Secure:   h.Config.Security.SecureCookies,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(spotifyStateTTL),
 	})

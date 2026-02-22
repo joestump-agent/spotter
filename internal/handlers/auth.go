@@ -191,10 +191,20 @@ func (h *Handler) authenticateNavidrome(username, password string) error {
 
 	// Handle trailing slash in base URL
 	apiURL := fmt.Sprintf("%s/rest/ping.view?%s", baseURL, params.Encode())
-	// Simple check if base URL already has /rest
-	// But usually baseURL is just the host:port or host:port/navidrome
 
-	resp, err := http.Get(apiURL)
+	// Governing: SPEC user-authentication REQ "Sanitize Navidrome Auth Debug Logs"
+	// Log sanitized URL (strip password hash params t= and s=)
+	if sanitizedURL, err := url.Parse(apiURL); err == nil {
+		q := sanitizedURL.Query()
+		q.Del("t")
+		q.Del("s")
+		sanitizedURL.RawQuery = q.Encode()
+		h.Logger.Debug("authenticating against Navidrome", "url", sanitizedURL.String())
+	}
+
+	// Governing: SPEC user-authentication REQ "Auth HTTP Client Timeout"
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(apiURL)
 	if err != nil {
 		return err
 	}
