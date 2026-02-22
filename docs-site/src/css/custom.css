@@ -1,0 +1,573 @@
+/**
+ * Spotter Docs - Spotify-Inspired Theme
+ *
+ * Styles for the Spotter documentation site with Spotify-inspired
+ * dark theme and badge/component styles for ADR and OpenSpec content.
+ */
+
+/* ============================================
+   Spotify-Inspired Color Palette
+   ============================================ */
+:root {
+  --ifm-color-primary: #1DB954;
+  --ifm-color-primary-dark: #18a349;
+  --ifm-color-primary-darker: #169a45;
+  --ifm-color-primary-darkest: #117f38;
+  --ifm-color-primary-light: #22cf5f;
+  --ifm-color-primary-lighter: #2fd768;
+  --ifm-color-primary-lightest: #4de07f;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(29, 185, 84, 0.1);
+
+  /* Spotify custom vars */
+  --spotify-black: #191414;
+  --spotify-dark-gray: #282828;
+  --spotify-medium-gray: #3E3E3E;
+  --spotify-light-gray: #B3B3B3;
+  --spotify-green: #1DB954;
+  --spotify-white: #FFFFFF;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #1DB954;
+  --ifm-color-primary-dark: #18a349;
+  --ifm-color-primary-darker: #169a45;
+  --ifm-color-primary-darkest: #117f38;
+  --ifm-color-primary-light: #22cf5f;
+  --ifm-color-primary-lighter: #2fd768;
+  --ifm-color-primary-lightest: #4de07f;
+  --docusaurus-highlighted-code-line-bg: rgba(29, 185, 84, 0.15);
+
+  --ifm-background-color: #191414;
+  --ifm-background-surface-color: #282828;
+  --ifm-navbar-background-color: #121212;
+  --ifm-footer-background-color: #121212;
+  --ifm-card-background-color: #282828;
+}
+
+/* Dark mode by default feels more Spotify */
+html[data-theme='dark'] {
+  background-color: var(--spotify-black);
+}
+
+/* ============================================
+   Navbar Styling
+   ============================================ */
+[data-theme='dark'] .navbar {
+  background-color: #121212;
+  border-bottom: 1px solid #282828;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.navbar__brand {
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+[data-theme='dark'] .navbar__link {
+  color: var(--spotify-light-gray);
+}
+
+[data-theme='dark'] .navbar__link:hover,
+[data-theme='dark'] .navbar__link--active {
+  color: var(--spotify-white);
+}
+
+/* ============================================
+   Sidebar Styling
+   ============================================ */
+[data-theme='dark'] .menu {
+  background-color: #121212;
+}
+
+[data-theme='dark'] .menu__link {
+  color: var(--spotify-light-gray);
+  border-radius: 4px;
+}
+
+[data-theme='dark'] .menu__link:hover {
+  color: var(--spotify-white);
+  background-color: rgba(255, 255, 255, 0.07);
+}
+
+[data-theme='dark'] .menu__link--active {
+  color: var(--spotify-white);
+  background-color: rgba(29, 185, 84, 0.15);
+  font-weight: 600;
+}
+
+/* ============================================
+   Badge Components - Shared Base Styles
+   ============================================ */
+.severity-badge,
+.domain-badge,
+.priority-badge,
+.status-badge,
+.date-badge,
+.rfc-level-badge {
+  display: inline-block;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.375rem;
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+  font-family: var(--ifm-font-family-monospace);
+  border: 1px solid transparent;
+}
+
+/* Severity Badge */
+.severity-badge.critical { background-color: #dc3545; color: white; border-color: #c82333; }
+.severity-badge.high { background-color: #fd7e14; color: white; border-color: #e96b02; }
+.severity-badge.medium { background-color: #ffc107; color: black; border-color: #e0a800; }
+.severity-badge.low { background-color: #1DB954; color: white; border-color: #18a349; }
+.severity-badge.info { background-color: #17a2b8; color: white; border-color: #138496; }
+.severity-badge.unknown { background-color: #6c757d; color: white; border-color: #5a6268; }
+
+/* Domain Badge */
+.domain-badge {
+  background-color: rgba(29, 185, 84, 0.2);
+  color: #1DB954;
+  border-color: rgba(29, 185, 84, 0.4);
+}
+
+[data-theme='dark'] .domain-badge {
+  background-color: rgba(29, 185, 84, 0.15);
+  color: #4de07f;
+  border-color: rgba(29, 185, 84, 0.3);
+}
+
+/* Priority Badge */
+.priority-badge.p0 { background-color: #dc3545; color: white; border-color: #c82333; }
+.priority-badge.p1 { background-color: #fd7e14; color: white; border-color: #e96b02; }
+.priority-badge.p2 { background-color: #ffc107; color: black; border-color: #e0a800; }
+.priority-badge.p3 { background-color: #17a2b8; color: white; border-color: #138496; }
+.priority-badge.p4 { background-color: #6c757d; color: white; border-color: #5a6268; }
+
+/* Status Badge */
+.status-badge.approved,
+.status-badge.accepted { background-color: #1DB954; color: white; border-color: #18a349; }
+.status-badge.active { background-color: #1DB954; color: white; border-color: #18a349; }
+.status-badge.proposed { background-color: #17a2b8; color: white; border-color: #138496; }
+.status-badge.draft { background-color: #17a2b8; color: white; border-color: #138496; }
+.status-badge.deprecated { background-color: #6c757d; color: white; border-color: #5a6268; }
+.status-badge.inactive { background-color: #6c757d; color: white; border-color: #5a6268; }
+.status-badge.superseded { background-color: #fd7e14; color: white; border-color: #e96b02; }
+.status-badge.rejected { background-color: #dc3545; color: white; border-color: #c82333; }
+.status-badge.unknown { background-color: #6c757d; color: white; border-color: #5a6268; }
+
+/* Date Badge */
+.date-badge { background-color: #3E3E3E; color: #B3B3B3; border-color: #5a5a5a; }
+
+/* RFC Level Badge */
+.rfc-level-badge.critical { background-color: #dc3545; color: white; border-color: #c82333; }
+.rfc-level-badge.high { background-color: #fd7e14; color: white; border-color: #e96b02; }
+.rfc-level-badge.optional { background-color: #17a2b8; color: white; border-color: #138496; }
+.rfc-level-badge.unknown { background-color: #6c757d; color: white; border-color: #5a6268; }
+
+/* ============================================
+   RFC 2119 Keyword Highlighting
+   ============================================ */
+.rfc-keyword {
+  font-weight: 700;
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.2rem;
+}
+.rfc-keyword.must,
+.rfc-keyword.shall,
+.rfc-keyword.required {
+  background-color: rgba(220, 53, 69, 0.12);
+  color: #a71d2a;
+}
+.rfc-keyword.should,
+.rfc-keyword.recommended {
+  background-color: rgba(253, 126, 20, 0.12);
+  color: #c55a02;
+}
+.rfc-keyword.may,
+.rfc-keyword.optional {
+  background-color: rgba(29, 185, 84, 0.12);
+  color: #117f38;
+}
+
+[data-theme='dark'] .rfc-keyword.must,
+[data-theme='dark'] .rfc-keyword.shall,
+[data-theme='dark'] .rfc-keyword.required {
+  background-color: rgba(220, 53, 69, 0.2);
+  color: #f5c6cb;
+}
+[data-theme='dark'] .rfc-keyword.should,
+[data-theme='dark'] .rfc-keyword.recommended {
+  background-color: rgba(253, 126, 20, 0.2);
+  color: #ffd8a8;
+}
+[data-theme='dark'] .rfc-keyword.may,
+[data-theme='dark'] .rfc-keyword.optional {
+  background-color: rgba(29, 185, 84, 0.2);
+  color: #4de07f;
+}
+
+/* ============================================
+   ADR Consequence Keywords
+   ============================================ */
+.consequence-keyword {
+  font-weight: 700;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.2rem;
+}
+.consequence-keyword.good {
+  background-color: rgba(29, 185, 84, 0.15);
+  color: #117f38;
+}
+.consequence-keyword.neutral {
+  background-color: rgba(23, 162, 184, 0.15);
+  color: #0c5460;
+}
+.consequence-keyword.bad {
+  background-color: rgba(220, 53, 69, 0.15);
+  color: #a71d2a;
+}
+.consequence-keyword.meh,
+.consequence-keyword.okay {
+  background-color: rgba(253, 126, 20, 0.15);
+  color: #c55a02;
+}
+
+[data-theme='dark'] .consequence-keyword.good {
+  background-color: rgba(29, 185, 84, 0.25);
+  color: #4de07f;
+}
+[data-theme='dark'] .consequence-keyword.neutral {
+  background-color: rgba(23, 162, 184, 0.25);
+  color: #bee5eb;
+}
+[data-theme='dark'] .consequence-keyword.bad {
+  background-color: rgba(220, 53, 69, 0.25);
+  color: #f5c6cb;
+}
+[data-theme='dark'] .consequence-keyword.meh,
+[data-theme='dark'] .consequence-keyword.okay {
+  background-color: rgba(253, 126, 20, 0.25);
+  color: #ffd8a8;
+}
+
+/* ============================================
+   RFC Reference Links
+   ============================================ */
+.rfc-ref {
+  font-family: var(--ifm-font-family-monospace);
+  font-weight: 600;
+  font-size: 0.9em;
+  text-decoration: none;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  background-color: rgba(29, 185, 84, 0.1);
+  color: var(--ifm-color-primary-dark);
+  border: 1px solid rgba(29, 185, 84, 0.2);
+  transition: background-color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+.rfc-ref:hover {
+  background-color: rgba(29, 185, 84, 0.2);
+  border-color: rgba(29, 185, 84, 0.4);
+  text-decoration: none;
+}
+[data-theme='dark'] .rfc-ref {
+  background-color: rgba(29, 185, 84, 0.15);
+  color: var(--ifm-color-primary-light);
+  border-color: rgba(29, 185, 84, 0.3);
+}
+[data-theme='dark'] .rfc-ref:hover {
+  background-color: rgba(29, 185, 84, 0.25);
+  border-color: rgba(29, 185, 84, 0.5);
+}
+
+/* ============================================
+   Requirement Box
+   ============================================ */
+.requirement-box {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 1rem 0;
+  background-color: var(--ifm-background-surface-color);
+}
+.requirement-box:target {
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.2);
+}
+.requirement-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.requirement-id {
+  font-family: var(--ifm-font-family-monospace);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.requirement-id a {
+  color: inherit;
+  text-decoration: none;
+}
+.requirement-id a:hover {
+  text-decoration: underline;
+}
+.requirement-meta {
+  display: flex;
+  gap: 0.5rem;
+}
+.requirement-body {
+  font-size: 0.95rem;
+}
+
+/* ============================================
+   Field and FieldGroup
+   ============================================ */
+.dd-field-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background-color: var(--ifm-background-surface-color);
+  border-radius: 0.5rem;
+  border: 1px solid var(--ifm-color-emphasis-200);
+}
+.dd-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.dd-field-label {
+  font-weight: 600;
+  color: var(--ifm-color-emphasis-700);
+}
+.dd-field-value {
+  color: var(--ifm-color-emphasis-900);
+}
+
+/* ============================================
+   Homepage Hero
+   ============================================ */
+.hero--spotter {
+  background: linear-gradient(135deg, #121212 0%, #191414 50%, #1a1a1a 100%);
+  padding: 5rem 0 4rem;
+  text-align: center;
+  border-bottom: 1px solid #282828;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero--spotter::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(ellipse at center, rgba(29, 185, 84, 0.08) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.hero__title--spotter {
+  font-size: 4rem;
+  font-weight: 900;
+  color: #FFFFFF;
+  margin-bottom: 1rem;
+  letter-spacing: -2px;
+  line-height: 1;
+}
+
+.hero__title--spotter span {
+  color: #1DB954;
+}
+
+.hero__subtitle--spotter {
+  font-size: 1.25rem;
+  color: #B3B3B3;
+  max-width: 600px;
+  margin: 0 auto 2.5rem;
+  line-height: 1.6;
+}
+
+.hero__logo {
+  font-size: 5rem;
+  margin-bottom: 1.5rem;
+  display: block;
+}
+
+.hero__cta {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.button--spotify {
+  background-color: #1DB954 !important;
+  border-color: #1DB954 !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
+  border-radius: 500px !important;
+  padding: 0.75rem 2rem !important;
+  font-size: 0.875rem !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  transition: transform 0.1s, background-color 0.2s !important;
+}
+
+.button--spotify:hover {
+  background-color: #1ed760 !important;
+  border-color: #1ed760 !important;
+  transform: scale(1.04) !important;
+}
+
+.button--spotify-outline {
+  background-color: transparent !important;
+  border: 2px solid rgba(255,255,255,0.3) !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  border-radius: 500px !important;
+  padding: 0.75rem 2rem !important;
+  font-size: 0.875rem !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  transition: border-color 0.2s !important;
+}
+
+.button--spotify-outline:hover {
+  border-color: rgba(255,255,255,0.7) !important;
+  color: #FFFFFF !important;
+}
+
+/* ============================================
+   Feature Cards
+   ============================================ */
+.features-section {
+  background-color: #121212;
+  padding: 4rem 0;
+}
+
+.features-section-alt {
+  background-color: #191414;
+  padding: 4rem 0;
+}
+
+.section-title {
+  text-align: center;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 0.5rem;
+}
+
+.section-subtitle {
+  text-align: center;
+  color: #B3B3B3;
+  font-size: 1rem;
+  margin-bottom: 3rem;
+}
+
+.feature-card {
+  background-color: #282828;
+  border-radius: 12px;
+  padding: 2rem 1.75rem;
+  height: 100%;
+  transition: background-color 0.2s, transform 0.2s;
+  text-decoration: none !important;
+  display: block;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.feature-card:hover {
+  background-color: #3E3E3E;
+  transform: translateY(-4px);
+  border-color: rgba(29, 185, 84, 0.3);
+  text-decoration: none !important;
+}
+
+.feature-card__icon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.feature-card__title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 0.5rem;
+  text-decoration: none !important;
+}
+
+.feature-card__description {
+  font-size: 0.9rem;
+  color: #B3B3B3;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.feature-card__link {
+  color: #1DB954 !important;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.feature-card__link:hover {
+  color: #1ed760 !important;
+  text-decoration: underline;
+}
+
+/* ============================================
+   Stats Bar
+   ============================================ */
+.stats-bar {
+  background-color: #282828;
+  border-top: 1px solid #3E3E3E;
+  border-bottom: 1px solid #3E3E3E;
+  padding: 2rem 0;
+}
+
+.stat-item {
+  text-align: center;
+  padding: 0 1.5rem;
+}
+
+.stat-number {
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: #1DB954;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: #B3B3B3;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ============================================
+   Footer
+   ============================================ */
+[data-theme='dark'] .footer {
+  background-color: #121212;
+  border-top: 1px solid #282828;
+}
+
+[data-theme='dark'] .footer__title {
+  color: #FFFFFF;
+}
+
+[data-theme='dark'] .footer__link-item {
+  color: #B3B3B3;
+}
+
+[data-theme='dark'] .footer__link-item:hover {
+  color: #1DB954;
+}
