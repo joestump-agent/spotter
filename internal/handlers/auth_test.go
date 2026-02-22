@@ -349,7 +349,7 @@ func TestPostLogin_SecureCookieFlag(t *testing.T) {
 			require.NotNil(t, sessionCookie, "Session cookie should be set")
 			assert.Equal(t, tc.expectedSecure, sessionCookie.Secure, "Cookie Secure flag should match config")
 			assert.True(t, sessionCookie.HttpOnly, "Cookie should be HttpOnly")
-			assert.Equal(t, http.SameSiteStrictMode, sessionCookie.SameSite, "Cookie should have SameSite=Strict")
+			assert.Equal(t, http.SameSiteLaxMode, sessionCookie.SameSite, "Session cookie should use SameSite=Lax for OAuth compatibility")
 		})
 	}
 }

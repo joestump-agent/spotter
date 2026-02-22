@@ -133,7 +133,9 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.Config.Security.SecureCookies,
 		Expires:  time.Now().Add(24 * time.Hour),
-		SameSite: http.SameSiteStrictMode,
+		// Governing: issue #161 — Lax (not Strict) allows session cookie to be sent in
+		// OAuth cross-site redirect chains (Spotify/LastFM → our callback → authenticated route)
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	// Check if this is an HTMX request
@@ -155,7 +157,9 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.Config.Security.SecureCookies,
 		Expires:  time.Now().Add(-1 * time.Hour),
-		SameSite: http.SameSiteStrictMode,
+		// Governing: issue #161 — Lax (not Strict) allows session cookie to be sent in
+		// OAuth cross-site redirect chains (Spotify/LastFM → our callback → authenticated route)
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
 	http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
