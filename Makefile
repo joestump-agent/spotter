@@ -4,9 +4,11 @@ ifneq (,$(wildcard ./.env))
 endif
 
 BINARY_NAME=spotter-server
+ADMIN_BINARY_NAME=spotter-admin
 MAIN_PATH=./cmd/server/main.go
+ADMIN_MAIN_PATH=./cmd/admin/main.go
 
-.PHONY: all help deps ci-deps docker-deps generate css build build-binary run dev test test-coverage lint lint-docker lint-docs lint-go lint-md lint-templ lint-yaml clean docker-build docker-run docs-deps docs-build docs-serve docs-clean
+.PHONY: all help deps ci-deps docker-deps generate css build build-binary build-admin run dev test test-coverage lint lint-docker lint-docs lint-go lint-md lint-templ lint-yaml clean docker-build docker-run docs-deps docs-build docs-serve docs-clean
 
 all: build
 
@@ -69,6 +71,11 @@ build-binary: ## Build only the binary (no code generation)
 	@echo "Building $(BINARY_NAME)..."
 	CGO_ENABLED=1 go build -o $(BINARY_NAME) $(MAIN_PATH)
 	@echo "✓ Build complete: $(BINARY_NAME)"
+
+build-admin: ## Build the admin CLI binary
+	@echo "Building $(ADMIN_BINARY_NAME)..."
+	CGO_ENABLED=1 go build -o $(ADMIN_BINARY_NAME) $(ADMIN_MAIN_PATH)
+	@echo "✓ Build complete: $(ADMIN_BINARY_NAME)"
 
 run: dev ## Alias for 'make dev'
 
@@ -149,6 +156,7 @@ lint-go: generate ## Run golangci-lint on Go code
 clean: ## Remove build artifacts
 	@echo "Cleaning build artifacts..."
 	rm -f $(BINARY_NAME)
+	rm -f $(ADMIN_BINARY_NAME)
 	rm -f ./static/css/output.css
 	rm -f coverage.out coverage.html
 	rm -rf tmp/
