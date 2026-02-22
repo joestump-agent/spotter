@@ -92,7 +92,7 @@ templ Index(rows []components.TrackTableRow, currentPage int, totalPages int, cf
 							if currentPage > 1 {
 								<a href={ templ.URL(buildPaginationURL(currentPage-1, artistFilter, sortCol, sortDir)) } class="join-item btn btn-sm">«</a>
 							} else {
-								<button class="join-item btn btn-sm btn-disabled">«</button>
+								<button class="join-item btn btn-sm btn-disabled" disabled>«</button>
 							}
 							for i := 1; i <= totalPages; i++ {
 								if i == currentPage {
@@ -100,13 +100,13 @@ templ Index(rows []components.TrackTableRow, currentPage int, totalPages int, cf
 								} else if i == 1 || i == totalPages || (i >= currentPage-2 && i <= currentPage+2) {
 									<a href={ templ.URL(buildPaginationURL(i, artistFilter, sortCol, sortDir)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", i) }</a>
 								} else if i == currentPage-3 || i == currentPage+3 {
-									<button class="join-item btn btn-sm btn-disabled">...</button>
+									<button class="join-item btn btn-sm btn-disabled" disabled>...</button>
 								}
 							}
 							if currentPage < totalPages {
 								<a href={ templ.URL(buildPaginationURL(currentPage+1, artistFilter, sortCol, sortDir)) } class="join-item btn btn-sm">»</a>
 							} else {
-								<button class="join-item btn btn-sm btn-disabled">»</button>
+								<button class="join-item btn btn-sm btn-disabled" disabled>»</button>
 							}
 						</div>
 					</div>

@@ -7,6 +7,8 @@ import (
 	"spotter/internal/views/components"
 	"spotter/internal/views/layouts"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 func showFormatDate(t time.Time) string {
@@ -165,7 +167,8 @@ func capitalizeFirst(s string) string {
 	if s == "" {
 		return s
 	}
-	return string(s[0]-32) + s[1:]
+	r, size := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 func formatSyncStatus(playlist *ent.Playlist) string {
