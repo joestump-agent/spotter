@@ -24,7 +24,7 @@ func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client,
 		RegisterEncryptionHooks(client, encryptor)
 	}
 
-	// Run the auto migration tool.
+	// Governing: SPEC-0014 REQ "Schema Migration", ADR-0004 (Ent ORM handles DDL for all dialects)
 	if err := client.Schema.Create(context.Background()); err != nil {
 		// Attempt to close the client on schema creation failure
 		_ = client.Close()
