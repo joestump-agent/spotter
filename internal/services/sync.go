@@ -21,29 +21,29 @@ import (
 
 // Governing: ADR-0020 (exponential backoff and circuit breaker), ADR-0007 (event bus for notifications), SPEC error-handling
 type Syncer struct {
-	Client    *ent.Client
-	Config    *config.Config
-	Logger    *slog.Logger
-	Bus       *events.Bus
-	Factories []providers.Factory
-	Backoff   *BackoffManager
+	client    *ent.Client
+	config    *config.Config
+	logger    *slog.Logger
+	bus       *events.Bus
+	factories []providers.Factory
+	backoff   *BackoffManager
 }
 
 func NewSyncer(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *Syncer {
 	return &Syncer{
-		Client:    client,
-		Config:    cfg,
-		Logger:    logger,
-		Bus:       bus,
-		Factories: []providers.Factory{},
-		Backoff:   NewBackoffManager(),
+		client:    client,
+		config:    cfg,
+		logger:    logger,
+		bus:       bus,
+		factories: []providers.Factory{},
+		backoff:   NewBackoffManager(),
 	}
 }
 
 // Governing: ADR-0016 (pluggable provider factory), SPEC listen-playlist-sync REQ-SYNC-001
 // Register adds a new provider factory to the syncer.
 func (s *Syncer) Register(factory providers.Factory) {
-	s.Factories = append(s.Factories, factory)
+	s.factories = append(s.factories, factory)
 }
 
 // Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
@@ -52,7 +52,7 @@ func (s *Syncer) Register(factory providers.Factory) {
 // Governing: SPEC listen-playlist-sync REQ-SYNC-011 (history failure does not abort playlist sync)
 // Sync performs a full synchronization (history and playlists) for the user.
 func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
-	s.Logger.Info("starting full sync", "username", u.Username)
+	s.logger.Info("starting full sync", "username", u.Username)
 	syncStart := time.Now()
 
 	refreshedUser, activeProviders, err := s.getActiveProviders(ctx, u)
@@ -68,7 +68,7 @@ func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 	var histErr error
 	listensSynced, histErr = s.syncHistory(ctx, refreshedUser, activeProviders)
 	if histErr != nil {
-		s.Logger.Error("failed to sync history", "username", refreshedUser.Username, "error", histErr)
+		s.logger.Error("failed to sync history", "username", refreshedUser.Username, "error", histErr)
 		syncSuccess = false
 		syncErr = histErr.Error()
 	}
@@ -77,14 +77,14 @@ func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 	var plErr error
 	playlistsSynced, plErr = s.syncPlaylists(ctx, refreshedUser, activeProviders)
 	if plErr != nil {
-		s.Logger.Error("failed to sync playlists", "username", refreshedUser.Username, "error", plErr)
+		s.logger.Error("failed to sync playlists", "username", refreshedUser.Username, "error", plErr)
 		syncSuccess = false
 		syncErr = plErr.Error()
 	}
 
 	// Emit metric.sync for each active provider
 	for _, p := range activeProviders {
-		s.Logger.Info("metric.sync",
+		s.logger.Info("metric.sync",
 			"provider", string(p.Type()),
 			"listens_synced", listensSynced,
 			"playlists_synced", playlistsSynced,
@@ -93,13 +93,13 @@ func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 			"error", syncErr)
 	}
 
-	s.Logger.Info("full sync completed", "username", refreshedUser.Username)
+	s.logger.Info("full sync completed", "username", refreshedUser.Username)
 	return nil
 }
 
 // SyncProvider performs a full synchronization for a specific provider only.
 func (s *Syncer) SyncProvider(ctx context.Context, u *ent.User, providerType providers.Type) error {
-	s.Logger.Info("starting provider sync", "username", u.Username, "provider", providerType)
+	s.logger.Info("starting provider sync", "username", u.Username, "provider", providerType)
 
 	refreshedUser, activeProviders, err := s.getActiveProviders(ctx, u)
 	if err != nil {
@@ -115,21 +115,21 @@ func (s *Syncer) SyncProvider(ctx context.Context, u *ent.User, providerType pro
 	}
 
 	if len(targetProviders) == 0 {
-		s.Logger.Warn("provider not found or not active", "provider", providerType)
+		s.logger.Warn("provider not found or not active", "provider", providerType)
 		return nil
 	}
 
 	// 1. History
 	if _, err := s.syncHistory(ctx, refreshedUser, targetProviders); err != nil {
-		s.Logger.Error("failed to sync history", "username", refreshedUser.Username, "provider", providerType, "error", err)
+		s.logger.Error("failed to sync history", "username", refreshedUser.Username, "provider", providerType, "error", err)
 	}
 
 	// 2. Playlists
 	if _, err := s.syncPlaylists(ctx, refreshedUser, targetProviders); err != nil {
-		s.Logger.Error("failed to sync playlists", "username", refreshedUser.Username, "provider", providerType, "error", err)
+		s.logger.Error("failed to sync playlists", "username", refreshedUser.Username, "provider", providerType, "error", err)
 	}
 
-	s.Logger.Info("provider sync completed", "username", refreshedUser.Username, "provider", providerType)
+	s.logger.Info("provider sync completed", "username", refreshedUser.Username, "provider", providerType)
 	return nil
 }
 
@@ -158,7 +158,7 @@ func (s *Syncer) SyncPlaylists(ctx context.Context, u *ent.User) error {
 func (s *Syncer) getActiveProviders(ctx context.Context, u *ent.User) (*ent.User, []providers.Provider, error) {
 	// Refresh user to ensure we have all auth edges loaded so factories can check configuration.
 	// We need these so the factories can decide if they can create a provider.
-	refreshedUser, err := s.Client.User.Query().
+	refreshedUser, err := s.client.User.Query().
 		Where(user.ID(u.ID)).
 		WithSpotifyAuth().
 		WithNavidromeAuth().
@@ -169,10 +169,10 @@ func (s *Syncer) getActiveProviders(ctx context.Context, u *ent.User) (*ent.User
 	}
 
 	var active []providers.Provider
-	for _, factory := range s.Factories {
+	for _, factory := range s.factories {
 		provider, err := factory(ctx, refreshedUser)
 		if err != nil {
-			s.Logger.Error("failed to create provider", "error", err, "username", refreshedUser.Username)
+			s.logger.Error("failed to create provider", "error", err, "username", refreshedUser.Username)
 			continue
 		}
 		if provider != nil {
@@ -184,7 +184,7 @@ func (s *Syncer) getActiveProviders(ctx context.Context, u *ent.User) (*ent.User
 
 // logEvent persists a sync event to the database.
 func (s *Syncer) logEvent(ctx context.Context, u *ent.User, eventType syncevent.EventType, provider string, message string, metadata map[string]interface{}) {
-	builder := s.Client.SyncEvent.Create().
+	builder := s.client.SyncEvent.Create().
 		SetUser(u).
 		SetEventType(eventType).
 		SetProvider(provider).
@@ -197,7 +197,7 @@ func (s *Syncer) logEvent(ctx context.Context, u *ent.User, eventType syncevent.
 	}
 
 	if _, err := builder.Save(ctx); err != nil {
-		s.Logger.Warn("failed to log sync event", "event_type", eventType, "provider", provider, "error", err)
+		s.logger.Warn("failed to log sync event", "event_type", eventType, "provider", provider, "error", err)
 	}
 }
 
@@ -218,13 +218,13 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 		// Check backoff state before calling provider
 		// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
 		backoffKey := BackoffKey{UserID: u.ID, ProviderType: provider.Type()}
-		if skip, reason := s.Backoff.ShouldSkip(backoffKey); skip {
-			s.Logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
+		if skip, reason := s.backoff.ShouldSkip(backoffKey); skip {
+			s.logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
 			continue
 		}
 
 		// Send sync starting notification
-		s.Bus.Publish(u.ID, events.Event{
+		s.bus.Publish(u.ID, events.Event{
 			Type: events.EventTypeNotification,
 			Payload: events.NotificationPayload{
 				Title:    "Syncing Listens",
@@ -239,7 +239,7 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 		// Governing: SPEC graceful-shutdown REQ-REC-001, REQ-REC-002 (idempotent listen sync via timestamp watermark)
 		// Determine the last sync time for this provider/source to optimize fetching.
 		// We query the latest listen for this specific user and source.
-		lastListen, err := s.Client.Listen.Query().
+		lastListen, err := s.client.Listen.Query().
 			Where(
 				listen.HasUserWith(user.ID(u.ID)),
 				listen.Source(string(provider.Type())),
@@ -247,20 +247,20 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			Order(ent.Desc(listen.FieldPlayedAt)).
 			First(ctx)
 		if err != nil && !ent.IsNotFound(err) {
-			s.Logger.Warn("failed to query last listen", "provider", provider.Type(), "error", err)
+			s.logger.Warn("failed to query last listen", "provider", provider.Type(), "error", err)
 		}
 
 		var since time.Time
 		if lastListen != nil {
 			since = lastListen.PlayedAt
-			s.Logger.Debug("found last listen", "provider", provider.Type(), "played_at", since)
+			s.logger.Debug("found last listen", "provider", provider.Type(), "played_at", since)
 		} else {
 			// Default to beginning of time if no history exists to fetch everything
 			since = time.Unix(0, 0)
-			s.Logger.Debug("no previous history found, defaulting lookback to beginning of time", "provider", provider.Type(), "since", since)
+			s.logger.Debug("no previous history found, defaulting lookback to beginning of time", "provider", provider.Type(), "since", since)
 		}
 
-		s.Logger.Debug("fetching history", "provider", provider.Type(), "since", since)
+		s.logger.Debug("fetching history", "provider", provider.Type(), "since", since)
 
 		var totalAdded, totalSkipped, totalFound int
 
@@ -269,11 +269,11 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 				return nil
 			}
 			totalFound += len(tracks)
-			s.Logger.Info("found new tracks batch", "count", len(tracks), "provider", provider.Type())
+			s.logger.Info("found new tracks batch", "count", len(tracks), "provider", provider.Type())
 
 			count, skipped, err := s.persistListens(ctx, u, provider.Type(), tracks)
 			if err != nil {
-				s.Logger.Error("failed to persist listens batch", "error", err)
+				s.logger.Error("failed to persist listens batch", "error", err)
 				return err
 			}
 			totalAdded += count
@@ -285,8 +285,8 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			// Classify error and record backoff state
 			// Governing: SPEC error-handling REQ-ERR-001 through REQ-ERR-004
 			errClass := ClassifyError(err)
-			s.Backoff.RecordFailure(backoffKey, err, errClass)
-			s.Logger.Error("failed to fetch/persist recent listens",
+			s.backoff.RecordFailure(backoffKey, err, errClass)
+			s.logger.Error("failed to fetch/persist recent listens",
 				"provider", provider.Type(),
 				"username", u.Username,
 				"error", err,
@@ -304,11 +304,11 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 		// Record success to reset backoff state
 		// Governing: SPEC error-handling REQ-RECOVER-001, REQ-RECOVER-002
-		s.Backoff.RecordSuccess(backoffKey)
+		s.backoff.RecordSuccess(backoffKey)
 
 		allAdded += totalAdded
 		if totalAdded > 0 {
-			s.Bus.Publish(u.ID, events.Event{
+			s.bus.Publish(u.ID, events.Event{
 				Type: events.EventTypeNotification,
 				Payload: events.NotificationPayload{
 					Title:    "New Listens Synced",
@@ -324,7 +324,7 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 				fmt.Sprintf("Completed syncing listens from %s: %d added, %d skipped", providerName, totalAdded, totalSkipped),
 				map[string]interface{}{"added": totalAdded, "skipped": totalSkipped, "total": totalFound})
 		} else {
-			s.Logger.Debug("no new tracks found", "provider", provider.Type())
+			s.logger.Debug("no new tracks found", "provider", provider.Type())
 			// Log sync completed with no new tracks
 			s.logEvent(ctx, u, syncevent.EventTypeSyncCompleted, providerName,
 				fmt.Sprintf("Completed syncing listens from %s: no new tracks", providerName), nil)
@@ -332,7 +332,7 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 		// Update last_synced_at after sync attempt
 		if err := s.updateLastSyncedAt(ctx, u, provider.Type()); err != nil {
-			s.Logger.Warn("failed to update last_synced_at", "provider", provider.Type(), "error", err)
+			s.logger.Warn("failed to update last_synced_at", "provider", provider.Type(), "error", err)
 		}
 	}
 	return allAdded, nil
@@ -352,13 +352,13 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 		// Check backoff state before calling provider
 		// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
 		backoffKey := BackoffKey{UserID: u.ID, ProviderType: provider.Type()}
-		if skip, reason := s.Backoff.ShouldSkip(backoffKey); skip {
-			s.Logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
+		if skip, reason := s.backoff.ShouldSkip(backoffKey); skip {
+			s.logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
 			continue
 		}
 
 		// Send sync starting notification
-		s.Bus.Publish(u.ID, events.Event{
+		s.bus.Publish(u.ID, events.Event{
 			Type: events.EventTypeNotification,
 			Payload: events.NotificationPayload{
 				Title:    "Syncing Playlists",
@@ -370,14 +370,14 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 		// Log sync started event
 		s.logEvent(ctx, u, syncevent.EventTypeSyncStarted, providerName, fmt.Sprintf("Started syncing playlists from %s", providerName), nil)
 
-		s.Logger.Info("syncing playlists", "provider", provider.Type(), "username", u.Username)
+		s.logger.Info("syncing playlists", "provider", provider.Type(), "username", u.Username)
 		playlists, err := manager.GetPlaylists(ctx)
 		if err != nil {
 			// Classify error and record backoff state
 			// Governing: SPEC error-handling REQ-ERR-001 through REQ-ERR-004
 			errClass := ClassifyError(err)
-			s.Backoff.RecordFailure(backoffKey, err, errClass)
-			s.Logger.Error("failed to get playlists",
+			s.backoff.RecordFailure(backoffKey, err, errClass)
+			s.logger.Error("failed to get playlists",
 				"provider", provider.Type(),
 				"username", u.Username,
 				"error", err,
@@ -395,18 +395,18 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 
 		// Record success to reset backoff state
 		// Governing: SPEC error-handling REQ-RECOVER-001, REQ-RECOVER-002
-		s.Backoff.RecordSuccess(backoffKey)
-		s.Logger.Info("fetched playlists", "provider", provider.Type(), "count", len(playlists))
+		s.backoff.RecordSuccess(backoffKey)
+		s.logger.Info("fetched playlists", "provider", provider.Type(), "count", len(playlists))
 
 		if len(playlists) > 0 {
 			added, skipped, err := s.persistPlaylists(ctx, u, provider.Type(), playlists)
 			if err != nil {
-				s.Logger.Error("failed to persist playlists", "error", err)
+				s.logger.Error("failed to persist playlists", "error", err)
 			}
 			allAdded += added
 
 			if added > 0 {
-				s.Bus.Publish(u.ID, events.Event{
+				s.bus.Publish(u.ID, events.Event{
 					Type: events.EventTypeNotification,
 					Payload: events.NotificationPayload{
 						Title:    "Playlists Synced",
@@ -428,7 +428,7 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 
 		// Update last_synced_at after sync attempt
 		if err := s.updateLastSyncedAt(ctx, u, provider.Type()); err != nil {
-			s.Logger.Warn("failed to update last_synced_at", "provider", provider.Type(), "error", err)
+			s.logger.Warn("failed to update last_synced_at", "provider", provider.Type(), "error", err)
 		}
 	}
 	return allAdded, nil
@@ -438,7 +438,7 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 // It only publishes once per fatal error occurrence. Only called for fatal errors (not retriable).
 // Governing: SPEC error-handling REQ-NOTIFY-001, REQ-NOTIFY-002, REQ-NOTIFY-003
 func (s *Syncer) publishFatalNotification(userID int, key BackoffKey, providerName string, err error) {
-	state, ok := s.Backoff.GetState(key)
+	state, ok := s.backoff.GetState(key)
 	if !ok || state.NotifiedFatal {
 		return
 	}
@@ -446,7 +446,7 @@ func (s *Syncer) publishFatalNotification(userID int, key BackoffKey, providerNa
 	title := fmt.Sprintf("%s Connection Failed", providerName)
 	message := fmt.Sprintf("Error from %s: %v. Please check your connection in Preferences.", providerName, err)
 
-	s.Bus.Publish(userID, events.Event{
+	s.bus.Publish(userID, events.Event{
 		Type: events.EventTypeNotification,
 		Payload: events.NotificationPayload{
 			Title:    title,
@@ -455,7 +455,7 @@ func (s *Syncer) publishFatalNotification(userID int, key BackoffKey, providerNa
 		},
 	})
 
-	s.Backoff.MarkNotified(key)
+	s.backoff.MarkNotified(key)
 }
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-021 (upsert Listen with dedup by provider+track+played_at)
@@ -477,7 +477,7 @@ func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source provide
 		// Cross-provider de-duplication: check if a similar listen exists within a time window
 		// This prevents duplicate entries when the same song is reported by multiple providers
 		if s.isDuplicateListen(ctx, u, track) {
-			s.Logger.Debug("skipping duplicate listen (cross-provider)", "track", track.Name, "artist", track.Artist, "played_at", track.PlayedAt)
+			s.logger.Debug("skipping duplicate listen (cross-provider)", "track", track.Name, "artist", track.Artist, "played_at", track.PlayedAt)
 			skippedCount++
 			s.logEvent(ctx, u, syncevent.EventTypeTrackSkipped, providerName,
 				fmt.Sprintf("Skipped duplicate: %s by %s", track.Name, track.Artist),
@@ -488,7 +488,7 @@ func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source provide
 		// Governing: SPEC graceful-shutdown REQ-REC-001 (idempotent sync), REQ-REC-003 (existence check before insert)
 		// Check if it exists to avoid unique constraint violations.
 		// We use the fields defined in the unique index: played_at, source, track_name, artist_name, user.
-		exists, err := s.Client.Listen.Query().
+		exists, err := s.client.Listen.Query().
 			Where(
 				listen.HasUserWith(user.ID(u.ID)),
 				listen.Source(string(source)),
@@ -499,12 +499,12 @@ func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source provide
 			Exist(ctx)
 
 		if err != nil {
-			s.Logger.Warn("failed to check existence of listen", "error", err)
+			s.logger.Warn("failed to check existence of listen", "error", err)
 			continue
 		}
 
 		if exists {
-			s.Logger.Debug("skipping duplicate listen", "track", track.Name, "artist", track.Artist, "played_at", track.PlayedAt)
+			s.logger.Debug("skipping duplicate listen", "track", track.Name, "artist", track.Artist, "played_at", track.PlayedAt)
 			skippedCount++
 			s.logEvent(ctx, u, syncevent.EventTypeTrackSkipped, providerName,
 				fmt.Sprintf("Skipped existing: %s by %s", track.Name, track.Artist),
@@ -512,7 +512,7 @@ func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source provide
 			continue
 		}
 
-		builder := s.Client.Listen.Create().
+		builder := s.client.Listen.Create().
 			SetUser(u).
 			SetTrackName(track.Name).
 			SetArtistName(track.Artist).
@@ -526,21 +526,21 @@ func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source provide
 
 		l, err := builder.Save(ctx)
 		if err != nil {
-			s.Logger.Warn("failed to save listen",
+			s.logger.Warn("failed to save listen",
 				"track", track.Name,
 				"provider", source,
 				"error", err,
 			)
 		} else {
 			savedCount++
-			s.Logger.Debug("saved listen", "track", track.Name, "artist", track.Artist, "provider", source)
+			s.logger.Debug("saved listen", "track", track.Name, "artist", track.Artist, "provider", source)
 
 			// Log track added event
 			s.logEvent(ctx, u, syncevent.EventTypeTrackAdded, providerName,
 				fmt.Sprintf("Added: %s by %s", track.Name, track.Artist),
 				map[string]interface{}{"track": track.Name, "artist": track.Artist, "album": track.Album})
 
-			s.Bus.Publish(u.ID, events.Event{
+			s.bus.Publish(u.ID, events.Event{
 				Type:    events.EventTypeRecentListen,
 				Payload: l,
 			})
@@ -558,7 +558,7 @@ func (s *Syncer) isDuplicateListen(ctx context.Context, u *ent.User, track provi
 	startTime := track.PlayedAt.Add(-timeWindow)
 	endTime := track.PlayedAt.Add(timeWindow)
 
-	exists, err := s.Client.Listen.Query().
+	exists, err := s.client.Listen.Query().
 		Where(
 			listen.HasUserWith(user.ID(u.ID)),
 			listen.TrackName(track.Name),
@@ -569,7 +569,7 @@ func (s *Syncer) isDuplicateListen(ctx context.Context, u *ent.User, track provi
 		Exist(ctx)
 
 	if err != nil {
-		s.Logger.Warn("failed to check for duplicate listen", "error", err)
+		s.logger.Warn("failed to check for duplicate listen", "error", err)
 		return false
 	}
 
@@ -582,15 +582,15 @@ func (s *Syncer) updateLastSyncedAt(ctx context.Context, u *ent.User, providerTy
 	switch providerType {
 	case providers.TypeNavidrome:
 		if u.Edges.NavidromeAuth != nil {
-			return s.Client.NavidromeAuth.UpdateOneID(u.Edges.NavidromeAuth.ID).SetLastSyncedAt(now).Exec(ctx)
+			return s.client.NavidromeAuth.UpdateOneID(u.Edges.NavidromeAuth.ID).SetLastSyncedAt(now).Exec(ctx)
 		}
 	case providers.TypeSpotify:
 		if u.Edges.SpotifyAuth != nil {
-			return s.Client.SpotifyAuth.UpdateOneID(u.Edges.SpotifyAuth.ID).SetLastSyncedAt(now).Exec(ctx)
+			return s.client.SpotifyAuth.UpdateOneID(u.Edges.SpotifyAuth.ID).SetLastSyncedAt(now).Exec(ctx)
 		}
 	case providers.TypeLastFM:
 		if u.Edges.LastfmAuth != nil {
-			return s.Client.LastFMAuth.UpdateOneID(u.Edges.LastfmAuth.ID).SetLastSyncedAt(now).Exec(ctx)
+			return s.client.LastFMAuth.UpdateOneID(u.Edges.LastfmAuth.ID).SetLastSyncedAt(now).Exec(ctx)
 		}
 	}
 	return nil
@@ -607,7 +607,7 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 	// (i.e., playlists synced from other sources to Navidrome)
 	spotterManagedNavidromeIDs := make(map[string]bool)
 	if source == providers.TypeNavidrome {
-		managedPlaylists, err := s.Client.Playlist.Query().
+		managedPlaylists, err := s.client.Playlist.Query().
 			Where(
 				playlist.HasUserWith(user.ID(u.ID)),
 				playlist.NavidromePlaylistIDNEQ(""),
@@ -615,13 +615,13 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 			).
 			All(ctx)
 		if err != nil {
-			s.Logger.Warn("failed to query Spotter-managed playlists", "error", err)
+			s.logger.Warn("failed to query Spotter-managed playlists", "error", err)
 		} else {
 			for _, mp := range managedPlaylists {
 				spotterManagedNavidromeIDs[mp.NavidromePlaylistID] = true
 			}
 			if len(spotterManagedNavidromeIDs) > 0 {
-				s.Logger.Debug("found Spotter-managed Navidrome playlists to exclude",
+				s.logger.Debug("found Spotter-managed Navidrome playlists to exclude",
 					"count", len(spotterManagedNavidromeIDs))
 			}
 		}
@@ -637,7 +637,7 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 
 		// Skip Navidrome playlists that are managed by Spotter (synced from other sources)
 		if source == providers.TypeNavidrome && spotterManagedNavidromeIDs[pl.ID] {
-			s.Logger.Debug("skipping Spotter-managed Navidrome playlist",
+			s.logger.Debug("skipping Spotter-managed Navidrome playlist",
 				"playlist_id", pl.ID, "name", pl.Name)
 			s.logEvent(ctx, u, syncevent.EventTypePlaylistSkipped, providerName,
 				fmt.Sprintf("Skipped Spotter-managed playlist: %s", pl.Name),
@@ -648,7 +648,7 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 
 		// Governing: SPEC graceful-shutdown REQ-REC-001 (idempotent sync), REQ-REC-003 (existence check before insert)
 		// Check if playlist exists
-		existingPlaylist, err := s.Client.Playlist.Query().
+		existingPlaylist, err := s.client.Playlist.Query().
 			Where(
 				playlist.HasUserWith(user.ID(u.ID)),
 				playlist.Source(string(source)),
@@ -657,14 +657,14 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 			Only(ctx)
 
 		if err != nil && !ent.IsNotFound(err) {
-			s.Logger.Warn("failed to check playlist existence", "error", err)
+			s.logger.Warn("failed to check playlist existence", "error", err)
 			continue
 		}
 
 		var playlistID int
 		if existingPlaylist != nil {
 			// Update existing playlist
-			_, err := s.Client.Playlist.UpdateOne(existingPlaylist).
+			_, err := s.client.Playlist.UpdateOne(existingPlaylist).
 				SetName(pl.Name).
 				SetDescription(pl.Description).
 				SetImageURL(pl.ImageURL).
@@ -674,15 +674,15 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 				SetUniqueAlbums(pl.UniqueAlbums).
 				Save(ctx)
 			if err != nil {
-				s.Logger.Warn("failed to update playlist", "name", pl.Name, "error", err)
+				s.logger.Warn("failed to update playlist", "name", pl.Name, "error", err)
 				continue
 			}
-			s.Logger.Debug("updated playlist", "name", pl.Name, "source", source)
+			s.logger.Debug("updated playlist", "name", pl.Name, "source", source)
 			playlistID = existingPlaylist.ID
 			updatedCount++
 		} else {
 			// Create new playlist
-			newPlaylist, err := s.Client.Playlist.Create().
+			newPlaylist, err := s.client.Playlist.Create().
 				SetUser(u).
 				SetRemoteID(pl.ID).
 				SetName(pl.Name).
@@ -695,10 +695,10 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 				SetSource(string(source)).
 				Save(ctx)
 			if err != nil {
-				s.Logger.Warn("failed to create playlist", "name", pl.Name, "error", err)
+				s.logger.Warn("failed to create playlist", "name", pl.Name, "error", err)
 				continue
 			}
-			s.Logger.Debug("created playlist", "name", pl.Name, "source", source)
+			s.logger.Debug("created playlist", "name", pl.Name, "source", source)
 			playlistID = newPlaylist.ID
 			addedCount++
 
@@ -711,12 +711,12 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 		// Persist playlist tracks
 		if len(pl.Tracks) > 0 {
 			if err := s.persistPlaylistTracks(ctx, playlistID, pl.Tracks); err != nil {
-				s.Logger.Warn("failed to persist playlist tracks", "playlist", pl.Name, "error", err)
+				s.logger.Warn("failed to persist playlist tracks", "playlist", pl.Name, "error", err)
 			}
 		}
 	}
 	if skippedCount > 0 {
-		s.Logger.Info("skipped Spotter-managed playlists during import",
+		s.logger.Info("skipped Spotter-managed playlists during import",
 			"provider", providerName, "skipped", skippedCount)
 	}
 	return addedCount, updatedCount, nil
@@ -726,7 +726,7 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 // persistPlaylistTracks saves tracks for a playlist, upserting to preserve catalog links
 func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, tracks []providers.Track) error {
 	// Get the playlist to access user and provider info
-	pl, err := s.Client.Playlist.Query().
+	pl, err := s.client.Playlist.Query().
 		WithUser().
 		Where(playlist.ID(playlistID)).
 		Only(ctx)
@@ -737,7 +737,7 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 	userID := pl.Edges.User.ID
 
 	// Get existing playlist tracks with their catalog links
-	existingTracks, err := s.Client.PlaylistTrack.Query().
+	existingTracks, err := s.client.PlaylistTrack.Query().
 		Where(playlisttrack.HasPlaylistWith(playlist.ID(playlistID))).
 		WithTrack().
 		WithArtist().
@@ -765,8 +765,8 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 	// First, move all existing tracks to negative positions to avoid unique constraint conflicts
 	// when updating positions
 	for i, pt := range existingTracks {
-		if err := s.Client.PlaylistTrack.UpdateOneID(pt.ID).SetPosition(-(i + 1)).Exec(ctx); err != nil {
-			s.Logger.Warn("failed to temporarily reposition playlist track", "error", err, "id", pt.ID)
+		if err := s.client.PlaylistTrack.UpdateOneID(pt.ID).SetPosition(-(i + 1)).Exec(ctx); err != nil {
+			s.logger.Warn("failed to temporarily reposition playlist track", "error", err, "id", pt.ID)
 		}
 	}
 
@@ -793,7 +793,7 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 		if existing != nil {
 			// Update existing track, preserving catalog links
 			seenIDs[existing.ID] = true
-			update := s.Client.PlaylistTrack.UpdateOneID(existing.ID).
+			update := s.client.PlaylistTrack.UpdateOneID(existing.ID).
 				SetTrackName(track.Name).
 				SetArtistName(track.Artist).
 				SetPosition(i)
@@ -812,13 +812,13 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 			}
 
 			if err := update.Exec(ctx); err != nil {
-				s.Logger.Warn("failed to update playlist track", "error", err, "track", track.Name)
+				s.logger.Warn("failed to update playlist track", "error", err, "track", track.Name)
 				continue
 			}
 			updatedCount++
 		} else {
 			// Create new track
-			builder := s.Client.PlaylistTrack.Create().
+			builder := s.client.PlaylistTrack.Create().
 				SetPlaylistID(playlistID).
 				SetTrackName(track.Name).
 				SetArtistName(track.Artist).
@@ -838,7 +838,7 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 			}
 
 			if _, err := builder.Save(ctx); err != nil {
-				s.Logger.Warn("failed to create playlist track", "error", err, "track", track.Name)
+				s.logger.Warn("failed to create playlist track", "error", err, "track", track.Name)
 				continue
 			}
 			addedCount++
@@ -849,8 +849,8 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 	deletedCount := 0
 	for id := range existingIDs {
 		if !seenIDs[id] {
-			if err := s.Client.PlaylistTrack.DeleteOneID(id).Exec(ctx); err != nil {
-				s.Logger.Warn("failed to delete removed playlist track", "error", err, "id", id)
+			if err := s.client.PlaylistTrack.DeleteOneID(id).Exec(ctx); err != nil {
+				s.logger.Warn("failed to delete removed playlist track", "error", err, "id", id)
 				continue
 			}
 			deletedCount++
@@ -859,7 +859,7 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 
 	totalCount := addedCount + updatedCount
 	if totalCount > 0 || deletedCount > 0 {
-		s.Logger.Debug("synced playlist tracks",
+		s.logger.Debug("synced playlist tracks",
 			"playlist_id", playlistID,
 			"added", addedCount,
 			"updated", updatedCount,
@@ -873,7 +873,7 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 		s.logEvent(ctx, pl.Edges.User, syncevent.EventTypeTrackAdded, providerName, message,
 			map[string]interface{}{"playlist_name": pl.Name, "track_count": totalCount, "added": addedCount, "updated": updatedCount, "deleted": deletedCount})
 
-		s.Bus.Publish(userID, events.Event{
+		s.bus.Publish(userID, events.Event{
 			Type: events.EventTypeNotification,
 			Payload: events.NotificationPayload{
 				Title:    "Playlist Tracks Synced",

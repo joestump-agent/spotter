@@ -35,22 +35,22 @@ import (
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-043 (MetadataService coordinates all enrichers for a user),
 // ADR-0015 (type-keyed enricher registry with factory pattern)
 type MetadataService struct {
-	Client     *ent.Client
-	Config     *config.Config
-	Logger     *slog.Logger
-	Bus        *events.Bus
-	Registry   *enrichers.Registry
+	client     *ent.Client
+	config     *config.Config
+	logger     *slog.Logger
+	bus        *events.Bus
+	registry   *enrichers.Registry
 	httpClient *http.Client
 }
 
 // NewMetadataService creates a new metadata service.
 func NewMetadataService(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *MetadataService {
 	return &MetadataService{
-		Client:   client,
-		Config:   cfg,
-		Logger:   logger,
-		Bus:      bus,
-		Registry: enrichers.NewRegistry(),
+		client:   client,
+		config:   cfg,
+		logger:   logger,
+		bus:      bus,
+		registry: enrichers.NewRegistry(),
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -59,12 +59,12 @@ func NewMetadataService(client *ent.Client, cfg *config.Config, logger *slog.Log
 
 // Register adds a new enricher factory to the service.
 func (s *MetadataService) Register(t enrichers.Type, factory enrichers.Factory) {
-	s.Registry.Register(t, factory)
+	s.registry.Register(t, factory)
 }
 
 // logEvent persists a sync event to the database.
 func (s *MetadataService) logEvent(ctx context.Context, u *ent.User, eventType syncevent.EventType, provider string, message string, metadata map[string]interface{}) {
-	builder := s.Client.SyncEvent.Create().
+	builder := s.client.SyncEvent.Create().
 		SetUser(u).
 		SetEventType(eventType).
 		SetProvider(provider).
@@ -77,7 +77,7 @@ func (s *MetadataService) logEvent(ctx context.Context, u *ent.User, eventType s
 	}
 
 	if _, err := builder.Save(ctx); err != nil {
-		s.Logger.Warn("failed to log sync event", "event_type", eventType, "provider", provider, "error", err)
+		s.logger.Warn("failed to log sync event", "event_type", eventType, "provider", provider, "error", err)
 	}
 }
 
@@ -86,15 +86,15 @@ func (s *MetadataService) logEvent(ctx context.Context, u *ent.User, eventType s
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-040 (enriches all un-enriched/stale entities),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-042 (invoked per-user from background scheduler)
 func (s *MetadataService) SyncAll(ctx context.Context, u *ent.User) error {
-	if !s.Config.Metadata.Enabled {
-		s.Logger.Debug("metadata enrichment disabled, skipping")
+	if !s.config.Metadata.Enabled {
+		s.logger.Debug("metadata enrichment disabled, skipping")
 		return nil
 	}
 
-	s.Logger.Info("starting metadata sync", "username", u.Username)
+	s.logger.Info("starting metadata sync", "username", u.Username)
 
 	// Notify user
-	s.Bus.Publish(u.ID, events.Event{
+	s.bus.Publish(u.ID, events.Event{
 		Type: events.EventTypeNotification,
 		Payload: events.NotificationPayload{
 			Title:    "Metadata Enrichment",
@@ -108,7 +108,7 @@ func (s *MetadataService) SyncAll(ctx context.Context, u *ent.User) error {
 		"Started metadata enrichment", nil)
 
 	// Refresh user with all edges
-	refreshedUser, err := s.Client.User.Query().
+	refreshedUser, err := s.client.User.Query().
 		Where(user.ID(u.ID)).
 		WithSpotifyAuth().
 		WithNavidromeAuth().
@@ -129,7 +129,7 @@ func (s *MetadataService) SyncAll(ctx context.Context, u *ent.User) error {
 
 	// Step 1: Build catalog from listens and playlists
 	if err := s.BuildCatalog(ctx, refreshedUser); err != nil {
-		s.Logger.Error("failed to build catalog", "error", err)
+		s.logger.Error("failed to build catalog", "error", err)
 		s.logEvent(ctx, u, syncevent.EventTypeMetadataFailed, "metadata",
 			fmt.Sprintf("Failed to build catalog: %v", err), nil)
 		// Continue with enrichment for existing entries
@@ -138,37 +138,37 @@ func (s *MetadataService) SyncAll(ctx context.Context, u *ent.User) error {
 	// Step 1.5: Match listens to library entities
 	matchedCount, err := s.MatchListens(ctx, refreshedUser)
 	if err != nil {
-		s.Logger.Error("failed to match listens", "error", err)
+		s.logger.Error("failed to match listens", "error", err)
 	} else {
-		s.Logger.Info("matched listens to library", "count", matchedCount)
+		s.logger.Info("matched listens to library", "count", matchedCount)
 	}
 
 	// Step 2: Enrich artists
 	artistCount, err := s.EnrichArtists(ctx, refreshedUser)
 	if err != nil {
-		s.Logger.Error("failed to enrich artists", "error", err)
+		s.logger.Error("failed to enrich artists", "error", err)
 	}
 	stats["artists_enriched"] = artistCount
 
 	// Step 3: Enrich albums
 	albumCount, err := s.EnrichAlbums(ctx, refreshedUser)
 	if err != nil {
-		s.Logger.Error("failed to enrich albums", "error", err)
+		s.logger.Error("failed to enrich albums", "error", err)
 	}
 	stats["albums_enriched"] = albumCount
 
 	// Step 4: Enrich tracks
 	trackCount, err := s.EnrichTracks(ctx, refreshedUser)
 	if err != nil {
-		s.Logger.Error("failed to enrich tracks", "error", err)
+		s.logger.Error("failed to enrich tracks", "error", err)
 	}
 	stats["tracks_enriched"] = trackCount
 
 	// Step 5: Download images
-	if s.Config.Metadata.Images.Download {
+	if s.config.Metadata.Images.Download {
 		imageCount, err := s.DownloadImages(ctx, refreshedUser)
 		if err != nil {
-			s.Logger.Error("failed to download images", "error", err)
+			s.logger.Error("failed to download images", "error", err)
 		}
 		stats["images_downloaded"] = imageCount
 	}
@@ -179,7 +179,7 @@ func (s *MetadataService) SyncAll(ctx context.Context, u *ent.User) error {
 			stats["artists_enriched"], stats["albums_enriched"], stats["tracks_enriched"]), stats)
 
 	// Notify user
-	s.Bus.Publish(u.ID, events.Event{
+	s.bus.Publish(u.ID, events.Event{
 		Type: events.EventTypeNotification,
 		Payload: events.NotificationPayload{
 			Title:    "Metadata Enrichment Complete",
@@ -188,23 +188,23 @@ func (s *MetadataService) SyncAll(ctx context.Context, u *ent.User) error {
 		},
 	})
 
-	s.Logger.Info("metadata sync completed", "username", u.Username, "stats", stats)
+	s.logger.Info("metadata sync completed", "username", u.Username, "stats", stats)
 	return nil
 }
 
 // BuildCatalog scans listens and playlists to create catalog entries.
 func (s *MetadataService) BuildCatalog(ctx context.Context, u *ent.User) error {
-	s.Logger.Info("building catalog from listens and playlists", "username", u.Username)
+	s.logger.Info("building catalog from listens and playlists", "username", u.Username)
 
 	// Get all listens for the user
-	listens, err := s.Client.Listen.Query().
+	listens, err := s.client.Listen.Query().
 		Where(listen.HasUserWith(user.ID(u.ID))).
 		All(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to query listens: %w", err)
 	}
 
-	s.Logger.Debug("processing listens", "count", len(listens))
+	s.logger.Debug("processing listens", "count", len(listens))
 
 	artistsAdded := 0
 	albumsAdded := 0
@@ -214,7 +214,7 @@ func (s *MetadataService) BuildCatalog(ctx context.Context, u *ent.User) error {
 	for _, l := range listens {
 		added, err := s.processListenEntry(ctx, u, l.ArtistName, l.AlbumName, l.TrackName)
 		if err != nil {
-			s.Logger.Warn("failed to process listen entry",
+			s.logger.Warn("failed to process listen entry",
 				"artist", l.ArtistName,
 				"album", l.AlbumName,
 				"track", l.TrackName,
@@ -234,20 +234,20 @@ func (s *MetadataService) BuildCatalog(ctx context.Context, u *ent.User) error {
 	}
 
 	// Get all playlist tracks for the user
-	playlistTracks, err := s.Client.PlaylistTrack.Query().
+	playlistTracks, err := s.client.PlaylistTrack.Query().
 		Where(playlisttrack.HasPlaylistWith(playlist.HasUserWith(user.ID(u.ID)))).
 		All(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to query playlist tracks: %w", err)
 	}
 
-	s.Logger.Debug("processing playlist tracks", "count", len(playlistTracks))
+	s.logger.Debug("processing playlist tracks", "count", len(playlistTracks))
 
 	// Process playlist tracks (similar to listens)
 	for _, pt := range playlistTracks {
 		added, err := s.processListenEntry(ctx, u, pt.ArtistName, pt.AlbumName, pt.TrackName)
 		if err != nil {
-			s.Logger.Warn("failed to process playlist track entry",
+			s.logger.Warn("failed to process playlist track entry",
 				"artist", pt.ArtistName,
 				"album", pt.AlbumName,
 				"track", pt.TrackName,
@@ -269,10 +269,10 @@ func (s *MetadataService) BuildCatalog(ctx context.Context, u *ent.User) error {
 	// Link playlist tracks to catalog entries
 	linkedCount, err := s.linkPlaylistTracks(ctx, u)
 	if err != nil {
-		s.Logger.Warn("failed to link playlist tracks", "error", err)
+		s.logger.Warn("failed to link playlist tracks", "error", err)
 	}
 
-	s.Logger.Debug("linked playlist tracks to catalog", "count", linkedCount)
+	s.logger.Debug("linked playlist tracks to catalog", "count", linkedCount)
 
 	// Log catalog build event
 	s.logEvent(ctx, u, syncevent.EventTypeCatalogBuilt, "metadata",
@@ -286,7 +286,7 @@ func (s *MetadataService) BuildCatalog(ctx context.Context, u *ent.User) error {
 			"playlist_tracks_linked":    linkedCount,
 		})
 
-	s.Logger.Info("catalog building completed",
+	s.logger.Info("catalog building completed",
 		"username", u.Username,
 		"listens_processed", len(listens),
 		"playlist_tracks_processed", len(playlistTracks),
@@ -339,7 +339,7 @@ func (s *MetadataService) processListenEntry(ctx context.Context, u *ent.User, a
 // linkPlaylistTracks links playlist tracks to their corresponding catalog entries.
 func (s *MetadataService) linkPlaylistTracks(ctx context.Context, u *ent.User) (int, error) {
 	// Get all unlinked playlist tracks for user's playlists
-	playlistTracks, err := s.Client.PlaylistTrack.Query().
+	playlistTracks, err := s.client.PlaylistTrack.Query().
 		Where(
 			playlisttrack.HasPlaylistWith(playlist.HasUserWith(user.ID(u.ID))),
 			playlisttrack.Not(playlisttrack.HasTrack()),
@@ -352,7 +352,7 @@ func (s *MetadataService) linkPlaylistTracks(ctx context.Context, u *ent.User) (
 	linkedCount := 0
 	for _, pt := range playlistTracks {
 		// Try to find matching track in catalog
-		t, err := s.Client.Track.Query().
+		t, err := s.client.Track.Query().
 			Where(
 				track.Name(pt.TrackName),
 				track.HasArtistWith(
@@ -368,7 +368,7 @@ func (s *MetadataService) linkPlaylistTracks(ctx context.Context, u *ent.User) (
 		}
 
 		// Link the playlist track to the catalog track
-		update := s.Client.PlaylistTrack.UpdateOne(pt).SetTrack(t)
+		update := s.client.PlaylistTrack.UpdateOne(pt).SetTrack(t)
 
 		if t.Edges.Artist != nil {
 			update.SetArtist(t.Edges.Artist)
@@ -378,7 +378,7 @@ func (s *MetadataService) linkPlaylistTracks(ctx context.Context, u *ent.User) (
 		}
 
 		if err := update.Exec(ctx); err != nil {
-			s.Logger.Debug("failed to link playlist track", "track", pt.TrackName, "error", err)
+			s.logger.Debug("failed to link playlist track", "track", pt.TrackName, "error", err)
 			continue
 		}
 		linkedCount++
@@ -392,7 +392,7 @@ func (s *MetadataService) linkPlaylistTracks(ctx context.Context, u *ent.User) (
 // Governing: SPEC graceful-shutdown REQ-REC-004 (ctx passed to DB ops; cancellation leaves DB consistent)
 func (s *MetadataService) getOrCreateArtist(ctx context.Context, u *ent.User, name string) (*ent.Artist, bool, error) {
 	// Try to find existing artist
-	existing, err := s.Client.Artist.Query().
+	existing, err := s.client.Artist.Query().
 		Where(
 			artist.HasUserWith(user.ID(u.ID)),
 			artist.Name(name),
@@ -406,7 +406,7 @@ func (s *MetadataService) getOrCreateArtist(ctx context.Context, u *ent.User, na
 	}
 
 	// Create new artist
-	newArtist, err := s.Client.Artist.Create().
+	newArtist, err := s.client.Artist.Create().
 		SetName(name).
 		SetUser(u).
 		Save(ctx)
@@ -419,7 +419,7 @@ func (s *MetadataService) getOrCreateArtist(ctx context.Context, u *ent.User, na
 // getOrCreateAlbum finds or creates an album in the catalog.
 func (s *MetadataService) getOrCreateAlbum(ctx context.Context, u *ent.User, art *ent.Artist, name string) (*ent.Album, bool, error) {
 	// Try to find existing album
-	existing, err := s.Client.Album.Query().
+	existing, err := s.client.Album.Query().
 		Where(
 			album.HasUserWith(user.ID(u.ID)),
 			album.HasArtistWith(artist.ID(art.ID)),
@@ -434,7 +434,7 @@ func (s *MetadataService) getOrCreateAlbum(ctx context.Context, u *ent.User, art
 	}
 
 	// Create new album
-	newAlbum, err := s.Client.Album.Create().
+	newAlbum, err := s.client.Album.Create().
 		SetName(name).
 		SetUser(u).
 		SetArtist(art).
@@ -448,7 +448,7 @@ func (s *MetadataService) getOrCreateAlbum(ctx context.Context, u *ent.User, art
 // getOrCreateTrack finds or creates a track in the catalog.
 func (s *MetadataService) getOrCreateTrack(ctx context.Context, art *ent.Artist, alb *ent.Album, name string) (*ent.Track, bool, error) {
 	// Build query
-	query := s.Client.Track.Query().
+	query := s.client.Track.Query().
 		Where(
 			track.Name(name),
 			track.HasArtistWith(artist.ID(art.ID)),
@@ -467,7 +467,7 @@ func (s *MetadataService) getOrCreateTrack(ctx context.Context, art *ent.Artist,
 	}
 
 	// Create new track
-	create := s.Client.Track.Create().
+	create := s.client.Track.Create().
 		SetName(name).
 		SetArtist(art)
 
@@ -487,38 +487,38 @@ func (s *MetadataService) getOrCreateTrack(ctx context.Context, art *ent.Artist,
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-011 (MusicBrainz runs first via DefaultOrder/config),
 // ADR-0015 (factory instantiation per-user, nil return = enricher skipped)
 func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) ([]enrichers.Enricher, error) {
-	order := s.Config.MetadataEnricherOrder()
+	order := s.config.MetadataEnricherOrder()
 	var active []enrichers.Enricher
 
 	for _, name := range order {
 		t, ok := enrichers.ParseType(name)
 		if !ok {
-			s.Logger.Warn("unknown enricher type in order", "type", name)
+			s.logger.Warn("unknown enricher type in order", "type", name)
 			continue
 		}
 
-		factory, ok := s.Registry.Get(t)
+		factory, ok := s.registry.Get(t)
 		if !ok {
-			s.Logger.Debug("no factory registered for enricher", "type", t)
+			s.logger.Debug("no factory registered for enricher", "type", t)
 			continue
 		}
 
 		enricher, err := factory(ctx, u)
 		if err != nil {
-			s.Logger.Error("failed to create enricher", "type", t, "error", err)
+			s.logger.Error("failed to create enricher", "type", t, "error", err)
 			continue
 		}
 		if enricher == nil {
-			s.Logger.Debug("enricher not available", "type", t)
+			s.logger.Debug("enricher not available", "type", t)
 			continue
 		}
 		if !enricher.IsAvailable() {
-			s.Logger.Debug("enricher not configured", "type", t)
+			s.logger.Debug("enricher not configured", "type", t)
 			continue
 		}
 
 		active = append(active, enricher)
-		s.Logger.Info("enricher activated", "type", t, "name", enricher.Name())
+		s.logger.Info("enricher activated", "type", t, "name", enricher.Name())
 	}
 
 	// Log summary of active enrichers
@@ -526,7 +526,7 @@ func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) (
 	for i, e := range active {
 		enricherNames[i] = e.Name()
 	}
-	s.Logger.Info("active enrichers for user", "count", len(active), "enrichers", enricherNames)
+	s.logger.Info("active enrichers for user", "count", len(active), "enrichers", enricherNames)
 
 	return active, nil
 }
@@ -535,7 +535,7 @@ func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) (
 // Governing: SPEC graceful-shutdown REQ-REC-003 (metadata enrichment tracks per-entity state via LastEnrichedAt)
 func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, error) {
 	enrichStart := time.Now()
-	s.Logger.Info("enriching artists", "username", u.Username)
+	s.logger.Info("enriching artists", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
 	if err != nil {
@@ -546,7 +546,7 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 	// OR that need AI enrichment (never AI enriched or AI enriched more than 7 days ago)
 	cutoff := time.Now().Add(-24 * time.Hour)
 	aiCutoff := time.Now().Add(-7 * 24 * time.Hour)
-	artists, err := s.Client.Artist.Query().
+	artists, err := s.client.Artist.Query().
 		Where(
 			artist.HasUserWith(user.ID(u.ID)),
 			artist.Or(
@@ -568,11 +568,11 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 		return 0, fmt.Errorf("failed to query artists: %w", err)
 	}
 
-	s.Logger.Info("found artists to enrich", "count", len(artists))
+	s.logger.Info("found artists to enrich", "count", len(artists))
 	for _, art := range artists {
 		needsRegular := art.LastEnrichedAt == nil || art.LastEnrichedAt.Before(cutoff)
 		needsAI := art.LastAiEnrichedAt == nil || art.LastAiEnrichedAt.Before(aiCutoff)
-		s.Logger.Debug("artist enrichment status",
+		s.logger.Debug("artist enrichment status",
 			"artist", art.Name,
 			"needs_regular", needsRegular,
 			"needs_ai", needsAI,
@@ -586,7 +586,7 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 	enrichedCount := 0
 	for _, art := range artists {
 		if err := s.enrichArtist(ctx, u, art, enricherList); err != nil {
-			s.Logger.Warn("failed to enrich artist", "artist", art.Name, "error", err)
+			s.logger.Warn("failed to enrich artist", "artist", art.Name, "error", err)
 			continue
 		}
 		enrichedCount++
@@ -598,7 +598,7 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 		enrichSuccess = false
 		enrichErr = fmt.Sprintf("%d of %d artists failed enrichment", len(artists)-enrichedCount, len(artists))
 	}
-	s.Logger.Info("metric.enricher",
+	s.logger.Info("metric.enricher",
 		"enricher", "artists",
 		"entity_type", "artist",
 		"entities_processed", len(artists),
@@ -614,9 +614,9 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
 func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *ent.Artist, enricherList []enrichers.Enricher) error {
-	s.Logger.Debug("enriching artist", "name", art.Name)
+	s.logger.Debug("enriching artist", "name", art.Name)
 
-	update := s.Client.Artist.UpdateOne(art)
+	update := s.client.Artist.UpdateOne(art)
 	var allTags []string
 	var allGenres []string
 	enrichersUsed := []string{}
@@ -629,7 +629,7 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 
 		data, err := artistEnricher.EnrichArtist(ctx, art)
 		if err != nil {
-			s.Logger.Warn("enricher failed for artist",
+			s.logger.Warn("enricher failed for artist",
 				"enricher", e.Name(),
 				"artist", art.Name,
 				"error", err)
@@ -689,13 +689,13 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 		// Get images
 		images, err := artistEnricher.GetArtistImages(ctx, art)
 		if err != nil {
-			s.Logger.Warn("failed to get artist images",
+			s.logger.Warn("failed to get artist images",
 				"enricher", e.Name(),
 				"artist", art.Name,
 				"error", err)
 		} else {
 			if err := s.saveArtistImages(ctx, art, images); err != nil {
-				s.Logger.Warn("failed to save artist images", "artist", art.Name, "error", err)
+				s.logger.Warn("failed to save artist images", "artist", art.Name, "error", err)
 			}
 		}
 	}
@@ -733,7 +733,7 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 func (s *MetadataService) saveArtistImages(ctx context.Context, art *ent.Artist, images []enrichers.ImageData) error {
 	for _, img := range images {
 		// Check if image already exists
-		exists, err := s.Client.ArtistImage.Query().
+		exists, err := s.client.ArtistImage.Query().
 			Where(
 				artistimage.HasArtistWith(artist.ID(art.ID)),
 				artistimage.URL(img.URL),
@@ -747,7 +747,7 @@ func (s *MetadataService) saveArtistImages(ctx context.Context, art *ent.Artist,
 		}
 
 		// Create image record
-		create := s.Client.ArtistImage.Create().
+		create := s.client.ArtistImage.Create().
 			SetArtist(art).
 			SetSource(img.Source).
 			SetURL(img.URL).
@@ -780,7 +780,7 @@ func (s *MetadataService) saveArtistImages(ctx context.Context, art *ent.Artist,
 		}
 
 		if _, err := create.Save(ctx); err != nil {
-			s.Logger.Warn("failed to save artist image", "url", img.URL, "error", err)
+			s.logger.Warn("failed to save artist image", "url", img.URL, "error", err)
 		}
 	}
 
@@ -791,7 +791,7 @@ func (s *MetadataService) saveArtistImages(ctx context.Context, art *ent.Artist,
 // EnrichAlbums runs enrichment on all albums that need it.
 func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, error) {
 	enrichStart := time.Now()
-	s.Logger.Info("enriching albums", "username", u.Username)
+	s.logger.Info("enriching albums", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
 	if err != nil {
@@ -802,7 +802,7 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 	// OR that need AI enrichment (never AI enriched or AI enriched more than 7 days ago)
 	cutoff := time.Now().Add(-24 * time.Hour)
 	aiCutoff := time.Now().Add(-7 * 24 * time.Hour)
-	albums, err := s.Client.Album.Query().
+	albums, err := s.client.Album.Query().
 		Where(
 			album.HasUserWith(user.ID(u.ID)),
 			album.Or(
@@ -822,11 +822,11 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 		return 0, fmt.Errorf("failed to query albums: %w", err)
 	}
 
-	s.Logger.Info("found albums to enrich", "count", len(albums))
+	s.logger.Info("found albums to enrich", "count", len(albums))
 	for _, alb := range albums {
 		needsRegular := alb.LastEnrichedAt.IsZero() || alb.LastEnrichedAt.Before(cutoff)
 		needsAI := alb.LastAiEnrichedAt == nil || alb.LastAiEnrichedAt.Before(aiCutoff)
-		s.Logger.Debug("album enrichment status",
+		s.logger.Debug("album enrichment status",
 			"album", alb.Name,
 			"needs_regular", needsRegular,
 			"needs_ai", needsAI,
@@ -839,7 +839,7 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 	enrichedCount := 0
 	for _, alb := range albums {
 		if err := s.enrichAlbum(ctx, u, alb, enricherList); err != nil {
-			s.Logger.Warn("failed to enrich album", "album", alb.Name, "error", err)
+			s.logger.Warn("failed to enrich album", "album", alb.Name, "error", err)
 			continue
 		}
 		enrichedCount++
@@ -851,7 +851,7 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 		enrichSuccess = false
 		enrichErr = fmt.Sprintf("%d of %d albums failed enrichment", len(albums)-enrichedCount, len(albums))
 	}
-	s.Logger.Info("metric.enricher",
+	s.logger.Info("metric.enricher",
 		"enricher", "albums",
 		"entity_type", "album",
 		"entities_processed", len(albums),
@@ -865,7 +865,7 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 // SyncAllArtistImages re-fetches images for all artists from all enrichers.
 // This forces a refresh of artist images regardless of when they were last enriched.
 func (s *MetadataService) SyncAllArtistImages(ctx context.Context, u *ent.User) (int, error) {
-	s.Logger.Info("syncing all artist images", "username", u.Username)
+	s.logger.Info("syncing all artist images", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
 	if err != nil {
@@ -873,14 +873,14 @@ func (s *MetadataService) SyncAllArtistImages(ctx context.Context, u *ent.User) 
 	}
 
 	// Get all artists for the user
-	artists, err := s.Client.Artist.Query().
+	artists, err := s.client.Artist.Query().
 		Where(artist.HasUserWith(user.ID(u.ID))).
 		All(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query artists: %w", err)
 	}
 
-	s.Logger.Debug("found artists to sync images", "count", len(artists))
+	s.logger.Debug("found artists to sync images", "count", len(artists))
 
 	syncedCount := 0
 	for _, art := range artists {
@@ -893,7 +893,7 @@ func (s *MetadataService) SyncAllArtistImages(ctx context.Context, u *ent.User) 
 
 			images, err := artistEnricher.GetArtistImages(ctx, art)
 			if err != nil {
-				s.Logger.Warn("failed to get artist images",
+				s.logger.Warn("failed to get artist images",
 					"enricher", e.Name(),
 					"artist", art.Name,
 					"error", err)
@@ -902,7 +902,7 @@ func (s *MetadataService) SyncAllArtistImages(ctx context.Context, u *ent.User) 
 
 			if len(images) > 0 {
 				if err := s.saveArtistImages(ctx, art, images); err != nil {
-					s.Logger.Warn("failed to save artist images", "artist", art.Name, "error", err)
+					s.logger.Warn("failed to save artist images", "artist", art.Name, "error", err)
 				} else {
 					imagesFound = true
 				}
@@ -923,7 +923,7 @@ func (s *MetadataService) SyncAllArtistImages(ctx context.Context, u *ent.User) 
 // SyncAllAlbumImages re-fetches images for all albums from all enrichers.
 // This forces a refresh of album images regardless of when they were last enriched.
 func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (int, error) {
-	s.Logger.Info("syncing all album images", "username", u.Username)
+	s.logger.Info("syncing all album images", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
 	if err != nil {
@@ -931,7 +931,7 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 	}
 
 	// Get all albums for the user with their artists
-	albums, err := s.Client.Album.Query().
+	albums, err := s.client.Album.Query().
 		Where(album.HasUserWith(user.ID(u.ID))).
 		WithArtist().
 		All(ctx)
@@ -939,7 +939,7 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 		return 0, fmt.Errorf("failed to query albums: %w", err)
 	}
 
-	s.Logger.Debug("found albums to sync images", "count", len(albums))
+	s.logger.Debug("found albums to sync images", "count", len(albums))
 
 	syncedCount := 0
 	for _, alb := range albums {
@@ -952,7 +952,7 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 
 			images, err := albumEnricher.GetAlbumImages(ctx, alb)
 			if err != nil {
-				s.Logger.Warn("failed to get album images",
+				s.logger.Warn("failed to get album images",
 					"enricher", e.Name(),
 					"album", alb.Name,
 					"error", err)
@@ -961,7 +961,7 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 
 			if len(images) > 0 {
 				if err := s.saveAlbumImages(ctx, alb, images); err != nil {
-					s.Logger.Warn("failed to save album images", "album", alb.Name, "error", err)
+					s.logger.Warn("failed to save album images", "album", alb.Name, "error", err)
 				} else {
 					imagesFound = true
 				}
@@ -983,9 +983,9 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
 func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent.Album, enricherList []enrichers.Enricher) error {
-	s.Logger.Debug("enriching album", "name", alb.Name)
+	s.logger.Debug("enriching album", "name", alb.Name)
 
-	update := s.Client.Album.UpdateOne(alb)
+	update := s.client.Album.UpdateOne(alb)
 	var allTags []string
 	enrichersUsed := []string{}
 
@@ -997,7 +997,7 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 
 		data, err := albumEnricher.EnrichAlbum(ctx, alb)
 		if err != nil {
-			s.Logger.Warn("enricher failed for album",
+			s.logger.Warn("enricher failed for album",
 				"enricher", e.Name(),
 				"album", alb.Name,
 				"error", err)
@@ -1078,13 +1078,13 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 		// Get images
 		images, err := albumEnricher.GetAlbumImages(ctx, alb)
 		if err != nil {
-			s.Logger.Warn("failed to get album images",
+			s.logger.Warn("failed to get album images",
 				"enricher", e.Name(),
 				"album", alb.Name,
 				"error", err)
 		} else {
 			if err := s.saveAlbumImages(ctx, alb, images); err != nil {
-				s.Logger.Warn("failed to save album images", "album", alb.Name, "error", err)
+				s.logger.Warn("failed to save album images", "album", alb.Name, "error", err)
 			}
 		}
 	}
@@ -1123,7 +1123,7 @@ func (s *MetadataService) saveAlbumImages(ctx context.Context, alb *ent.Album, i
 		}
 
 		// Check if image already exists
-		exists, err := s.Client.AlbumImage.Query().
+		exists, err := s.client.AlbumImage.Query().
 			Where(
 				albumimage.HasAlbumWith(album.ID(alb.ID)),
 				albumimage.URL(imgURL),
@@ -1137,7 +1137,7 @@ func (s *MetadataService) saveAlbumImages(ctx context.Context, alb *ent.Album, i
 		}
 
 		// Create image record
-		create := s.Client.AlbumImage.Create().
+		create := s.client.AlbumImage.Create().
 			SetAlbum(alb).
 			SetSource(img.Source).
 			SetURL(imgURL).
@@ -1167,7 +1167,7 @@ func (s *MetadataService) saveAlbumImages(ctx context.Context, alb *ent.Album, i
 		}
 
 		if _, err := create.Save(ctx); err != nil {
-			s.Logger.Warn("failed to save album image", "url", imgURL, "error", err)
+			s.logger.Warn("failed to save album image", "url", imgURL, "error", err)
 		}
 	}
 
@@ -1178,7 +1178,7 @@ func (s *MetadataService) saveAlbumImages(ctx context.Context, alb *ent.Album, i
 // EnrichTracks runs enrichment on all tracks that need it.
 func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, error) {
 	enrichStart := time.Now()
-	s.Logger.Info("enriching tracks", "username", u.Username)
+	s.logger.Info("enriching tracks", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
 	if err != nil {
@@ -1190,7 +1190,7 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 	cutoff := time.Now().Add(-24 * time.Hour)
 	aiCutoff := time.Now().Add(-7 * 24 * time.Hour)
 	// Get tracks via their artists (which belong to users)
-	tracks, err := s.Client.Track.Query().
+	tracks, err := s.client.Track.Query().
 		Where(
 			track.HasArtistWith(artist.HasUserWith(user.ID(u.ID))),
 			track.Or(
@@ -1220,12 +1220,12 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 		}
 	}
 
-	s.Logger.Info("found tracks to enrich", "count", len(userTracks))
+	s.logger.Info("found tracks to enrich", "count", len(userTracks))
 
 	enrichedCount := 0
 	for _, t := range userTracks {
 		if err := s.enrichTrack(ctx, u, t, enricherList); err != nil {
-			s.Logger.Warn("failed to enrich track", "track", t.Name, "error", err)
+			s.logger.Warn("failed to enrich track", "track", t.Name, "error", err)
 			continue
 		}
 		enrichedCount++
@@ -1237,7 +1237,7 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 		enrichSuccess = false
 		enrichErr = fmt.Sprintf("%d of %d tracks failed enrichment", len(userTracks)-enrichedCount, len(userTracks))
 	}
-	s.Logger.Info("metric.enricher",
+	s.logger.Info("metric.enricher",
 		"enricher", "tracks",
 		"entity_type", "track",
 		"entities_processed", len(userTracks),
@@ -1253,9 +1253,9 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
 func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.Track, enricherList []enrichers.Enricher) error {
-	s.Logger.Debug("enriching track", "name", t.Name)
+	s.logger.Debug("enriching track", "name", t.Name)
 
-	update := s.Client.Track.UpdateOne(t)
+	update := s.client.Track.UpdateOne(t)
 	var allTags []string
 	var allGenres []string
 	enrichersUsed := []string{}
@@ -1268,7 +1268,7 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 
 		data, err := trackEnricher.EnrichTrack(ctx, t)
 		if err != nil {
-			s.Logger.Warn("enricher failed for track",
+			s.logger.Warn("enricher failed for track",
 				"enricher", e.Name(),
 				"track", t.Name,
 				"error", err)
@@ -1384,9 +1384,9 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-032 (local path stored on entity after download),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-033 (failed downloads logged, do not fail enrichment)
 func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int, error) {
-	s.Logger.Info("downloading images", "username", u.Username)
+	s.logger.Info("downloading images", "username", u.Username)
 
-	baseDir := s.Config.Metadata.Images.Directory
+	baseDir := s.config.Metadata.Images.Directory
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		return 0, fmt.Errorf("failed to create images directory: %w", err)
 	}
@@ -1398,7 +1398,7 @@ func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int,
 	downloadedCount := 0
 
 	// Download artist images (null or empty local_path)
-	artistImages, err := s.Client.ArtistImage.Query().
+	artistImages, err := s.client.ArtistImage.Query().
 		Where(
 			artistimage.Or(artistimage.LocalPathIsNil(), artistimage.LocalPathEQ("")),
 			artistimage.HasArtistWith(artist.HasUserWith(user.ID(u.ID))),
@@ -1412,14 +1412,14 @@ func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int,
 
 	for _, img := range artistImages {
 		if err := s.downloadArtistImage(ctx, u, img, baseDir); err != nil {
-			s.Logger.Warn("failed to download artist image", "url", img.URL, "error", err)
+			s.logger.Warn("failed to download artist image", "url", img.URL, "error", err)
 		} else {
 			downloadedCount++
 		}
 	}
 
 	// Download album images (null or empty local_path)
-	albumImages, err := s.Client.AlbumImage.Query().
+	albumImages, err := s.client.AlbumImage.Query().
 		Where(
 			albumimage.Or(albumimage.LocalPathIsNil(), albumimage.LocalPathEQ("")),
 			albumimage.HasAlbumWith(album.HasUserWith(user.ID(u.ID))),
@@ -1433,7 +1433,7 @@ func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int,
 
 	for _, img := range albumImages {
 		if err := s.downloadAlbumImage(ctx, u, img, baseDir); err != nil {
-			s.Logger.Warn("failed to download album image", "error", err)
+			s.logger.Warn("failed to download album image", "error", err)
 		} else {
 			downloadedCount++
 		}
@@ -1445,7 +1445,7 @@ func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int,
 // repairStaleImagePaths clears local_path for image records where the file no longer exists on disk.
 // This self-heals after container recreation where the data directory is lost.
 func (s *MetadataService) repairStaleImagePaths(ctx context.Context, u *ent.User) {
-	artistImages, err := s.Client.ArtistImage.Query().
+	artistImages, err := s.client.ArtistImage.Query().
 		Where(
 			artistimage.LocalPathNotNil(),
 			artistimage.LocalPathNEQ(""),
@@ -1453,20 +1453,20 @@ func (s *MetadataService) repairStaleImagePaths(ctx context.Context, u *ent.User
 		).
 		All(ctx)
 	if err != nil {
-		s.Logger.Warn("failed to query artist images for repair", "error", err)
+		s.logger.Warn("failed to query artist images for repair", "error", err)
 	} else {
 		for _, img := range artistImages {
 			if _, err := os.Stat(img.LocalPath); os.IsNotExist(err) {
-				if _, err := s.Client.ArtistImage.UpdateOne(img).ClearLocalPath().Save(ctx); err != nil {
-					s.Logger.Warn("failed to clear stale artist image path", "id", img.ID, "path", img.LocalPath, "error", err)
+				if _, err := s.client.ArtistImage.UpdateOne(img).ClearLocalPath().Save(ctx); err != nil {
+					s.logger.Warn("failed to clear stale artist image path", "id", img.ID, "path", img.LocalPath, "error", err)
 				} else {
-					s.Logger.Info("cleared stale artist image path", "id", img.ID, "path", img.LocalPath)
+					s.logger.Info("cleared stale artist image path", "id", img.ID, "path", img.LocalPath)
 				}
 			}
 		}
 	}
 
-	albumImages, err := s.Client.AlbumImage.Query().
+	albumImages, err := s.client.AlbumImage.Query().
 		Where(
 			albumimage.LocalPathNotNil(),
 			albumimage.LocalPathNEQ(""),
@@ -1474,14 +1474,14 @@ func (s *MetadataService) repairStaleImagePaths(ctx context.Context, u *ent.User
 		).
 		All(ctx)
 	if err != nil {
-		s.Logger.Warn("failed to query album images for repair", "error", err)
+		s.logger.Warn("failed to query album images for repair", "error", err)
 	} else {
 		for _, img := range albumImages {
 			if _, err := os.Stat(img.LocalPath); os.IsNotExist(err) {
-				if _, err := s.Client.AlbumImage.UpdateOne(img).ClearLocalPath().Save(ctx); err != nil {
-					s.Logger.Warn("failed to clear stale album image path", "id", img.ID, "path", img.LocalPath, "error", err)
+				if _, err := s.client.AlbumImage.UpdateOne(img).ClearLocalPath().Save(ctx); err != nil {
+					s.logger.Warn("failed to clear stale album image path", "id", img.ID, "path", img.LocalPath, "error", err)
 				} else {
-					s.Logger.Info("cleared stale album image path", "id", img.ID, "path", img.LocalPath)
+					s.logger.Info("cleared stale album image path", "id", img.ID, "path", img.LocalPath)
 				}
 			}
 		}
@@ -1508,7 +1508,7 @@ func (s *MetadataService) downloadArtistImage(ctx context.Context, u *ent.User, 
 	// Check if file already exists on disk
 	if _, err := os.Stat(localPath); err == nil {
 		// File exists, just update database without downloading again
-		_, err := s.Client.ArtistImage.UpdateOne(img).
+		_, err := s.client.ArtistImage.UpdateOne(img).
 			SetLocalPath(localPath).
 			Save(ctx)
 		return err
@@ -1520,7 +1520,7 @@ func (s *MetadataService) downloadArtistImage(ctx context.Context, u *ent.User, 
 	}
 
 	// Update database
-	_, err := s.Client.ArtistImage.UpdateOne(img).
+	_, err := s.client.ArtistImage.UpdateOne(img).
 		SetLocalPath(localPath).
 		Save(ctx)
 	if err != nil {
@@ -1559,7 +1559,7 @@ func (s *MetadataService) downloadAlbumImage(ctx context.Context, u *ent.User, i
 	// Check if file already exists on disk
 	if _, err := os.Stat(localPath); err == nil {
 		// File exists, just update database without downloading again
-		_, err := s.Client.AlbumImage.UpdateOne(img).
+		_, err := s.client.AlbumImage.UpdateOne(img).
 			SetLocalPath(localPath).
 			Save(ctx)
 		return err
@@ -1571,7 +1571,7 @@ func (s *MetadataService) downloadAlbumImage(ctx context.Context, u *ent.User, i
 	}
 
 	// Update database
-	_, err := s.Client.AlbumImage.UpdateOne(img).
+	_, err := s.client.AlbumImage.UpdateOne(img).
 		SetLocalPath(localPath).
 		Save(ctx)
 	if err != nil {
@@ -1620,14 +1620,14 @@ func (s *MetadataService) downloadFile(ctx context.Context, url, localPath strin
 // EnrichNewListens enriches catalog entries for newly synced listens.
 // This is called by the sync service when new tracks are added.
 func (s *MetadataService) EnrichNewListens(ctx context.Context, u *ent.User, artistName, albumName, trackName string) {
-	if !s.Config.Metadata.Enabled {
+	if !s.config.Metadata.Enabled {
 		return
 	}
 
 	// Process the listen entry to ensure catalog entries exist
 	added, err := s.processListenEntry(ctx, u, artistName, albumName, trackName)
 	if err != nil {
-		s.Logger.Warn("failed to process listen entry for enrichment",
+		s.logger.Warn("failed to process listen entry for enrichment",
 			"artist", artistName,
 			"album", albumName,
 			"track", trackName,
@@ -1640,7 +1640,7 @@ func (s *MetadataService) EnrichNewListens(ctx context.Context, u *ent.User, art
 		return
 	}
 
-	s.Logger.Debug("new catalog entries added, will be enriched in next sync",
+	s.logger.Debug("new catalog entries added, will be enriched in next sync",
 		"artist", artistName,
 		"album", albumName,
 		"track", trackName,
@@ -1650,10 +1650,10 @@ func (s *MetadataService) EnrichNewListens(ctx context.Context, u *ent.User, art
 // MatchListens links listens to their corresponding artist, album, and track entities.
 // This should be called after BuildCatalog to establish the relationships.
 func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, error) {
-	s.Logger.Info("matching listens to library entities", "username", u.Username)
+	s.logger.Info("matching listens to library entities", "username", u.Username)
 
 	// Get all listens for the user that don't have linked entities
-	listens, err := s.Client.Listen.Query().
+	listens, err := s.client.Listen.Query().
 		Where(listen.HasUserWith(user.ID(u.ID))).
 		All(ctx)
 	if err != nil {
@@ -1667,7 +1667,7 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 
 		// Match artist
 		if l.ArtistName != "" {
-			art, err := s.Client.Artist.Query().
+			art, err := s.client.Artist.Query().
 				Where(
 					artist.HasUserWith(user.ID(u.ID)),
 					artist.Name(l.ArtistName),
@@ -1675,16 +1675,16 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 				Only(ctx)
 			if err == nil {
 				// Check if already linked by querying the edge
-				hasArtist, err := s.Client.Listen.Query().
+				hasArtist, err := s.client.Listen.Query().
 					Where(listen.ID(l.ID)).
 					QueryArtist().
 					Exist(ctx)
 				if err != nil {
-					s.Logger.Warn("failed to check artist link", "listen_id", l.ID, "error", err)
+					s.logger.Warn("failed to check artist link", "listen_id", l.ID, "error", err)
 				} else if !hasArtist {
 					_, err = l.Update().SetArtist(art).Save(ctx)
 					if err != nil {
-						s.Logger.Warn("failed to link listen to artist", "listen_id", l.ID, "artist", l.ArtistName, "error", err)
+						s.logger.Warn("failed to link listen to artist", "listen_id", l.ID, "artist", l.ArtistName, "error", err)
 					} else {
 						updated = true
 					}
@@ -1695,14 +1695,14 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 		// Match album
 		if l.AlbumName != "" && l.ArtistName != "" {
 			// Find the artist first
-			art, err := s.Client.Artist.Query().
+			art, err := s.client.Artist.Query().
 				Where(
 					artist.HasUserWith(user.ID(u.ID)),
 					artist.Name(l.ArtistName),
 				).
 				Only(ctx)
 			if err == nil {
-				alb, err := s.Client.Album.Query().
+				alb, err := s.client.Album.Query().
 					Where(
 						album.HasUserWith(user.ID(u.ID)),
 						album.HasArtistWith(artist.ID(art.ID)),
@@ -1711,16 +1711,16 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 					Only(ctx)
 				if err == nil {
 					// Check if already linked
-					hasAlbum, err := s.Client.Listen.Query().
+					hasAlbum, err := s.client.Listen.Query().
 						Where(listen.ID(l.ID)).
 						QueryAlbum().
 						Exist(ctx)
 					if err != nil {
-						s.Logger.Warn("failed to check album link", "listen_id", l.ID, "error", err)
+						s.logger.Warn("failed to check album link", "listen_id", l.ID, "error", err)
 					} else if !hasAlbum {
 						_, err = l.Update().SetAlbum(alb).Save(ctx)
 						if err != nil {
-							s.Logger.Warn("failed to link listen to album", "listen_id", l.ID, "album", l.AlbumName, "error", err)
+							s.logger.Warn("failed to link listen to album", "listen_id", l.ID, "album", l.AlbumName, "error", err)
 						} else {
 							updated = true
 						}
@@ -1731,14 +1731,14 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 
 		// Match track
 		if l.TrackName != "" && l.ArtistName != "" {
-			art, err := s.Client.Artist.Query().
+			art, err := s.client.Artist.Query().
 				Where(
 					artist.HasUserWith(user.ID(u.ID)),
 					artist.Name(l.ArtistName),
 				).
 				Only(ctx)
 			if err == nil {
-				query := s.Client.Track.Query().
+				query := s.client.Track.Query().
 					Where(
 						track.Name(l.TrackName),
 						track.HasArtistWith(artist.ID(art.ID)),
@@ -1746,7 +1746,7 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 
 				// If we have an album name, also match on that for more precision
 				if l.AlbumName != "" {
-					alb, albErr := s.Client.Album.Query().
+					alb, albErr := s.client.Album.Query().
 						Where(
 							album.HasUserWith(user.ID(u.ID)),
 							album.HasArtistWith(artist.ID(art.ID)),
@@ -1761,16 +1761,16 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 				trk, err := query.Only(ctx)
 				if err == nil {
 					// Check if already linked
-					hasTrack, err := s.Client.Listen.Query().
+					hasTrack, err := s.client.Listen.Query().
 						Where(listen.ID(l.ID)).
 						QueryTrack().
 						Exist(ctx)
 					if err != nil {
-						s.Logger.Warn("failed to check track link", "listen_id", l.ID, "error", err)
+						s.logger.Warn("failed to check track link", "listen_id", l.ID, "error", err)
 					} else if !hasTrack {
 						_, err = l.Update().SetTrack(trk).Save(ctx)
 						if err != nil {
-							s.Logger.Warn("failed to link listen to track", "listen_id", l.ID, "track", l.TrackName, "error", err)
+							s.logger.Warn("failed to link listen to track", "listen_id", l.ID, "track", l.TrackName, "error", err)
 						} else {
 							updated = true
 						}
@@ -1784,7 +1784,7 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 		}
 	}
 
-	s.Logger.Info("listen matching completed",
+	s.logger.Info("listen matching completed",
 		"username", u.Username,
 		"total_listens", len(listens),
 		"matched", matchedCount)
