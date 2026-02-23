@@ -12,17 +12,17 @@ function HomepageHeader() {
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
         <Heading as="h1" className="hero__title">
-          {siteConfig.title}
+          🎵 {siteConfig.title}
         </Heading>
         <p className="hero__subtitle">{siteConfig.tagline}</p>
         <div className={styles.buttons}>
           <Link
-            className="button button--secondary button--lg"
+            className="button button--primary button--lg"
             to="/docs/">
             Get Started
           </Link>
           <Link
-            className="button button--outline button--lg"
+            className="button button--secondary button--lg"
             style={{marginLeft: '1rem'}}
             href="https://github.com/joestump/spotter">
             View on GitHub
@@ -34,12 +34,14 @@ function HomepageHeader() {
 }
 
 type FeatureItem = {
+  icon: string;
   title: string;
   description: JSX.Element;
 };
 
 const FeatureList: FeatureItem[] = [
   {
+    icon: '🕐',
     title: 'Unified Listening History',
     description: (
       <>
@@ -50,6 +52,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
+    icon: '🤖',
     title: 'AI-Powered Vibes Engine',
     description: (
       <>
@@ -60,6 +63,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
+    icon: '✨',
     title: 'Metadata Enrichment',
     description: (
       <>
@@ -70,6 +74,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
+    icon: '🎧',
     title: 'Playlist Syncing',
     description: (
       <>
@@ -80,6 +85,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
+    icon: '⚡',
     title: 'Real-time Updates',
     description: (
       <>
@@ -89,6 +95,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
+    icon: '🎨',
     title: 'Retro-Themed UI',
     description: (
       <>
@@ -100,10 +107,11 @@ const FeatureList: FeatureItem[] = [
   },
 ];
 
-function Feature({title, description}: FeatureItem) {
+function Feature({icon, title, description}: FeatureItem) {
   return (
     <div className={clsx('col col--4')}>
       <div className="padding-horiz--md padding-vert--lg">
+        <span className="feature-icon">{icon}</span>
         <Heading as="h3">{title}</Heading>
         <p>{description}</p>
       </div>
@@ -139,7 +147,7 @@ export default function Home(): JSX.Element {
             <div className="row">
               <div className="col col--8 col--offset-2">
                 <Heading as="h2" className="text--center margin-bottom--lg">
-                  Quick Start
+                  🚀 Quick Start
                 </Heading>
                 <div className={styles.codeBlock}>
                   <pre>

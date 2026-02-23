@@ -41,11 +41,11 @@
 }
 
 [data-theme='dark'] .heroBanner {
-  background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+  background: linear-gradient(135deg, #0d1b0d 0%, #121212 60%, #1a1a1a 100%);
 }
 
 [data-theme='dark'] .quickStart {
-  background: #0a0a1a;
+  background: #181818;
 }
 
 @media screen and (max-width: 996px) {
