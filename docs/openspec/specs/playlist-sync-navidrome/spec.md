@@ -1,6 +1,6 @@
 # Playlist Sync Service with Fuzzy Track Matching and Navidrome Write-Back
 
-**Status:** draft
+**Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-02-21
 **Governing ADRs:** ADR-0005 (Navidrome auth), ADR-0007 (event bus)

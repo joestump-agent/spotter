@@ -1,6 +1,6 @@
 # Metadata Enrichment Pipeline
 
-**Status:** draft
+**Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-02-21
 **Governing ADRs:** ADR-0009 (ordered sequential enricher pipeline)

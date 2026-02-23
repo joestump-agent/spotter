@@ -1,6 +1,6 @@
 # User Authentication and Session Management
 
-**Status:** draft
+**Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-02-21
 **Governing ADRs:** ADR-0005 (Navidrome primary identity), ADR-0006 (AES-256-GCM encryption), ADR-0002 (Chi router)

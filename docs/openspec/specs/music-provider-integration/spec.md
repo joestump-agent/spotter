@@ -1,6 +1,6 @@
 # Pluggable Music Provider Integration Layer
 
-**Status:** draft
+**Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-02-21
 **Governing ADRs:** ADR-0005 (Navidrome auth)

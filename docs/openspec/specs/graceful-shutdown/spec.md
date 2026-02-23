@@ -1,6 +1,6 @@
 # Graceful Shutdown with Context Cancellation and WaitGroup Drain
 
-**Status:** draft
+**Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-02-21
 **Governing ADRs:** ADR-0018 (graceful shutdown), ADR-0013 (goroutine ticker scheduling), ADR-0003 (SQLite atomicity), ADR-0007 (event bus cleanup)

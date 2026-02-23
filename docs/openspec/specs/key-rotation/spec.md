@@ -1,6 +1,6 @@
 # Encryption Key Rotation via Admin Subcommand
 
-**Status:** draft
+**Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-02-21
 **Governing ADRs:** ADR-0021 (encryption key rotation), ADR-0006 (AES-256-GCM application-layer encryption), ADR-0003 (SQLite embedded database)

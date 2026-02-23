@@ -1,6 +1,6 @@
 # Structured Metrics via slog JSON Events
 
-**Status:** draft
+**Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-02-21
 **Governing ADRs:** ADR-0019 (structured metrics observability), ADR-0010 (slog structured logging), ADR-0013 (background job scheduling), ADR-0008 (OpenAI API / LiteLLM backend)
