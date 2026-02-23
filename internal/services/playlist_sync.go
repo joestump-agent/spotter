@@ -54,6 +54,10 @@ func (s *PlaylistSyncService) Register(factory providers.Factory) {
 
 // SyncPlaylistToNavidrome syncs a single playlist to Navidrome.
 // Called when user enables sync or during scheduled sync.
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-030 (SyncPlaylist creation/update via PlaylistSyncer),
+// SPEC playlist-sync-navidrome REQ-PLSYNC-031 (UpdatePlaylistTracks for existing playlists),
+// SPEC playlist-sync-navidrome REQ-PLSYNC-032 (remotePlaylistID stored on playlist entity),
+// SPEC playlist-sync-navidrome REQ-PLSYNC-060 (SyncEvent audit logging)
 func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playlistID int) error {
 	startTime := time.Now()
 
@@ -302,6 +306,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 
 // SyncAllEnabledPlaylists syncs all playlists with sync_to_navidrome=true for a user.
 // Called by the scheduler.
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-040 (scheduled sync of all enabled playlists)
 func (s *PlaylistSyncService) SyncAllEnabledPlaylists(ctx context.Context, userID int) error {
 	s.Logger.Info("syncing all enabled playlists",
 		"user_id", userID)
@@ -360,6 +365,7 @@ func (s *PlaylistSyncService) SyncAllEnabledPlaylists(ctx context.Context, userI
 
 // RemovePlaylistFromNavidrome removes a synced playlist from Navidrome.
 // Called when user disables sync (if configured to delete on unsync).
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-032 (delete-on-unsync option)
 func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, playlistID int) error {
 	s.Logger.Info("remove playlist from Navidrome requested",
 		"playlist_id", playlistID,
@@ -474,6 +480,7 @@ func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, p
 
 // RebuildPlaylistSync clears the existing Navidrome playlist and re-syncs from scratch.
 // This is useful when track matches have changed or to fix sync issues.
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-040 (UpdatePlaylistTracks for re-sync)
 func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistID int) error {
 	startTime := time.Now()
 
@@ -605,6 +612,8 @@ func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistI
 }
 
 // handleSyncError updates the playlist with the error and publishes a notification.
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-013 (error state on Navidrome API failure),
+// SPEC playlist-sync-navidrome REQ-PLSYNC-060 (SyncEvent audit logging on failure)
 func (s *PlaylistSyncService) handleSyncError(ctx context.Context, pl *ent.Playlist, u *ent.User, err error) error {
 	s.Logger.Error("playlist sync failed",
 		"playlist_id", pl.ID,
