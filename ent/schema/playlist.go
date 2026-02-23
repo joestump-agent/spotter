@@ -60,6 +60,12 @@ func (Playlist) Fields() []ent.Field {
 			Optional().
 			MaxLen(1000).
 			Comment("Last sync error message, empty if successful"),
+		// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-010 (sync_status state machine)
+		field.Enum("sync_status").
+			Values("pending", "syncing", "success", "warning", "error").
+			Optional().
+			Default("pending").
+			Comment("State of sync to Navidrome: pending, syncing, success, warning, error"),
 		field.Int("matched_track_count").
 			Default(0).
 			Comment("Number of tracks successfully matched in Navidrome"),

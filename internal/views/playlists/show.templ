@@ -152,6 +152,8 @@ templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *confi
 						{Label: "Unique Artists", Value: formatNumber(playlist.UniqueArtists)},
 						{Label: "Unique Albums", Value: formatNumber(playlist.UniqueAlbums)},
 						{Label: "Sync to Navidrome", Value: formatSyncStatus(playlist)},
+						// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-010 (sync_status state machine)
+						{Label: "Sync Status", Value: formatSyncStatusField(playlist)},
 						{Label: "Navidrome Playlist ID", Value: showGetOrDefault(playlist.NavidromePlaylistID, "N/A")},
 						{Label: "External URL", Value: showGetOrDefault(playlist.ExternalURL, "N/A"), Link: playlist.ExternalURL},
 						{Label: "Created", Value: showFormatDate(playlist.CreatedAt)},
@@ -179,4 +181,23 @@ func formatSyncStatus(playlist *ent.Playlist) string {
 		return "Enabled"
 	}
 	return "Disabled"
+}
+
+// formatSyncStatusField returns a human-readable label for the sync_status enum field.
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-010 (sync_status state machine)
+func formatSyncStatusField(pl *ent.Playlist) string {
+	switch string(pl.SyncStatus) {
+	case "syncing":
+		return "Syncing..."
+	case "success":
+		return "Fully Synced"
+	case "warning":
+		return "Partial Sync"
+	case "error":
+		return "Sync Error"
+	case "pending":
+		return "Pending"
+	default:
+		return "Pending"
+	}
 }

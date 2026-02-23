@@ -107,6 +107,18 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 		"user_id", u.ID,
 		"user", u.Username)
 
+	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-014 (syncing state set at start, replaced on completion)
+	// Set sync_status to "syncing" at the START of sync so the UI reflects in-progress state.
+	_, err = s.client.Playlist.UpdateOne(pl).
+		SetSyncStatus(playlist.SyncStatusSyncing).
+		Save(ctx)
+	if err != nil {
+		s.logger.Warn("failed to set sync_status=syncing",
+			"playlist_id", playlistID,
+			"error", err)
+		// Non-fatal: continue with sync even if we can't update status
+	}
+
 	// Log sync started event
 	s.logEvent(ctx, u, syncevent.EventTypePlaylistSyncStarted, "navidrome",
 		fmt.Sprintf("Starting sync of playlist '%s' to Navidrome", pl.Name),
@@ -251,6 +263,8 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 	}
 
 	// Update database with sync info
+	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-010 (sync_status state machine)
+	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-014 (syncing state set at start, replaced on completion)
 	now := time.Now()
 	update := s.client.Playlist.UpdateOne(pl).
 		SetNavidromePlaylistID(navidromePlaylistID).
@@ -258,10 +272,15 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 		SetMatchedTrackCount(matchedCount)
 
 	// Only clear sync error if at least one track matched (SRV-PS-009)
-	if matchedCount > 0 {
-		update = update.ClearSyncError()
+	// Set final sync_status: "success" if all tracks matched, "warning" if some unmatched
+	if matchedCount > 0 && matchedCount == len(sourceTracks) {
+		update = update.ClearSyncError().SetSyncStatus(playlist.SyncStatusSuccess)
+	} else if matchedCount > 0 {
+		update = update.ClearSyncError().SetSyncStatus(playlist.SyncStatusWarning)
 	} else {
-		update = update.SetSyncError("No tracks matched - playlist may be empty or library mismatch")
+		update = update.
+			SetSyncError("No tracks matched - playlist may be empty or library mismatch").
+			SetSyncStatus(playlist.SyncStatusWarning)
 	}
 
 	_, err = update.Save(ctx)
@@ -622,8 +641,10 @@ func (s *PlaylistSyncService) handleSyncError(ctx context.Context, pl *ent.Playl
 		"error", err)
 
 	// Store error in database
+	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-010 (sync_status state machine)
 	_, dbErr := s.client.Playlist.UpdateOne(pl).
 		SetSyncError(err.Error()).
+		SetSyncStatus(playlist.SyncStatusError).
 		Save(ctx)
 	if dbErr != nil {
 		s.logger.Error("failed to save sync error to database",
@@ -758,6 +779,7 @@ func (s *PlaylistSyncService) publishNotification(userID int, title, message, ic
 }
 
 // GetSyncStatus returns the sync status for a playlist.
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-010 (sync_status state machine)
 type PlaylistSyncStatus struct {
 	SyncEnabled     bool
 	LastSyncedAt    *time.Time
@@ -766,6 +788,7 @@ type PlaylistSyncStatus struct {
 	MatchedTracks   int
 	TotalTracks     int
 	MatchPercentage float64
+	SyncStatus      string // State of sync: pending, syncing, success, warning, error
 }
 
 // GetPlaylistSyncStatus returns the sync status for a playlist.
@@ -777,11 +800,13 @@ func (s *PlaylistSyncService) GetPlaylistSyncStatus(ctx context.Context, playlis
 		return nil, err
 	}
 
+	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-010 (sync_status state machine)
 	status := &PlaylistSyncStatus{
 		SyncEnabled:   pl.SyncToNavidrome,
 		NavidromeID:   pl.NavidromePlaylistID,
 		MatchedTracks: pl.MatchedTrackCount,
 		TotalTracks:   pl.TrackCount,
+		SyncStatus:    string(pl.SyncStatus),
 	}
 
 	if pl.LastSyncedAt != nil {
