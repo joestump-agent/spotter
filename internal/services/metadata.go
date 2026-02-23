@@ -32,6 +32,8 @@ import (
 )
 
 // MetadataService handles catalog building and metadata enrichment.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-043 (MetadataService coordinates all enrichers for a user),
+// ADR-0015 (type-keyed enricher registry with factory pattern)
 type MetadataService struct {
 	Client     *ent.Client
 	Config     *config.Config
@@ -81,6 +83,8 @@ func (s *MetadataService) logEvent(ctx context.Context, u *ent.User, eventType s
 
 // SyncAll performs a full metadata sync for a user.
 // This scans listens/playlists, builds the catalog, and enriches metadata.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-040 (enriches all un-enriched/stale entities),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-042 (invoked per-user from background scheduler)
 func (s *MetadataService) SyncAll(ctx context.Context, u *ent.User) error {
 	if !s.Config.Metadata.Enabled {
 		s.Logger.Debug("metadata enrichment disabled, skipping")
@@ -479,6 +483,9 @@ func (s *MetadataService) getOrCreateTrack(ctx context.Context, art *ent.Artist,
 }
 
 // getActiveEnrichers returns enrichers in the configured order.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-010 (deterministic ascending priority order),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-011 (MusicBrainz runs first via DefaultOrder/config),
+// ADR-0015 (factory instantiation per-user, nil return = enricher skipped)
 func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) ([]enrichers.Enricher, error) {
 	order := s.Config.MetadataEnricherOrder()
 	var active []enrichers.Enricher
@@ -603,6 +610,9 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 }
 
 // enrichArtist runs all enrichers on a single artist.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
 func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *ent.Artist, enricherList []enrichers.Enricher) error {
 	s.Logger.Debug("enriching artist", "name", art.Name)
 
@@ -969,6 +979,9 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 	return syncedCount, nil
 }
 
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
 func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent.Album, enricherList []enrichers.Enricher) error {
 	s.Logger.Debug("enriching album", "name", alb.Name)
 
@@ -1236,6 +1249,9 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 }
 
 // enrichTrack runs all enrichers on a single track.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
 func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.Track, enricherList []enrichers.Enricher) error {
 	s.Logger.Debug("enriching track", "name", t.Name)
 
@@ -1364,6 +1380,9 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 }
 
 // DownloadImages downloads all pending images to local storage.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (image URLs downloaded to local data/ directory),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-032 (local path stored on entity after download),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-033 (failed downloads logged, do not fail enrichment)
 func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int, error) {
 	s.Logger.Info("downloading images", "username", u.Username)
 

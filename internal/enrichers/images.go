@@ -1,3 +1,6 @@
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-031 (images resized using pure-Go nfnt/resize),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-032 (WebP, PNG, JPEG, GIF formats supported via stdlib + x/image/webp),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-033 (existing local images skipped unless forced refresh)
 package enrichers
 
 import (
