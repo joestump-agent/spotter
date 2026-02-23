@@ -41,10 +41,18 @@ When deploying with HTTPS (recommended), keep `SPOTTER_SECURITY_SECURE_COOKIES=t
 
 ## Database Configuration
 
+Spotter requires PostgreSQL in production. SQLite is available for local development only.
+
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `SPOTTER_DATABASE_DRIVER` | Database driver (`sqlite3`, `postgres`, `mysql`) | `sqlite3` |
+| `SPOTTER_DATABASE_DRIVER` | Database driver (`postgres`, `sqlite3`) | `sqlite3` |
 | `SPOTTER_DATABASE_SOURCE` | Connection string for the database | `file:spotter.db?cache=shared&_fk=1` |
+
+**PostgreSQL (recommended):**
+```bash
+SPOTTER_DATABASE_DRIVER=postgres
+SPOTTER_DATABASE_SOURCE=host=localhost port=5432 dbname=spotter user=spotter password=yourpassword sslmode=disable
+```
 
 ## Sync Configuration
 
@@ -121,6 +129,10 @@ When deploying with HTTPS (recommended), keep `SPOTTER_SECURITY_SECURE_COOKIES=t
 | `SPOTTER_METADATA_IMAGES_MAX_WIDTH` | Maximum image width (for resizing) | `1000` |
 | `SPOTTER_METADATA_IMAGES_MAX_HEIGHT` | Maximum image height (for resizing) | `1000` |
 
+:::warning Docker: mount `/app/data`
+When running in Docker, the default images directory (`./data/images`) resolves to `/app/data/images` inside the container. **Mount `/app/data` as a persistent volume** or all downloaded artwork will be lost when the container restarts. See the [Docker deployment guide](/docs/getting-started/docker).
+:::
+
 ## Vibes Engine Configuration
 
 | Variable | Description | Default |
@@ -173,8 +185,12 @@ SPOTTER_SECURITY_SECURE_COOKIES=true
 # ===================
 # Database Configuration
 # ===================
-SPOTTER_DATABASE_DRIVER=sqlite3
-SPOTTER_DATABASE_SOURCE=file:spotter.db?cache=shared&_fk=1
+# PostgreSQL (recommended for production)
+SPOTTER_DATABASE_DRIVER=postgres
+SPOTTER_DATABASE_SOURCE=host=localhost port=5432 dbname=spotter user=spotter password=yourpassword sslmode=disable
+# SQLite (local development only)
+# SPOTTER_DATABASE_DRIVER=sqlite3
+# SPOTTER_DATABASE_SOURCE=file:spotter.db?cache=shared&_fk=1
 
 # ===================
 # Sync Configuration

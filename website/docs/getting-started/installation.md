@@ -99,12 +99,14 @@ make --version
 
 ### Database Issues
 
-Spotter uses SQLite by default. If you encounter database errors, try removing the database file and restarting:
+For local development, Spotter defaults to SQLite. If you encounter database errors, try removing the database file and restarting:
 
 ```bash
 rm spotter.db
 make run
 ```
+
+For production use PostgreSQL. See the [Configuration](/docs/getting-started/configuration) guide for the connection string format.
 
 ## Next Steps
 
