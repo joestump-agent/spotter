@@ -28,7 +28,7 @@ const (
 	// ProviderLastFM is the provider name for Last.fm-based similarities
 	ProviderLastFM = "LastFM"
 
-	// defaultSimilarArtistsTimeout is the default timeout for AI requests
+	// Governing: SPEC similar-artists-discovery REQ-SIM-003 (60s HTTP client timeout)
 	defaultSimilarArtistsTimeout = 60 * time.Second
 )
 
@@ -42,6 +42,7 @@ type SimilarArtistsService struct {
 	templates *template.Template
 }
 
+// Governing: SPEC similar-artists-discovery REQ-SIM-001 (constructor: client, cfg, logger, bus)
 // NewSimilarArtistsService creates a new SimilarArtistsService.
 func NewSimilarArtistsService(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *SimilarArtistsService {
 	if logger == nil {
@@ -105,6 +106,7 @@ type SimilarArtistTemplateData struct {
 	AvailableArtists []AvailableArtist
 }
 
+// Governing: SPEC similar-artists-discovery REQ-SIM-031 (response schema: name, id, confidence, reason)
 // SimilarArtistResponse represents the AI response for similar artists.
 type SimilarArtistResponse struct {
 	SimilarArtists []struct {
@@ -134,6 +136,7 @@ func (s *SimilarArtistsService) FindSimilarArtists(ctx context.Context, userID i
 		"artist_name", targetArtist.Name,
 		"user_id", userID)
 
+	// Governing: SPEC similar-artists-discovery REQ-SIM-012 (exclude target artist, scope to user)
 	// Get all artists in the user's library (excluding the target artist)
 	allArtists, err := s.client.Artist.Query().
 		Where(
@@ -217,7 +220,7 @@ func (s *SimilarArtistsService) FindSimilarArtists(ctx context.Context, userID i
 		"artist_name", targetArtist.Name,
 		"similar_count", len(aiResponse.SimilarArtists))
 
-	// Publish notification
+	// Governing: SPEC similar-artists-discovery REQ-SIM-072 (success notification), REQ-SIM-081 (nil-guard bus)
 	if s.bus != nil {
 		s.bus.PublishNotification(userID,
 			"Similar Artists Found",
@@ -228,6 +231,7 @@ func (s *SimilarArtistsService) FindSimilarArtists(ctx context.Context, userID i
 	return nil
 }
 
+// Governing: SPEC similar-artists-discovery REQ-SIM-010 (template rendering), REQ-SIM-011 (fallback on nil/error)
 // renderPrompt renders the similar artist prompt template.
 func (s *SimilarArtistsService) renderPrompt(data SimilarArtistTemplateData) (string, error) {
 	if s.templates == nil {
@@ -258,6 +262,8 @@ func (s *SimilarArtistsService) fallbackPrompt(data SimilarArtistTemplateData) s
 	return sb.String()
 }
 
+// Governing: SPEC similar-artists-discovery REQ-SIM-020 (chat/completions, model, 2000 tokens, 0.7 temp, json_object),
+// REQ-SIM-021 (auth header via llm.Client), REQ-SIM-022 (API key validation), REQ-SIM-023 (error handling)
 // callOpenAI sends the prompt to OpenAI and returns the response.
 func (s *SimilarArtistsService) callOpenAI(ctx context.Context, prompt string) (string, error) {
 	if s.config.OpenAI.APIKey == "" {
@@ -285,6 +291,7 @@ func (s *SimilarArtistsService) callOpenAI(ctx context.Context, prompt string) (
 	return resp.Choices[0].Message.Content, nil
 }
 
+// Governing: SPEC similar-artists-discovery REQ-SIM-030 (strip markdown fences, find outermost JSON object, unmarshal)
 // parseJSONFromResponse extracts and parses JSON from the AI response.
 func parseJSONFromResponse(response string, v interface{}) error {
 	// Try to find JSON in the response
@@ -319,6 +326,8 @@ func parseJSONFromResponse(response string, v interface{}) error {
 	return nil
 }
 
+// Governing: SPEC similar-artists-discovery REQ-SIM-040 (idempotent: delete existing then insert),
+// REQ-SIM-041 (ID lookup with name fallback), REQ-SIM-042 (entity fields: source, similar, user, provider, confidence, rank, reason)
 // storeSimilarArtists stores the similar artist relationships in the database.
 func (s *SimilarArtistsService) storeSimilarArtists(ctx context.Context, userID int, sourceArtistID int, similarArtists []struct {
 	Name       string  `json:"name"`
@@ -398,6 +407,7 @@ func (s *SimilarArtistsService) storeSimilarArtists(ctx context.Context, userID 
 	return nil
 }
 
+// Governing: SPEC similar-artists-discovery REQ-SIM-050 (ordered by rank, eager load SimilarArtist with Images)
 // GetSimilarArtists retrieves similar artists for a given artist.
 func (s *SimilarArtistsService) GetSimilarArtists(ctx context.Context, userID int, artistID int) ([]*ent.SimilarArtist, error) {
 	return s.client.SimilarArtist.Query().
@@ -412,6 +422,7 @@ func (s *SimilarArtistsService) GetSimilarArtists(ctx context.Context, userID in
 		All(ctx)
 }
 
+// Governing: SPEC similar-artists-discovery REQ-SIM-060 (7-day TTL cache), REQ-SIM-061 (500ms rate limit delay)
 // FindSimilarArtistsForAll finds similar artists for all artists in a user's library.
 // This is meant to be run as a background job.
 func (s *SimilarArtistsService) FindSimilarArtistsForAll(ctx context.Context, userID int) error {
@@ -466,6 +477,7 @@ func (s *SimilarArtistsService) FindSimilarArtistsForAll(ctx context.Context, us
 	return nil
 }
 
+// Governing: SPEC similar-artists-discovery REQ-SIM-062 (clear cache for forced re-discovery)
 // ClearSimilarArtists removes all similar artist entries for a given artist.
 func (s *SimilarArtistsService) ClearSimilarArtists(ctx context.Context, userID int, artistID int) error {
 	_, err := s.client.SimilarArtist.Delete().

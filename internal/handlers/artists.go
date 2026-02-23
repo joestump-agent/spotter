@@ -69,7 +69,7 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 		timeframe = timeframe30d
 	}
 
-	// Get similar artists
+	// Governing: SPEC similar-artists-discovery REQ-SIM-051 (handler calls GetSimilarArtists, passes to Templ component)
 	var similarArtists []artists.SimilarArtistInfo
 	if h.SimilarArtistsSvc != nil {
 		similar, err := h.SimilarArtistsSvc.GetSimilarArtists(r.Context(), u.ID, artistID)
