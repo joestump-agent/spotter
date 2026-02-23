@@ -183,7 +183,7 @@ func (s *SimilarArtistsService) FindSimilarArtists(ctx context.Context, userID i
 	// Call OpenAI
 	model := s.config.GetVibesModel()
 	llmStart := time.Now()
-	response, err := s.callOpenAI(ctx, prompt)
+	response, tokensUsed, err := s.callOpenAI(ctx, prompt)
 	llmDuration := time.Since(llmStart).Milliseconds()
 	if err != nil {
 		s.logger.Info("metric.llm",
@@ -199,7 +199,7 @@ func (s *SimilarArtistsService) FindSimilarArtists(ctx context.Context, userID i
 	s.logger.Info("metric.llm",
 		"model", model,
 		"operation", "similar_artists",
-		"tokens_used", 0,
+		"tokens_used", tokensUsed,
 		"duration_ms", llmDuration,
 		"success", true,
 		"error", "")
@@ -264,10 +264,11 @@ func (s *SimilarArtistsService) fallbackPrompt(data SimilarArtistTemplateData) s
 
 // Governing: SPEC similar-artists-discovery REQ-SIM-020 (chat/completions, model, 2000 tokens, 0.7 temp, json_object),
 // REQ-SIM-021 (auth header via llm.Client), REQ-SIM-022 (API key validation), REQ-SIM-023 (error handling)
-// callOpenAI sends the prompt to OpenAI and returns the response.
-func (s *SimilarArtistsService) callOpenAI(ctx context.Context, prompt string) (string, error) {
+// Governing: SPEC observability REQ-LLM-002 (extract token counts from response usage field)
+// callOpenAI sends the prompt to OpenAI and returns the response content and tokens used.
+func (s *SimilarArtistsService) callOpenAI(ctx context.Context, prompt string) (string, int, error) {
 	if s.config.OpenAI.APIKey == "" {
-		return "", fmt.Errorf("OpenAI API key not configured")
+		return "", 0, fmt.Errorf("OpenAI API key not configured")
 	}
 
 	model := s.config.GetVibesModel()
@@ -285,10 +286,16 @@ func (s *SimilarArtistsService) callOpenAI(ctx context.Context, prompt string) (
 
 	resp, err := s.llm.Chat(ctx, req)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
-	return resp.Choices[0].Message.Content, nil
+	// Governing: SPEC observability REQ-LLM-002 — extract token counts when available
+	tokensUsed := 0
+	if resp.Usage != nil {
+		tokensUsed = resp.Usage.TotalTokens
+	}
+
+	return resp.Choices[0].Message.Content, tokensUsed, nil
 }
 
 // Governing: SPEC similar-artists-discovery REQ-SIM-030 (strip markdown fences, find outermost JSON object, unmarshal)
