@@ -1,5 +1,8 @@
 FROM golang:1.24 AS builder
 
+# Build-time version string (git tag > branch > SHA), passed in by CI
+ARG VERSION=dev
+
 # Install Node.js and make
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs make
@@ -25,8 +28,8 @@ RUN make generate
 # Build CSS
 RUN make css
 
-# Build binary
-RUN make build-binary
+# Build binary with version injected
+RUN make build-binary VERSION=${VERSION}
 
 # Runtime Stage
 FROM debian:bookworm-slim

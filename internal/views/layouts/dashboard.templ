@@ -2,6 +2,7 @@ package layouts
 
 import (
 	"spotter/internal/config"
+	"spotter/internal/version"
 	"spotter/internal/views/components"
 	"strings"
 )
@@ -168,12 +169,17 @@ templ Dashboard(title string, cfg *config.Config, currentPath string) {
 							</li>
 						</ul>
 					</nav>
-					<!-- Logout -->
-					<div class="p-4 border-t border-base-300">
-						<a href="/logout" class="btn btn-ghost btn-block justify-start gap-3">
+					<!-- Logout + Version -->
+					<div class="border-t border-base-300">
+						<a href="/logout" class="btn btn-ghost btn-block justify-start gap-3 rounded-none">
 							<span class="icon-[heroicons--arrow-right-on-rectangle] w-5 h-5"></span>
 							<span>Logout</span>
 						</a>
+						<div class="px-4 pb-3 pt-1 text-xs text-base-content/40 text-center">
+							<a href={ templ.URL(version.Link()) } target="_blank" rel="noopener noreferrer" class="hover:text-base-content/60 transition-colors">
+								{ version.Version }
+							</a>
+						</div>
 					</div>
 				</aside>
 			</div>

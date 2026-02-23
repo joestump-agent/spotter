@@ -423,7 +423,9 @@ func (e *Enricher) findArtist(ctx context.Context, artist *ent.Artist) (*lidarrA
 		if artist.MusicbrainzID != "" && a.ForeignArtistID == artist.MusicbrainzID {
 			return &a, nil
 		}
-		if strings.EqualFold(a.ArtistName, artist.Name) {
+		// Only fall back to name matching when not doing an MBID-based search,
+		// to avoid mis-matching artists that share a similar name.
+		if artist.MusicbrainzID == "" && strings.EqualFold(a.ArtistName, artist.Name) {
 			return &a, nil
 		}
 	}
@@ -513,7 +515,9 @@ func (e *Enricher) fetchArtistByMBID(ctx context.Context, mbid string) (*lidarrA
 }
 
 func (e *Enricher) findAlbum(ctx context.Context, album *ent.Album) (*lidarrAlbum, error) {
-	if album.Edges.Artist == nil || album.Edges.Artist.MusicbrainzID == "" {
+	// Artist edge is required for album lookup (we need an artist to query albums).
+	// Note: artist MBID is NOT required — findArtist handles name-based lookup too.
+	if album.Edges.Artist == nil {
 		return nil, nil
 	}
 

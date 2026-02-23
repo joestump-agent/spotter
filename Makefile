@@ -8,6 +8,21 @@ ADMIN_BINARY_NAME=spotter-admin
 MAIN_PATH=./cmd/server/main.go
 ADMIN_MAIN_PATH=./cmd/admin/main.go
 
+# Determine version: git tag > branch name > short SHA
+GIT_TAG    := $(shell git describe --exact-match --tags HEAD 2>/dev/null)
+GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+GIT_SHA    := $(shell git rev-parse --short HEAD 2>/dev/null)
+ifeq ($(GIT_TAG),)
+    ifeq ($(GIT_BRANCH),HEAD)
+        VERSION := $(GIT_SHA)
+    else
+        VERSION := $(GIT_BRANCH)
+    endif
+else
+    VERSION := $(GIT_TAG)
+endif
+LDFLAGS := -ldflags "-X spotter/internal/version.Version=$(VERSION)"
+
 .PHONY: all help deps ci-deps docker-deps generate css build build-binary build-admin run dev test test-coverage lint lint-docker lint-docs lint-go lint-md lint-templ lint-yaml clean docker-build docker-run docs-deps docs-build docs-serve docs-clean
 
 all: build
@@ -63,13 +78,13 @@ css: ## Build CSS from Tailwind
 	@echo "✓ CSS built"
 
 build: generate css ## Build the application binary
-	@echo "Building $(BINARY_NAME)..."
-	go build -o $(BINARY_NAME) $(MAIN_PATH)
+	@echo "Building $(BINARY_NAME) (version: $(VERSION))..."
+	go build $(LDFLAGS) -o $(BINARY_NAME) $(MAIN_PATH)
 	@echo "✓ Build complete: $(BINARY_NAME)"
 
 build-binary: ## Build only the binary (no code generation)
-	@echo "Building $(BINARY_NAME)..."
-	CGO_ENABLED=1 go build -o $(BINARY_NAME) $(MAIN_PATH)
+	@echo "Building $(BINARY_NAME) (version: $(VERSION))..."
+	CGO_ENABLED=1 go build $(LDFLAGS) -o $(BINARY_NAME) $(MAIN_PATH)
 	@echo "✓ Build complete: $(BINARY_NAME)"
 
 build-admin: ## Build the admin CLI binary
