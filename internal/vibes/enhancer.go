@@ -40,7 +40,7 @@ type PlaylistEnhancer struct {
 // NewPlaylistEnhancer creates a new PlaylistEnhancer service.
 func NewPlaylistEnhancer(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *PlaylistEnhancer {
 	if logger == nil {
-		logger = slog.New(nopHandler{})
+		logger = slog.New(slog.DiscardHandler)
 	}
 
 	timeout := time.Duration(cfg.Vibes.TimeoutSeconds) * time.Second

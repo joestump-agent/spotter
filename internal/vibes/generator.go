@@ -25,14 +25,6 @@ import (
 	"spotter/internal/events"
 )
 
-// nopHandler is a slog handler that discards all log records.
-type nopHandler struct{}
-
-func (nopHandler) Enabled(context.Context, slog.Level) bool  { return false }
-func (nopHandler) Handle(context.Context, slog.Record) error { return nil }
-func (h nopHandler) WithAttrs([]slog.Attr) slog.Handler      { return h }
-func (h nopHandler) WithGroup(string) slog.Handler           { return h }
-
 // MixtapeGenerator implements the Generator interface for creating AI-powered mixtapes.
 type MixtapeGenerator struct {
 	client     *ent.Client
@@ -48,7 +40,7 @@ type MixtapeGenerator struct {
 func NewMixtapeGenerator(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *MixtapeGenerator {
 	// Use a no-op logger if none provided
 	if logger == nil {
-		logger = slog.New(nopHandler{})
+		logger = slog.New(slog.DiscardHandler)
 	}
 
 	// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-030 — configurable HTTP timeout, default 120s

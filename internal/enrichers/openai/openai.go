@@ -27,14 +27,6 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// nopHandler is a slog handler that discards all log records.
-type nopHandler struct{}
-
-func (nopHandler) Enabled(context.Context, slog.Level) bool  { return false }
-func (nopHandler) Handle(context.Context, slog.Record) error { return nil }
-func (h nopHandler) WithAttrs([]slog.Attr) slog.Handler      { return h }
-func (h nopHandler) WithGroup(string) slog.Handler           { return h }
-
 const (
 	defaultTimeout = 120 * time.Second
 	defaultModel   = "gpt-4o"
@@ -228,7 +220,7 @@ func New(logger *slog.Logger, cfg *config.Config) enrichers.Factory {
 
 		// Use a no-op logger if none provided
 		if logger == nil {
-			logger = slog.New(nopHandler{})
+			logger = slog.New(slog.DiscardHandler)
 		}
 
 		e := &Enricher{
