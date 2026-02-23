@@ -34,12 +34,13 @@ type Provider struct {
 	oauth  *oauth2.Config
 }
 
-// Ensure Provider implements interfaces
+// Governing: SPEC music-provider-integration REQ-PROV-030 (Spotify: HistoryFetcher + PlaylistManager + Authenticator)
 var _ providers.HistoryFetcher = (*Provider)(nil)
 var _ providers.PlaylistManager = (*Provider)(nil)
 var _ providers.Authenticator = (*Provider)(nil)
 
-// Governing: ADR-0016 (pluggable provider factory), SPEC listen-playlist-sync REQ-SYNC-002 (factory returns nil if unconfigured)
+// Governing: ADR-0016 (pluggable provider factory), SPEC music-provider-integration REQ-PROV-011 (nil,nil if unconfigured),
+// REQ-PROV-012 (credentials from user.Edges.SpotifyAuth)
 // New returns a factory that creates Spotify providers for a given user.
 func New(logger *slog.Logger, cfg *config.Config) providers.Factory {
 	return func(ctx context.Context, user *ent.User) (providers.Provider, error) {
@@ -71,6 +72,7 @@ func NewAuthenticator(logger *slog.Logger, cfg *config.Config) providers.Authent
 	}
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-031 (OAuth2 via golang.org/x/oauth2, configurable redirect URI)
 func newOAuthConfig(cfg *config.Config) *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     cfg.Spotify.ClientID,
@@ -155,6 +157,7 @@ func (p *Provider) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-013 (transparent token refresh), REQ-PROV-032 (auto refresh before API calls)
 // getValidToken returns a valid access token, refreshing if necessary.
 func (p *Provider) getValidToken(ctx context.Context) (string, error) {
 	if p.auth == nil {
@@ -237,6 +240,7 @@ type recentlyPlayedResponse struct {
 	} `json:"items"`
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-033 (paginated recently-played with since filter)
 // GetRecentListens fetches recently played tracks from Spotify.
 //
 // IMPORTANT LIMITATION: Spotify's API only returns the last 50 recently played tracks.

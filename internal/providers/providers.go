@@ -1,4 +1,4 @@
-// Governing: SPEC music-provider-integration
+// Governing: SPEC music-provider-integration, ADR-0016 (pluggable provider factory pattern)
 package providers
 
 import (
@@ -17,6 +17,7 @@ const (
 	TypeLastFM    Type = "lastfm"
 )
 
+// Governing: SPEC music-provider-integration REQ-PROV-020 (normalized Track struct), REQ-PROV-022 (ISRC for cross-provider matching)
 // Track represents a normalized audio track across services.
 type Track struct {
 	ID         string // Provider specific ID
@@ -29,6 +30,7 @@ type Track struct {
 	ISRC       string    // International Standard Recording Code (for matching)
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-021 (normalized Playlist struct)
 // Playlist represents a collection of tracks.
 type Playlist struct {
 	ID            string
@@ -42,12 +44,14 @@ type Playlist struct {
 	Tracks        []Track
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-001 (base interface with Type() returning stable identifier)
 // Provider is the base interface that all external music services must implement.
 type Provider interface {
 	// Type returns the identifier for this provider.
 	Type() Type
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-002 (history fetcher with batched callback)
 // HistoryFetcher is implemented by providers that can retrieve listening history.
 type HistoryFetcher interface {
 	Provider
@@ -56,6 +60,7 @@ type HistoryFetcher interface {
 	GetRecentListens(ctx context.Context, since time.Time, callback func([]Track) error) error
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-003 (playlist reader with GetPlaylists and CreatePlaylist)
 // PlaylistManager is implemented by providers that can read/write playlists.
 type PlaylistManager interface {
 	Provider
@@ -73,6 +78,7 @@ type SyncPlaylistRequest struct {
 	Tracks      []Track // Tracks to include in the playlist
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-004 (playlist write-back: sync, delete, update tracks)
 // PlaylistSyncer is implemented by providers that can receive playlists from other sources.
 // This is separate from PlaylistManager which reads playlists FROM a provider.
 type PlaylistSyncer interface {
@@ -101,6 +107,7 @@ type AuthResult struct {
 	UserID       string // User's ID from the provider
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-005 (authenticator: auth URL, code exchange, refresh, disconnect)
 // Authenticator is implemented by providers that support OAuth or similar authentication flows.
 // This interface should NOT be used for Navidrome as it's the primary app authentication mechanism.
 type Authenticator interface {
@@ -120,7 +127,8 @@ type Authenticator interface {
 	Disconnect(ctx context.Context) error
 }
 
-// Governing: ADR-0016 (pluggable provider factory), SPEC listen-playlist-sync REQ-SYNC-001, REQ-SYNC-002
+// Governing: ADR-0016 (pluggable provider factory), SPEC music-provider-integration REQ-PROV-010 (factory signature),
+// REQ-PROV-011 (nil,nil if unconfigured), REQ-PROV-012 (credentials read from DB edges, not params)
 // Factory defines the function signature for creating a provider instance for a specific user.
 // Implementations should return nil, nil if the user is not configured for the provider.
 type Factory func(ctx context.Context, user *ent.User) (Provider, error)
