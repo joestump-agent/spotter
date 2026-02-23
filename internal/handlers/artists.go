@@ -639,7 +639,7 @@ func (h *Handler) getAIEnricher(ctx context.Context, u *ent.User) ([]enrichers.E
 		return nil, nil
 	}
 
-	factory, ok := h.MetadataSvc.Registry.Get(enrichers.TypeOpenAI)
+	factory, ok := h.MetadataSvc.GetEnricherFactory(enrichers.TypeOpenAI)
 	if !ok {
 		return nil, nil
 	}

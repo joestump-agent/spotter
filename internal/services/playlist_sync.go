@@ -20,12 +20,12 @@ import (
 
 // PlaylistSyncService handles syncing playlists to Navidrome.
 type PlaylistSyncService struct {
-	Client       *ent.Client
-	Config       *config.Config
-	Logger       *slog.Logger
-	Bus          *events.Bus
-	TrackMatcher *TrackMatcher
-	Factories    []providers.Factory
+	client       *ent.Client
+	config       *config.Config
+	logger       *slog.Logger
+	bus          *events.Bus
+	trackMatcher *TrackMatcher
+	factories    []providers.Factory
 }
 
 // NewPlaylistSyncService creates a new PlaylistSyncService.
@@ -37,19 +37,19 @@ func NewPlaylistSyncService(
 ) *PlaylistSyncService {
 	trackMatcher := NewTrackMatcher(client, logger, cfg.PlaylistSync.MinMatchConfidence)
 	return &PlaylistSyncService{
-		Client:       client,
-		Config:       cfg,
-		Logger:       logger,
-		Bus:          bus,
-		TrackMatcher: trackMatcher,
-		Factories:    make([]providers.Factory, 0),
+		client:       client,
+		config:       cfg,
+		logger:       logger,
+		bus:          bus,
+		trackMatcher: trackMatcher,
+		factories:    make([]providers.Factory, 0),
 	}
 }
 
 // Register adds a provider factory to the service.
 func (s *PlaylistSyncService) Register(factory providers.Factory) {
-	s.Factories = append(s.Factories, factory)
-	s.Logger.Debug("registered provider factory for playlist sync")
+	s.factories = append(s.factories, factory)
+	s.logger.Debug("registered provider factory for playlist sync")
 }
 
 // SyncPlaylistToNavidrome syncs a single playlist to Navidrome.
@@ -61,16 +61,16 @@ func (s *PlaylistSyncService) Register(factory providers.Factory) {
 func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playlistID int) error {
 	startTime := time.Now()
 
-	s.Logger.Info("starting playlist sync to Navidrome",
+	s.logger.Info("starting playlist sync to Navidrome",
 		"playlist_id", playlistID)
 
 	// Load playlist with user
-	pl, err := s.Client.Playlist.Query().
+	pl, err := s.client.Playlist.Query().
 		Where(playlist.ID(playlistID)).
 		WithUser().
 		Only(ctx)
 	if err != nil {
-		s.Logger.Error("failed to load playlist",
+		s.logger.Error("failed to load playlist",
 			"playlist_id", playlistID,
 			"error", err)
 		return fmt.Errorf("failed to load playlist: %w", err)
@@ -78,7 +78,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 
 	// Verify sync is enabled
 	if !pl.SyncToNavidrome {
-		s.Logger.Debug("sync not enabled for playlist, skipping",
+		s.logger.Debug("sync not enabled for playlist, skipping",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
 		return nil
@@ -86,7 +86,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 
 	// Ensure playlist is not from Navidrome
 	if pl.Source == "navidrome" {
-		s.Logger.Warn("attempted to sync Navidrome playlist to Navidrome",
+		s.logger.Warn("attempted to sync Navidrome playlist to Navidrome",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
 		return fmt.Errorf("cannot sync Navidrome playlist to Navidrome")
@@ -94,13 +94,13 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 
 	u := pl.Edges.User
 	if u == nil {
-		s.Logger.Error("playlist has no associated user",
+		s.logger.Error("playlist has no associated user",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
 		return fmt.Errorf("playlist has no associated user")
 	}
 
-	s.Logger.Info("syncing playlist to Navidrome",
+	s.logger.Info("syncing playlist to Navidrome",
 		"playlist_id", playlistID,
 		"playlist_name", pl.Name,
 		"source", pl.Source,
@@ -127,7 +127,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 		return s.handleSyncError(ctx, pl, u, fmt.Errorf("failed to get Navidrome provider: %w", err))
 	}
 
-	s.Logger.Debug("obtained Navidrome provider",
+	s.logger.Debug("obtained Navidrome provider",
 		"playlist_id", playlistID,
 		"provider_type", navidromeProvider.Type())
 
@@ -137,10 +137,10 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 	}
 
 	// Load playlist tracks
-	s.Logger.Debug("loading playlist tracks",
+	s.logger.Debug("loading playlist tracks",
 		"playlist_id", playlistID)
 
-	playlistTracks, err := s.Client.PlaylistTrack.Query().
+	playlistTracks, err := s.client.PlaylistTrack.Query().
 		Where(playlisttrack.HasPlaylistWith(playlist.ID(playlistID))).
 		Order(ent.Asc(playlisttrack.FieldPosition)).
 		All(ctx)
@@ -148,7 +148,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 		return s.handleSyncError(ctx, pl, u, fmt.Errorf("failed to load playlist tracks: %w", err))
 	}
 
-	s.Logger.Debug("loaded playlist tracks",
+	s.logger.Debug("loaded playlist tracks",
 		"playlist_id", playlistID,
 		"track_count", len(playlistTracks))
 
@@ -171,11 +171,11 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 	}
 
 	// Match tracks to Navidrome library
-	s.Logger.Debug("starting track matching",
+	s.logger.Debug("starting track matching",
 		"playlist_id", playlistID,
 		"source_track_count", len(sourceTracks))
 
-	matchResults, err := s.TrackMatcher.MatchTracks(ctx, u.ID, sourceTracks)
+	matchResults, err := s.trackMatcher.MatchTracks(ctx, u.ID, sourceTracks)
 	if err != nil {
 		return s.handleSyncError(ctx, pl, u, fmt.Errorf("failed to match tracks: %w", err))
 	}
@@ -198,7 +198,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 		}
 	}
 
-	s.Logger.Info("track matching complete",
+	s.logger.Info("track matching complete",
 		"playlist_id", playlistID,
 		"playlist_name", pl.Name,
 		"total_tracks", len(sourceTracks),
@@ -212,7 +212,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 
 	if pl.NavidromePlaylistID != "" {
 		// Update existing playlist
-		s.Logger.Debug("updating existing Navidrome playlist",
+		s.logger.Debug("updating existing Navidrome playlist",
 			"playlist_id", playlistID,
 			"navidrome_playlist_id", pl.NavidromePlaylistID,
 			"track_count", len(matchedTracks))
@@ -223,13 +223,13 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 		}
 		navidromePlaylistID = pl.NavidromePlaylistID
 
-		s.Logger.Info("updated existing Navidrome playlist",
+		s.logger.Info("updated existing Navidrome playlist",
 			"playlist_id", playlistID,
 			"navidrome_playlist_id", navidromePlaylistID,
 			"track_count", len(matchedTracks))
 	} else {
 		// Create new playlist
-		s.Logger.Debug("creating new Navidrome playlist",
+		s.logger.Debug("creating new Navidrome playlist",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name,
 			"track_count", len(matchedTracks))
@@ -244,7 +244,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 			return s.handleSyncError(ctx, pl, u, fmt.Errorf("failed to create playlist: %w", err))
 		}
 
-		s.Logger.Info("created new Navidrome playlist",
+		s.logger.Info("created new Navidrome playlist",
 			"playlist_id", playlistID,
 			"navidrome_playlist_id", navidromePlaylistID,
 			"track_count", len(matchedTracks))
@@ -252,7 +252,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 
 	// Update database with sync info
 	now := time.Now()
-	update := s.Client.Playlist.UpdateOne(pl).
+	update := s.client.Playlist.UpdateOne(pl).
 		SetNavidromePlaylistID(navidromePlaylistID).
 		SetLastSyncedAt(now).
 		SetMatchedTrackCount(matchedCount)
@@ -266,7 +266,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 
 	_, err = update.Save(ctx)
 	if err != nil {
-		s.Logger.Error("failed to update playlist sync info",
+		s.logger.Error("failed to update playlist sync info",
 			"playlist_id", playlistID,
 			"error", err)
 		return err
@@ -293,7 +293,7 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 			pl.Name, matchedCount, len(sourceTracks)),
 		"success")
 
-	s.Logger.Info("playlist synced to Navidrome successfully",
+	s.logger.Info("playlist synced to Navidrome successfully",
 		"playlist_id", playlistID,
 		"playlist_name", pl.Name,
 		"navidrome_playlist_id", navidromePlaylistID,
@@ -308,10 +308,10 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 // Called by the scheduler.
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-040 (scheduled sync of all enabled playlists)
 func (s *PlaylistSyncService) SyncAllEnabledPlaylists(ctx context.Context, userID int) error {
-	s.Logger.Info("syncing all enabled playlists",
+	s.logger.Info("syncing all enabled playlists",
 		"user_id", userID)
 
-	playlists, err := s.Client.Playlist.Query().
+	playlists, err := s.client.Playlist.Query().
 		Where(
 			playlist.HasUserWith(user.ID(userID)),
 			playlist.SyncToNavidrome(true),
@@ -319,18 +319,18 @@ func (s *PlaylistSyncService) SyncAllEnabledPlaylists(ctx context.Context, userI
 		).
 		All(ctx)
 	if err != nil {
-		s.Logger.Error("failed to query enabled playlists",
+		s.logger.Error("failed to query enabled playlists",
 			"user_id", userID,
 			"error", err)
 		return fmt.Errorf("failed to query enabled playlists: %w", err)
 	}
 
-	s.Logger.Debug("found playlists to sync",
+	s.logger.Debug("found playlists to sync",
 		"user_id", userID,
 		"count", len(playlists))
 
 	if len(playlists) == 0 {
-		s.Logger.Debug("no playlists to sync",
+		s.logger.Debug("no playlists to sync",
 			"user_id", userID)
 		return nil
 	}
@@ -339,7 +339,7 @@ func (s *PlaylistSyncService) SyncAllEnabledPlaylists(ctx context.Context, userI
 	successCount := 0
 	for _, pl := range playlists {
 		if err := s.SyncPlaylistToNavidrome(ctx, pl.ID); err != nil {
-			s.Logger.Error("failed to sync playlist",
+			s.logger.Error("failed to sync playlist",
 				"user_id", userID,
 				"playlist_id", pl.ID,
 				"playlist_name", pl.Name,
@@ -350,7 +350,7 @@ func (s *PlaylistSyncService) SyncAllEnabledPlaylists(ctx context.Context, userI
 		}
 	}
 
-	s.Logger.Info("completed syncing all enabled playlists",
+	s.logger.Info("completed syncing all enabled playlists",
 		"user_id", userID,
 		"total", len(playlists),
 		"success", successCount,
@@ -367,24 +367,24 @@ func (s *PlaylistSyncService) SyncAllEnabledPlaylists(ctx context.Context, userI
 // Called when user disables sync (if configured to delete on unsync).
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-032 (delete-on-unsync option)
 func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, playlistID int) error {
-	s.Logger.Info("remove playlist from Navidrome requested",
+	s.logger.Info("remove playlist from Navidrome requested",
 		"playlist_id", playlistID,
-		"delete_on_unsync", s.Config.PlaylistSync.DeleteOnUnsync)
+		"delete_on_unsync", s.config.PlaylistSync.DeleteOnUnsync)
 
 	// Check if deletion is enabled
-	if !s.Config.PlaylistSync.DeleteOnUnsync {
-		s.Logger.Debug("delete on unsync is disabled, keeping Navidrome playlist",
+	if !s.config.PlaylistSync.DeleteOnUnsync {
+		s.logger.Debug("delete on unsync is disabled, keeping Navidrome playlist",
 			"playlist_id", playlistID)
 		return nil
 	}
 
 	// Load playlist with user
-	pl, err := s.Client.Playlist.Query().
+	pl, err := s.client.Playlist.Query().
 		Where(playlist.ID(playlistID)).
 		WithUser().
 		Only(ctx)
 	if err != nil {
-		s.Logger.Error("failed to load playlist for removal",
+		s.logger.Error("failed to load playlist for removal",
 			"playlist_id", playlistID,
 			"error", err)
 		return fmt.Errorf("failed to load playlist: %w", err)
@@ -392,7 +392,7 @@ func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, p
 
 	// No Navidrome ID means nothing to delete
 	if pl.NavidromePlaylistID == "" {
-		s.Logger.Debug("no Navidrome playlist ID, nothing to delete",
+		s.logger.Debug("no Navidrome playlist ID, nothing to delete",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
 		return nil
@@ -400,13 +400,13 @@ func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, p
 
 	u := pl.Edges.User
 	if u == nil {
-		s.Logger.Error("playlist has no associated user",
+		s.logger.Error("playlist has no associated user",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
 		return fmt.Errorf("playlist has no associated user")
 	}
 
-	s.Logger.Info("removing playlist from Navidrome",
+	s.logger.Info("removing playlist from Navidrome",
 		"playlist_id", playlistID,
 		"playlist_name", pl.Name,
 		"navidrome_playlist_id", pl.NavidromePlaylistID,
@@ -415,7 +415,7 @@ func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, p
 	// Get Navidrome provider
 	navidromeProvider, err := s.getNavidromeProvider(ctx, u)
 	if err != nil {
-		s.Logger.Error("failed to get Navidrome provider for removal",
+		s.logger.Error("failed to get Navidrome provider for removal",
 			"playlist_id", playlistID,
 			"error", err)
 		return fmt.Errorf("failed to get Navidrome provider: %w", err)
@@ -423,35 +423,35 @@ func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, p
 
 	syncer, ok := navidromeProvider.(providers.PlaylistSyncer)
 	if !ok {
-		s.Logger.Error("Navidrome provider does not implement PlaylistSyncer",
+		s.logger.Error("Navidrome provider does not implement PlaylistSyncer",
 			"playlist_id", playlistID)
 		return fmt.Errorf("Navidrome provider does not implement PlaylistSyncer")
 	}
 
 	// Delete from Navidrome
 	if err := syncer.DeletePlaylist(ctx, pl.NavidromePlaylistID); err != nil {
-		s.Logger.Error("failed to delete playlist from Navidrome",
+		s.logger.Error("failed to delete playlist from Navidrome",
 			"playlist_id", playlistID,
 			"navidrome_playlist_id", pl.NavidromePlaylistID,
 			"error", err)
 		// Don't fail the whole operation - maybe the playlist was already deleted
-		s.Logger.Warn("continuing despite Navidrome delete error",
+		s.logger.Warn("continuing despite Navidrome delete error",
 			"playlist_id", playlistID)
 	} else {
-		s.Logger.Info("deleted playlist from Navidrome",
+		s.logger.Info("deleted playlist from Navidrome",
 			"playlist_id", playlistID,
 			"navidrome_playlist_id", pl.NavidromePlaylistID)
 	}
 
 	// Clear sync info from database
-	_, err = s.Client.Playlist.UpdateOne(pl).
+	_, err = s.client.Playlist.UpdateOne(pl).
 		ClearNavidromePlaylistID().
 		ClearLastSyncedAt().
 		SetMatchedTrackCount(0).
 		ClearSyncError().
 		Save(ctx)
 	if err != nil {
-		s.Logger.Error("failed to clear playlist sync info",
+		s.logger.Error("failed to clear playlist sync info",
 			"playlist_id", playlistID,
 			"error", err)
 		return fmt.Errorf("failed to clear playlist sync info: %w", err)
@@ -471,7 +471,7 @@ func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, p
 		fmt.Sprintf("'%s' removed from Navidrome", pl.Name),
 		"info")
 
-	s.Logger.Info("playlist removed from Navidrome successfully",
+	s.logger.Info("playlist removed from Navidrome successfully",
 		"playlist_id", playlistID,
 		"playlist_name", pl.Name)
 
@@ -484,16 +484,16 @@ func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, p
 func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistID int) error {
 	startTime := time.Now()
 
-	s.Logger.Info("rebuild playlist sync requested",
+	s.logger.Info("rebuild playlist sync requested",
 		"playlist_id", playlistID)
 
 	// Load playlist with user
-	pl, err := s.Client.Playlist.Query().
+	pl, err := s.client.Playlist.Query().
 		Where(playlist.ID(playlistID)).
 		WithUser().
 		Only(ctx)
 	if err != nil {
-		s.Logger.Error("failed to load playlist for rebuild",
+		s.logger.Error("failed to load playlist for rebuild",
 			"playlist_id", playlistID,
 			"error", err)
 		return fmt.Errorf("failed to load playlist: %w", err)
@@ -501,7 +501,7 @@ func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistI
 
 	// Verify sync is enabled
 	if !pl.SyncToNavidrome {
-		s.Logger.Warn("attempted to rebuild playlist with sync disabled",
+		s.logger.Warn("attempted to rebuild playlist with sync disabled",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
 		return fmt.Errorf("sync is not enabled for this playlist")
@@ -509,7 +509,7 @@ func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistI
 
 	// Ensure playlist is not from Navidrome
 	if pl.Source == "navidrome" {
-		s.Logger.Warn("attempted to rebuild Navidrome playlist",
+		s.logger.Warn("attempted to rebuild Navidrome playlist",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
 		return fmt.Errorf("cannot rebuild Navidrome playlist")
@@ -517,13 +517,13 @@ func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistI
 
 	u := pl.Edges.User
 	if u == nil {
-		s.Logger.Error("playlist has no associated user",
+		s.logger.Error("playlist has no associated user",
 			"playlist_id", playlistID,
 			"playlist_name", pl.Name)
 		return fmt.Errorf("playlist has no associated user")
 	}
 
-	s.Logger.Info("rebuilding playlist sync",
+	s.logger.Info("rebuilding playlist sync",
 		"playlist_id", playlistID,
 		"playlist_name", pl.Name,
 		"source", pl.Source,
@@ -559,43 +559,43 @@ func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistI
 
 	// Delete existing playlist from Navidrome if it exists
 	if pl.NavidromePlaylistID != "" {
-		s.Logger.Debug("deleting existing Navidrome playlist",
+		s.logger.Debug("deleting existing Navidrome playlist",
 			"playlist_id", playlistID,
 			"navidrome_playlist_id", pl.NavidromePlaylistID)
 
 		if err := syncer.DeletePlaylist(ctx, pl.NavidromePlaylistID); err != nil {
-			s.Logger.Warn("failed to delete existing Navidrome playlist, continuing with rebuild",
+			s.logger.Warn("failed to delete existing Navidrome playlist, continuing with rebuild",
 				"playlist_id", playlistID,
 				"navidrome_playlist_id", pl.NavidromePlaylistID,
 				"error", err)
 			// Continue anyway - the playlist might have been deleted manually
 		} else {
-			s.Logger.Info("deleted existing Navidrome playlist",
+			s.logger.Info("deleted existing Navidrome playlist",
 				"playlist_id", playlistID,
 				"navidrome_playlist_id", pl.NavidromePlaylistID)
 		}
 	}
 
 	// Clear sync info from database to force fresh sync
-	_, err = s.Client.Playlist.UpdateOne(pl).
+	_, err = s.client.Playlist.UpdateOne(pl).
 		ClearNavidromePlaylistID().
 		ClearLastSyncedAt().
 		SetMatchedTrackCount(0).
 		ClearSyncError().
 		Save(ctx)
 	if err != nil {
-		s.Logger.Error("failed to clear playlist sync info for rebuild",
+		s.logger.Error("failed to clear playlist sync info for rebuild",
 			"playlist_id", playlistID,
 			"error", err)
 		return s.handleSyncError(ctx, pl, u, fmt.Errorf("failed to clear sync info: %w", err))
 	}
 
-	s.Logger.Debug("cleared sync info, starting fresh sync",
+	s.logger.Debug("cleared sync info, starting fresh sync",
 		"playlist_id", playlistID)
 
 	// Now perform a fresh sync
 	if err := s.SyncPlaylistToNavidrome(ctx, playlistID); err != nil {
-		s.Logger.Error("failed to sync playlist after rebuild",
+		s.logger.Error("failed to sync playlist after rebuild",
 			"playlist_id", playlistID,
 			"error", err)
 		return err // Error already logged and handled by SyncPlaylistToNavidrome
@@ -603,7 +603,7 @@ func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistI
 
 	duration := time.Since(startTime)
 
-	s.Logger.Info("playlist rebuild completed successfully",
+	s.logger.Info("playlist rebuild completed successfully",
 		"playlist_id", playlistID,
 		"playlist_name", pl.Name,
 		"duration", duration)
@@ -615,18 +615,18 @@ func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistI
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-013 (error state on Navidrome API failure),
 // SPEC playlist-sync-navidrome REQ-PLSYNC-060 (SyncEvent audit logging on failure)
 func (s *PlaylistSyncService) handleSyncError(ctx context.Context, pl *ent.Playlist, u *ent.User, err error) error {
-	s.Logger.Error("playlist sync failed",
+	s.logger.Error("playlist sync failed",
 		"playlist_id", pl.ID,
 		"playlist_name", pl.Name,
 		"source", pl.Source,
 		"error", err)
 
 	// Store error in database
-	_, dbErr := s.Client.Playlist.UpdateOne(pl).
+	_, dbErr := s.client.Playlist.UpdateOne(pl).
 		SetSyncError(err.Error()).
 		Save(ctx)
 	if dbErr != nil {
-		s.Logger.Error("failed to save sync error to database",
+		s.logger.Error("failed to save sync error to database",
 			"playlist_id", pl.ID,
 			"error", dbErr)
 	}
@@ -652,17 +652,17 @@ func (s *PlaylistSyncService) handleSyncError(ctx context.Context, pl *ent.Playl
 
 // getNavidromeProvider returns the Navidrome provider for a user.
 func (s *PlaylistSyncService) getNavidromeProvider(ctx context.Context, u *ent.User) (providers.Provider, error) {
-	s.Logger.Debug("getting Navidrome provider for user",
+	s.logger.Debug("getting Navidrome provider for user",
 		"user_id", u.ID,
 		"username", u.Username)
 
 	// Load user with Navidrome auth edge - this is critical for the provider to work
-	userWithAuth, err := s.Client.User.Query().
+	userWithAuth, err := s.client.User.Query().
 		Where(user.ID(u.ID)).
 		WithNavidromeAuth().
 		Only(ctx)
 	if err != nil {
-		s.Logger.Error("failed to load user with Navidrome auth",
+		s.logger.Error("failed to load user with Navidrome auth",
 			"user_id", u.ID,
 			"error", err)
 		return nil, fmt.Errorf("failed to load user with auth: %w", err)
@@ -670,42 +670,42 @@ func (s *PlaylistSyncService) getNavidromeProvider(ctx context.Context, u *ent.U
 
 	// Check if Navidrome auth is configured
 	if userWithAuth.Edges.NavidromeAuth == nil {
-		s.Logger.Error("user has no Navidrome auth configured",
+		s.logger.Error("user has no Navidrome auth configured",
 			"user_id", u.ID,
 			"username", u.Username)
 		return nil, fmt.Errorf("Navidrome not configured for user %s", u.Username)
 	}
 
-	s.Logger.Debug("loaded user with Navidrome auth",
+	s.logger.Debug("loaded user with Navidrome auth",
 		"user_id", u.ID,
 		"username", userWithAuth.Username)
 
 	// Find Navidrome factory and create provider
-	for _, factory := range s.Factories {
+	for _, factory := range s.factories {
 		provider, err := factory(ctx, userWithAuth)
 		if err != nil {
-			s.Logger.Debug("factory returned error",
+			s.logger.Debug("factory returned error",
 				"error", err)
 			continue
 		}
 		if provider != nil && provider.Type() == providers.TypeNavidrome {
-			s.Logger.Debug("found Navidrome provider",
+			s.logger.Debug("found Navidrome provider",
 				"user_id", u.ID,
 				"provider_type", provider.Type())
 			return provider, nil
 		}
 	}
 
-	s.Logger.Error("no Navidrome provider found for user",
+	s.logger.Error("no Navidrome provider found for user",
 		"user_id", u.ID,
-		"factory_count", len(s.Factories))
+		"factory_count", len(s.factories))
 
 	return nil, fmt.Errorf("no Navidrome provider configured for user")
 }
 
 // logEvent logs a sync event to the database.
 func (s *PlaylistSyncService) logEvent(ctx context.Context, u *ent.User, eventType syncevent.EventType, provider string, message string, metadata map[string]interface{}) {
-	builder := s.Client.SyncEvent.Create().
+	builder := s.client.SyncEvent.Create().
 		SetUser(u).
 		SetEventType(eventType).
 		SetProvider(provider).
@@ -715,19 +715,19 @@ func (s *PlaylistSyncService) logEvent(ctx context.Context, u *ent.User, eventTy
 		if metadataJSON, err := json.Marshal(metadata); err == nil {
 			builder.SetMetadata(string(metadataJSON))
 		} else {
-			s.Logger.Warn("failed to marshal event metadata",
+			s.logger.Warn("failed to marshal event metadata",
 				"event_type", eventType,
 				"error", err)
 		}
 	}
 
 	if _, err := builder.Save(ctx); err != nil {
-		s.Logger.Warn("failed to log sync event",
+		s.logger.Warn("failed to log sync event",
 			"event_type", eventType,
 			"provider", provider,
 			"error", err)
 	} else {
-		s.Logger.Debug("logged sync event",
+		s.logger.Debug("logged sync event",
 			"event_type", eventType,
 			"provider", provider,
 			"message", message)
@@ -736,18 +736,18 @@ func (s *PlaylistSyncService) logEvent(ctx context.Context, u *ent.User, eventTy
 
 // publishNotification publishes a notification event to the event bus.
 func (s *PlaylistSyncService) publishNotification(userID int, title, message, iconType string) {
-	if s.Bus == nil {
-		s.Logger.Debug("event bus is nil, skipping notification",
+	if s.bus == nil {
+		s.logger.Debug("event bus is nil, skipping notification",
 			"title", title)
 		return
 	}
 
-	s.Logger.Debug("publishing notification",
+	s.logger.Debug("publishing notification",
 		"user_id", userID,
 		"title", title,
 		"icon_type", iconType)
 
-	s.Bus.Publish(userID, events.Event{
+	s.bus.Publish(userID, events.Event{
 		Type: events.EventTypeNotification,
 		Payload: events.NotificationPayload{
 			Title:    title,
@@ -770,7 +770,7 @@ type PlaylistSyncStatus struct {
 
 // GetPlaylistSyncStatus returns the sync status for a playlist.
 func (s *PlaylistSyncService) GetPlaylistSyncStatus(ctx context.Context, playlistID int) (*PlaylistSyncStatus, error) {
-	pl, err := s.Client.Playlist.Query().
+	pl, err := s.client.Playlist.Query().
 		Where(playlist.ID(playlistID)).
 		Only(ctx)
 	if err != nil {
