@@ -109,11 +109,11 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 
 	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-014 (syncing state set at start, replaced on completion)
 	// Set sync_status to "syncing" at the START of sync so the UI reflects in-progress state.
-	_, err = s.Client.Playlist.UpdateOne(pl).
+	_, err = s.client.Playlist.UpdateOne(pl).
 		SetSyncStatus(playlist.SyncStatusSyncing).
 		Save(ctx)
 	if err != nil {
-		s.Logger.Warn("failed to set sync_status=syncing",
+		s.logger.Warn("failed to set sync_status=syncing",
 			"playlist_id", playlistID,
 			"error", err)
 		// Non-fatal: continue with sync even if we can't update status
