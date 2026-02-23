@@ -279,6 +279,7 @@ func setRequiredEnvVars(t *testing.T) {
 	t.Setenv("SPOTTER_SECURITY_JWT_SECRET", "test-jwt-secret-at-least-32-chars")
 }
 
+// Governing: SPEC-0014 REQ "Test Coverage" (valid drivers, invalid driver rejection, default source per driver)
 func TestConfig_ValidDrivers(t *testing.T) {
 	for _, driver := range []string{"sqlite3", "postgres", "mysql"} {
 		t.Run(driver, func(t *testing.T) {
