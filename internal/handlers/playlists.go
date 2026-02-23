@@ -164,6 +164,9 @@ func (h *Handler) playlistTracksToRows(tracks []*ent.PlaylistTrack) []components
 	return rows
 }
 
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-050 (toggle-sync endpoint),
+// REQ-PLSYNC-051 (async sync/removal in background goroutine)
+
 // TogglePlaylistSync toggles the Navidrome sync status of a playlist
 func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 	u := h.GetUser(r.Context())
@@ -391,6 +394,8 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, response)
 }
 
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-050 (sync-progress endpoint)
+
 // GetPlaylistSyncProgress returns the sync progress bar component for HTMX polling.
 // GET /playlists/{id}/sync-progress
 func (h *Handler) GetPlaylistSyncProgress(w http.ResponseWriter, r *http.Request) {
@@ -434,6 +439,8 @@ func (h *Handler) GetPlaylistSyncProgress(w http.ResponseWriter, r *http.Request
 	component := components.SyncProgressBar(config)
 	templ.Handler(component).ServeHTTP(w, r)
 }
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-050 (sync-status endpoint)
 
 // GetPlaylistSyncStatus returns the current sync status for a playlist as JSON
 func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) {
@@ -489,6 +496,9 @@ func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 		log.Printf("error encoding JSON response: %v", err)
 	}
 }
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-050 (sync endpoint),
+// REQ-PLSYNC-051 (async sync in background goroutine)
 
 // SyncPlaylist triggers an immediate sync of a playlist to Navidrome.
 // POST /playlists/{id}/sync
@@ -588,6 +598,9 @@ func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
 	// Return the updated sync dropdown component
 	h.renderPlaylistSyncDropdown(w, r, updatedPlaylist)
 }
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-050 (rebuild-sync endpoint),
+// REQ-PLSYNC-051 (async rebuild in background goroutine)
 
 // RebuildPlaylistSync clears and rebuilds the Navidrome playlist sync.
 // POST /playlists/{id}/rebuild-sync
