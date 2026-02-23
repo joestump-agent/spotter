@@ -1,3 +1,7 @@
+// Governing: ADR-0015 (type-keyed enricher registry with factory pattern),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-001 through REQ-ENRICH-005 (enricher interfaces),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-050 (registry with dynamic registration),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-051 (registry supports listing enrichers by type)
 package enrichers
 
 import (
@@ -113,6 +117,8 @@ type ImageData struct {
 }
 
 // Enricher is the base interface that all metadata enrichers must implement.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-001 (base enricher interface with Type()).
+// Note: Priority() is replaced by DefaultOrder() per ADR-0015 (order-based execution over priority fields).
 type Enricher interface {
 	// Type returns the identifier for this enricher.
 	Type() Type
@@ -125,6 +131,7 @@ type Enricher interface {
 }
 
 // ArtistEnricher is implemented by enrichers that can add metadata to artists.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-002 (ArtistEnricher specialized interface)
 type ArtistEnricher interface {
 	Enricher
 
@@ -137,6 +144,7 @@ type ArtistEnricher interface {
 }
 
 // AlbumEnricher is implemented by enrichers that can add metadata to albums.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-003 (AlbumEnricher specialized interface)
 type AlbumEnricher interface {
 	Enricher
 
@@ -148,6 +156,7 @@ type AlbumEnricher interface {
 }
 
 // TrackEnricher is implemented by enrichers that can add metadata to tracks.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-004 (TrackEnricher specialized interface)
 type TrackEnricher interface {
 	Enricher
 
@@ -157,6 +166,7 @@ type TrackEnricher interface {
 
 // IDMatcher is implemented by enrichers that can match local entities to external IDs.
 // This is typically the first step before enrichment - finding the correct external entity.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-005 (IDMatcher specialized interface)
 type IDMatcher interface {
 	Enricher
 
@@ -172,9 +182,14 @@ type IDMatcher interface {
 
 // Factory defines the function signature for creating an enricher instance.
 // Returns nil, nil if the enricher is not configured/available.
+// Governing: ADR-0015 (factory pattern for per-user instantiation),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-050 (enrichers instantiated per-user with user credentials),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-051 (missing credentials -> graceful nil return)
 type Factory func(ctx context.Context, user *ent.User) (Enricher, error)
 
 // Registry holds all registered enricher factories.
+// Governing: ADR-0015 (type-keyed registry with map[Type]Factory),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-050 (dynamic registration via Register)
 type Registry struct {
 	factories map[Type]Factory
 }
@@ -218,6 +233,9 @@ func ParseType(s string) (Type, bool) {
 
 // DefaultOrder returns the default enricher execution order.
 // MusicBrainz first for ID matching, then others for metadata, OpenAI last for AI enrichment.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-010 (deterministic ascending priority order),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-011 (MusicBrainz runs first),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (OpenAI runs last)
 func DefaultOrder() []Type {
 	return []Type{
 		TypeMusicBrainz,
