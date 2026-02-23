@@ -224,6 +224,9 @@ func main() {
 	}()
 
 	// Background Metadata Enrichment Loop
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-040 (background scheduler on configurable interval),
+	// SPEC metadata-enrichment-pipeline REQ-ENRICH-042 (per-user isolation in enrichment runs),
+	// SPEC metadata-enrichment-pipeline REQ-ENRICH-043 (MetadataService coordinates all enrichers)
 	if cfg.Metadata.Enabled {
 		metadataInterval, err := time.ParseDuration(cfg.Metadata.Interval)
 		if err != nil {
@@ -287,6 +290,8 @@ func main() {
 			ticker := time.NewTicker(metadataInterval)
 			defer ticker.Stop()
 			// Governing: SPEC graceful-shutdown REQ-CTX-001 (select on ctx.Done vs ticker.C)
+			// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041 (duplicate ticks skipped —
+			// syncMetadataForUsers blocks synchronously, so ticker events during execution are dropped)
 			for {
 				select {
 				case <-ctx.Done():
