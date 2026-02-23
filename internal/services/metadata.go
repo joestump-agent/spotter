@@ -1370,12 +1370,16 @@ func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int,
 		return 0, fmt.Errorf("failed to create images directory: %w", err)
 	}
 
+	// Repair stale paths where local_path is set but the file no longer exists on disk.
+	// This handles container recreation where the data directory is lost.
+	s.repairStaleImagePaths(ctx, u)
+
 	downloadedCount := 0
 
-	// Download artist images
+	// Download artist images (null or empty local_path)
 	artistImages, err := s.Client.ArtistImage.Query().
 		Where(
-			artistimage.LocalPathIsNil(),
+			artistimage.Or(artistimage.LocalPathIsNil(), artistimage.LocalPathEQ("")),
 			artistimage.HasArtistWith(artist.HasUserWith(user.ID(u.ID))),
 		).
 		WithArtist().
@@ -1393,10 +1397,10 @@ func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int,
 		}
 	}
 
-	// Download album images
+	// Download album images (null or empty local_path)
 	albumImages, err := s.Client.AlbumImage.Query().
 		Where(
-			albumimage.LocalPathIsNil(),
+			albumimage.Or(albumimage.LocalPathIsNil(), albumimage.LocalPathEQ("")),
 			albumimage.HasAlbumWith(album.HasUserWith(user.ID(u.ID))),
 		).
 		WithAlbum().
@@ -1415,6 +1419,52 @@ func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int,
 	}
 
 	return downloadedCount, nil
+}
+
+// repairStaleImagePaths clears local_path for image records where the file no longer exists on disk.
+// This self-heals after container recreation where the data directory is lost.
+func (s *MetadataService) repairStaleImagePaths(ctx context.Context, u *ent.User) {
+	artistImages, err := s.Client.ArtistImage.Query().
+		Where(
+			artistimage.LocalPathNotNil(),
+			artistimage.LocalPathNEQ(""),
+			artistimage.HasArtistWith(artist.HasUserWith(user.ID(u.ID))),
+		).
+		All(ctx)
+	if err != nil {
+		s.Logger.Warn("failed to query artist images for repair", "error", err)
+	} else {
+		for _, img := range artistImages {
+			if _, err := os.Stat(img.LocalPath); os.IsNotExist(err) {
+				if _, err := s.Client.ArtistImage.UpdateOne(img).ClearLocalPath().Save(ctx); err != nil {
+					s.Logger.Warn("failed to clear stale artist image path", "id", img.ID, "path", img.LocalPath, "error", err)
+				} else {
+					s.Logger.Info("cleared stale artist image path", "id", img.ID, "path", img.LocalPath)
+				}
+			}
+		}
+	}
+
+	albumImages, err := s.Client.AlbumImage.Query().
+		Where(
+			albumimage.LocalPathNotNil(),
+			albumimage.LocalPathNEQ(""),
+			albumimage.HasAlbumWith(album.HasUserWith(user.ID(u.ID))),
+		).
+		All(ctx)
+	if err != nil {
+		s.Logger.Warn("failed to query album images for repair", "error", err)
+	} else {
+		for _, img := range albumImages {
+			if _, err := os.Stat(img.LocalPath); os.IsNotExist(err) {
+				if _, err := s.Client.AlbumImage.UpdateOne(img).ClearLocalPath().Save(ctx); err != nil {
+					s.Logger.Warn("failed to clear stale album image path", "id", img.ID, "path", img.LocalPath, "error", err)
+				} else {
+					s.Logger.Info("cleared stale album image path", "id", img.ID, "path", img.LocalPath)
+				}
+			}
+		}
+	}
 }
 
 // downloadArtistImage downloads a single artist image.
