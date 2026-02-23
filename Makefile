@@ -25,7 +25,7 @@ deps: ## Install all dependencies (Go, Node, tools, docs)
 	@echo "Installing development tools..."
 	go install github.com/a-h/templ/cmd/templ@latest
 	go install github.com/air-verse/air@latest
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 	@echo "Installing Node dependencies..."
 	npm install
 	@echo "Installing documentation dependencies..."
@@ -38,7 +38,7 @@ ci-deps: ## Install CI dependencies (minimal, no dev tools)
 	@echo "Installing templ..."
 	go install github.com/a-h/templ/cmd/templ@latest
 	@echo "Installing golangci-lint..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 	@echo "✓ CI dependencies installed"
 
 docker-deps: ## Install Docker build dependencies (Go, templ, Node)
