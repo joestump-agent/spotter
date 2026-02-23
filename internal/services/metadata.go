@@ -62,6 +62,12 @@ func (s *MetadataService) Register(t enrichers.Type, factory enrichers.Factory) 
 	s.registry.Register(t, factory)
 }
 
+// GetEnricherFactory returns the factory for the given enricher type, if registered.
+// This provides controlled external access to the registry for handler use.
+func (s *MetadataService) GetEnricherFactory(t enrichers.Type) (enrichers.Factory, bool) {
+	return s.registry.Get(t)
+}
+
 // logEvent persists a sync event to the database.
 func (s *MetadataService) logEvent(ctx context.Context, u *ent.User, eventType syncevent.EventType, provider string, message string, metadata map[string]interface{}) {
 	builder := s.client.SyncEvent.Create().
