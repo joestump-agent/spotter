@@ -34,11 +34,12 @@ type Provider struct {
 	httpClient *http.Client
 }
 
-// Ensure Provider implements interfaces
+// Governing: SPEC music-provider-integration REQ-PROV-040 (Last.fm: HistoryFetcher + Authenticator)
 var _ providers.HistoryFetcher = (*Provider)(nil)
 var _ providers.Authenticator = (*Provider)(nil)
 
-// Governing: ADR-0016 (pluggable provider factory), SPEC listen-playlist-sync REQ-SYNC-002 (factory returns nil if unconfigured)
+// Governing: ADR-0016 (pluggable provider factory), SPEC music-provider-integration REQ-PROV-011 (nil,nil if unconfigured),
+// REQ-PROV-012 (credentials from user.Edges.LastfmAuth)
 // New returns a factory that creates Last.fm providers for a given user.
 func New(logger *slog.Logger, cfg *config.Config) providers.Factory {
 	return func(ctx context.Context, user *ent.User) (providers.Provider, error) {
@@ -115,6 +116,7 @@ func (p *Provider) GetAuthURL(state string) string {
 		p.config.LastFM.RedirectURL)
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-041 (API key auth, session key stored as AccessToken)
 // ExchangeCode exchanges the authorization token for a session key.
 func (p *Provider) ExchangeCode(ctx context.Context, code string) (*providers.AuthResult, error) {
 	// Governing: SPEC user-authentication REQ "Suppress Last.fm Token from Logs"
@@ -168,6 +170,7 @@ func (p *Provider) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-042 (user.getRecentTracks with from=since.Unix())
 // GetRecentListens retrieves tracks played after the given timestamp.
 func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callback func([]providers.Track) error) error {
 	p.logger.Info("fetching recent listens from last.fm", "username", p.auth.Username, "since", since)

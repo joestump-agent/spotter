@@ -32,13 +32,17 @@ type Provider struct {
 	jwtToken string
 }
 
-// Ensure Provider implements interfaces
+// Governing: SPEC music-provider-integration REQ-PROV-050 (Navidrome: HistoryFetcher + PlaylistManager + PlaylistSyncer)
+// NOTE: REQ-PROV-052 states Navidrome MUST NOT implement Authenticator. It is implemented here
+// with SupportsAuth() returning false so the preferences UI can query all providers uniformly.
+// All auth methods return errors indicating Navidrome auth is handled via app login (ADR-0005).
 var _ providers.HistoryFetcher = (*Provider)(nil)
 var _ providers.PlaylistManager = (*Provider)(nil)
 var _ providers.Authenticator = (*Provider)(nil)
 var _ providers.PlaylistSyncer = (*Provider)(nil)
 
-// Governing: ADR-0016 (pluggable provider factory), SPEC listen-playlist-sync REQ-SYNC-002 (factory returns nil if unconfigured)
+// Governing: ADR-0016 (pluggable provider factory), SPEC music-provider-integration REQ-PROV-011 (nil,nil if unconfigured),
+// REQ-PROV-012 (credentials from user.Edges.NavidromeAuth)
 // New returns a factory that creates Navidrome providers for a given user.
 func New(logger *slog.Logger, cfg *config.Config) providers.Factory {
 	return func(ctx context.Context, user *ent.User) (providers.Provider, error) {
@@ -250,6 +254,7 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 	return nil
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-051 (Subsonic API protocol, random salt per request)
 // getNowPlayingFromSubsonic uses the Subsonic API to get currently playing tracks
 func (p *Provider) getNowPlayingFromSubsonic(ctx context.Context, since time.Time) ([]providers.Track, error) {
 	// Generate Auth Parameters
@@ -943,6 +948,7 @@ func (p *Provider) UpdatePlaylistTracks(ctx context.Context, remotePlaylistID st
 	return nil
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-051 (salt MUST be randomly generated per request)
 func generateSalt() string {
 	b := make([]byte, 6)
 	if _, err := rand.Read(b); err != nil {
