@@ -316,7 +316,7 @@ templ MixtapeShow(m *ent.Mixtape, tracks []*ent.Track, djs []*ent.DJ, cfg *confi
 			// GenerationPrompt rendered via Templ string interpolation {}, which auto-escapes HTML
 			if m.GenerationPrompt != "" {
 				<div class="collapse collapse-arrow bg-base-100 shadow-xl mb-8">
-					<input type="checkbox"/>
+					<input type="checkbox" aria-label="Toggle Generation Prompt section"/>
 					<div class="collapse-title text-lg font-medium flex items-center gap-2">
 						<span class="icon-[heroicons--document-text] w-5 h-5"></span>
 						Generation Prompt

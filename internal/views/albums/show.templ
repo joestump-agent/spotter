@@ -282,26 +282,6 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, djs [
 								</a>
 							}
 						</li>
-						<li>
-							if len(djs) > 0 {
-								<button
-									hx-get={ fmt.Sprintf("/library/album/%d/mixtape-modal", album.ID) }
-									hx-target="#create-mixtape-modal"
-									hx-swap="innerHTML"
-									onclick="this.closest('details').removeAttribute('open')"
-									_="on htmx:afterRequest document.getElementById('create-mixtape-modal').showModal()"
-								>
-									<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
-									Create Mixtape
-								</button>
-							} else {
-								<a href="/vibes/djs" class="opacity-60">
-									<span class="icon-[heroicons--musical-note] w-4 h-4"></span>
-									Create Mixtape
-									<span class="badge badge-xs">Create DJ first</span>
-								</a>
-							}
-						</li>
 					</ul>
 				</details>
 			</div>
