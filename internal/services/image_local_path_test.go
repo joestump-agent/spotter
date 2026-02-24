@@ -14,8 +14,8 @@ import (
 	"os"
 	"testing"
 
-	"spotter/ent/artistimage"
 	"spotter/ent/albumimage"
+	"spotter/ent/artistimage"
 	"spotter/ent/enttest"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
