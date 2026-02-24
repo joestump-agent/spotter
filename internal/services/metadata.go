@@ -749,6 +749,19 @@ func (s *MetadataService) saveArtistImages(ctx context.Context, art *ent.Artist,
 			return err
 		}
 		if exists {
+			// Update local_path if the enricher downloaded the file but the DB record lacks it.
+			if img.LocalPath != "" {
+				if err := s.client.ArtistImage.Update().
+					Where(
+						artistimage.HasArtistWith(artist.ID(art.ID)),
+						artistimage.URL(img.URL),
+						artistimage.Or(artistimage.LocalPathIsNil(), artistimage.LocalPathEQ("")),
+					).
+					SetLocalPath(img.LocalPath).
+					Exec(ctx); err != nil {
+					s.logger.Warn("failed to update artist image local path", "url", img.URL, "error", err)
+				}
+			}
 			continue
 		}
 
@@ -783,6 +796,9 @@ func (s *MetadataService) saveArtistImages(ctx context.Context, art *ent.Artist,
 		}
 		if img.Likes > 0 {
 			create = create.SetLikes(img.Likes)
+		}
+		if img.LocalPath != "" {
+			create = create.SetLocalPath(img.LocalPath)
 		}
 
 		if _, err := create.Save(ctx); err != nil {
@@ -1139,6 +1155,19 @@ func (s *MetadataService) saveAlbumImages(ctx context.Context, alb *ent.Album, i
 			return err
 		}
 		if exists {
+			// Update local_path if the enricher downloaded the file but the DB record lacks it.
+			if img.LocalPath != "" {
+				if err := s.client.AlbumImage.Update().
+					Where(
+						albumimage.HasAlbumWith(album.ID(alb.ID)),
+						albumimage.URL(imgURL),
+						albumimage.Or(albumimage.LocalPathIsNil(), albumimage.LocalPathEQ("")),
+					).
+					SetLocalPath(img.LocalPath).
+					Exec(ctx); err != nil {
+					s.logger.Warn("failed to update album image local path", "url", imgURL, "error", err)
+				}
+			}
 			continue
 		}
 
@@ -1170,6 +1199,9 @@ func (s *MetadataService) saveAlbumImages(ctx context.Context, alb *ent.Album, i
 		}
 		if img.Height > 0 {
 			create = create.SetHeight(img.Height)
+		}
+		if img.LocalPath != "" {
+			create = create.SetLocalPath(img.LocalPath)
 		}
 
 		if _, err := create.Save(ctx); err != nil {

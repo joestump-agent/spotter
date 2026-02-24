@@ -5,10 +5,13 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"image"
+	"image/png"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"spotter/ent"
@@ -736,6 +739,108 @@ func TestInterfaceImplementation(t *testing.T) {
 	var _ enrichers.ArtistEnricher = (*Enricher)(nil)
 	var _ enrichers.AlbumEnricher = (*Enricher)(nil)
 	var _ enrichers.TrackEnricher = (*Enricher)(nil)
+}
+
+// TestGetArtistImages_UsesDirectURLNotCoverArt is a regression test verifying that
+// GetArtistImages downloads artist images from the direct CDN URL returned by
+// getArtistInfo2 (largeImageUrl, mediumImageUrl, smallImageUrl), NOT from a
+// getCoverArt endpoint constructed using those URLs as IDs.
+//
+// Bug: getArtistInfo2 returns external CDN URLs (e.g. Spotify CDN) in the image
+// URL fields. The old code incorrectly used these as getCoverArt?id= parameters,
+// causing "image: unknown format" errors because Navidrome cannot interpret a CDN
+// URL as an internal cover art ID.
+func TestGetArtistImages_UsesDirectURLNotCoverArt(t *testing.T) {
+	// Track whether the image URL was requested directly.
+	var requestedURLs []string
+	// This image server serves valid PNG image data.
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedURLs = append(requestedURLs, r.URL.Path)
+		img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+		w.Header().Set("Content-Type", "image/png")
+		_ = png.Encode(w, img)
+	}))
+	defer imageServer.Close()
+
+	// The direct CDN URL for the large artist image.
+	directImageURL := imageServer.URL + "/artist-image-large.png"
+
+	// The Navidrome API server returns the direct CDN URL in largeImageUrl.
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rest/getArtistInfo2" {
+			response := subsonicArtistInfo{}
+			response.SubsonicResponse.Status = "ok"
+			response.SubsonicResponse.ArtistInfo.LargeImageURL = directImageURL
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+		} else {
+			// Any call to getCoverArt would be a bug — fail the test.
+			t.Errorf("unexpected request to %s — GetArtistImages should not call getCoverArt", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer apiServer.Close()
+
+	enricher := createTestEnricher(t, apiServer.URL)
+	artistEnricher := enricher.(enrichers.ArtistEnricher)
+
+	tmpDir := t.TempDir()
+	// Override the image save path to use a temp dir.
+	// We do this by creating the expected directory structure.
+	oldWd, _ := os.Getwd()
+	require.NoError(t, os.Chdir(tmpDir))
+	defer os.Chdir(oldWd)
+
+	artist := &ent.Artist{
+		ID:          42,
+		Name:        "Test Artist",
+		NavidromeID: "artist-42",
+	}
+
+	images, err := artistEnricher.GetArtistImages(context.Background(), artist)
+	require.NoError(t, err)
+
+	// The direct image URL should have been hit on the image server.
+	assert.Contains(t, requestedURLs, "/artist-image-large.png",
+		"GetArtistImages must download from the direct CDN URL, not via getCoverArt")
+
+	// The returned ImageData should reference the local file.
+	require.Len(t, images, 1)
+	assert.Equal(t, directImageURL, images[0].URL,
+		"ImageData.URL should be the direct CDN URL, not a getCoverArt URL")
+	assert.NotEmpty(t, images[0].LocalPath,
+		"ImageData.LocalPath should be set after successful download")
+	assert.Equal(t, "navidrome", images[0].Source)
+	assert.True(t, images[0].IsPrimary)
+}
+
+// TestGetArtistImages_EmptyImageURLsReturnsNoImages verifies that when Navidrome
+// returns no image URLs for an artist, GetArtistImages returns an empty slice.
+func TestGetArtistImages_EmptyImageURLsReturnsNoImages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rest/getArtistInfo2" {
+			response := subsonicArtistInfo{}
+			response.SubsonicResponse.Status = "ok"
+			// No image URLs set.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+		}
+	}))
+	defer server.Close()
+
+	enricher := createTestEnricher(t, server.URL)
+	artistEnricher := enricher.(enrichers.ArtistEnricher)
+
+	artist := &ent.Artist{
+		ID:          1,
+		Name:        "No Image Artist",
+		NavidromeID: "artist-1",
+	}
+
+	images, err := artistEnricher.GetArtistImages(context.Background(), artist)
+	require.NoError(t, err)
+	assert.Empty(t, images, "should return no images when Navidrome returns no image URLs")
 }
 
 // Helper function to create a test enricher with custom base URL

@@ -385,23 +385,18 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 
 	var images []enrichers.ImageData
 
-	// Add images from artist info
-	if coverArtID := info.SubsonicResponse.ArtistInfo.LargeImageURL; coverArtID != "" {
-		salt := staticSalt
-		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
-			e.config.Navidrome.BaseURL,
-			coverArtID,
-			e.user.Username,
-			generateToken(e.auth.Password, salt),
-			salt,
-		)
+	// Add images from artist info.
+	// LargeImageURL, MediumImageURL, and SmallImageURL are direct CDN URLs (e.g. Spotify CDN)
+	// forwarded by Navidrome's getArtistInfo2 response. They must be downloaded directly,
+	// not wrapped in a getCoverArt call (which expects internal Navidrome entity IDs).
+	if directURL := info.SubsonicResponse.ArtistInfo.LargeImageURL; directURL != "" {
 		localPath := fmt.Sprintf("data/images/artists/%d_navidrome_large.png", artist.ID)
-		_, err := enrichers.DownloadAndSaveImage(coverURL, localPath, e.logger)
+		_, err := enrichers.DownloadAndSaveImage(directURL, localPath, e.logger)
 		if err != nil {
-			e.logger.Warn("failed to download navidrome image", "url", coverURL, "error", err)
+			e.logger.Warn("failed to download navidrome image", "url", directURL, "error", err)
 		} else {
 			images = append(images, enrichers.ImageData{
-				URL:       coverURL,
+				URL:       directURL,
 				LocalPath: localPath,
 				Type:      "thumbnail",
 				Source:    "navidrome",
@@ -410,22 +405,14 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 		}
 	}
 
-	if coverArtID := info.SubsonicResponse.ArtistInfo.MediumImageURL; coverArtID != "" && coverArtID != info.SubsonicResponse.ArtistInfo.LargeImageURL {
-		salt := staticSalt
-		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
-			e.config.Navidrome.BaseURL,
-			coverArtID,
-			e.user.Username,
-			generateToken(e.auth.Password, salt),
-			salt,
-		)
+	if directURL := info.SubsonicResponse.ArtistInfo.MediumImageURL; directURL != "" && directURL != info.SubsonicResponse.ArtistInfo.LargeImageURL {
 		localPath := fmt.Sprintf("data/images/artists/%d_navidrome_medium.png", artist.ID)
-		_, err := enrichers.DownloadAndSaveImage(coverURL, localPath, e.logger)
+		_, err := enrichers.DownloadAndSaveImage(directURL, localPath, e.logger)
 		if err != nil {
-			e.logger.Warn("failed to download navidrome image", "url", coverURL, "error", err)
+			e.logger.Warn("failed to download navidrome image", "url", directURL, "error", err)
 		} else {
 			images = append(images, enrichers.ImageData{
-				URL:       coverURL,
+				URL:       directURL,
 				LocalPath: localPath,
 				Type:      "thumbnail",
 				Source:    "navidrome",
@@ -433,22 +420,14 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 		}
 	}
 
-	if coverArtID := info.SubsonicResponse.ArtistInfo.SmallImageURL; coverArtID != "" && coverArtID != info.SubsonicResponse.ArtistInfo.MediumImageURL {
-		salt := staticSalt
-		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
-			e.config.Navidrome.BaseURL,
-			coverArtID,
-			e.user.Username,
-			generateToken(e.auth.Password, salt),
-			salt,
-		)
+	if directURL := info.SubsonicResponse.ArtistInfo.SmallImageURL; directURL != "" && directURL != info.SubsonicResponse.ArtistInfo.MediumImageURL {
 		localPath := fmt.Sprintf("data/images/artists/%d_navidrome_small.png", artist.ID)
-		_, err := enrichers.DownloadAndSaveImage(coverURL, localPath, e.logger)
+		_, err := enrichers.DownloadAndSaveImage(directURL, localPath, e.logger)
 		if err != nil {
-			e.logger.Warn("failed to download navidrome image", "url", coverURL, "error", err)
+			e.logger.Warn("failed to download navidrome image", "url", directURL, "error", err)
 		} else {
 			images = append(images, enrichers.ImageData{
-				URL:       coverURL,
+				URL:       directURL,
 				LocalPath: localPath,
 				Type:      "thumbnail",
 				Source:    "navidrome",
