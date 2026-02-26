@@ -383,63 +383,63 @@ templ taskButton(taskID string, taskName string) {
 		</button>
 	} else if taskID == "sync-listens" {
 		<button
-			class="btn btn-primary btn-sm w-24 gap-2"
+			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/sync-listens"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
-			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
+			<span class="loading loading-spinner loading-xs htmx-indicator absolute"></span>
 		</button>
 	} else if taskID == "sync-playlists" {
 		<button
-			class="btn btn-primary btn-sm w-24 gap-2"
+			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/sync-playlists"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
-			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
+			<span class="loading loading-spinner loading-xs htmx-indicator absolute"></span>
 		</button>
 	} else if taskID == "enrich-metadata" {
 		<button
-			class="btn btn-primary btn-sm w-24 gap-2"
+			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/enrich-metadata"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
-			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
+			<span class="loading loading-spinner loading-xs htmx-indicator absolute"></span>
 		</button>
 	} else if taskID == "sync-artist-images" {
 		<button
-			class="btn btn-primary btn-sm w-24 gap-2"
+			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/sync-artist-images"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
-			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
+			<span class="loading loading-spinner loading-xs htmx-indicator absolute"></span>
 		</button>
 	} else if taskID == "sync-album-images" {
 		<button
-			class="btn btn-primary btn-sm w-24 gap-2"
+			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/sync-album-images"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
-			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
+			<span class="loading loading-spinner loading-xs htmx-indicator absolute"></span>
 		</button>
 	} else if taskID == "cleanup" {
 		<button
-			class="btn btn-primary btn-sm w-24 gap-2"
+			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/cleanup"
 			hx-swap="none"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
-			<span class="loading loading-spinner loading-xs htmx-indicator"></span>
+			<span class="loading loading-spinner loading-xs htmx-indicator absolute"></span>
 		</button>
 	} else {
 		<button class="btn btn-primary btn-sm w-24 gap-2" disabled>
