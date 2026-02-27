@@ -75,27 +75,25 @@ type lidarrLink struct {
 	Name string `json:"name"`
 }
 
-type lidarrAlbum struct {
-	ID             int           `json:"id"`
-	Title          string        `json:"title"`
-	ForeignAlbumID string        `json:"foreignAlbumId"` // MusicBrainz ID
-	ArtistID       int           `json:"artistId"`
-	Monitored      bool          `json:"monitored"`
-	ReleaseDate    string        `json:"releaseDate"`
-	Genres         []string      `json:"genres"`
-	Images         []lidarrImage `json:"images"`
-	AlbumType      string        `json:"albumType"`
+type lidarrAlbumStatistics struct {
+	TrackFileCount  int     `json:"trackFileCount"`
+	TotalTrackCount int     `json:"totalTrackCount"`
+	PercentOfTracks float64 `json:"percentOfTracks"`
 }
 
-type lidarrTrack struct {
-	ID          int         `json:"id"`
-	Title       string      `json:"title"`
-	ArtistID    int         `json:"artistId"`
-	AlbumID     int         `json:"albumId"`
-	TrackNumber interface{} `json:"trackNumber"` // Handle int or string
-	Duration    int         `json:"duration"`
-	HasFile     bool        `json:"hasFile"`
+type lidarrAlbum struct {
+	ID             int                    `json:"id"`
+	Title          string                 `json:"title"`
+	ForeignAlbumID string                 `json:"foreignAlbumId"` // MusicBrainz ID
+	ArtistID       int                    `json:"artistId"`
+	Monitored      bool                   `json:"monitored"`
+	ReleaseDate    string                 `json:"releaseDate"`
+	Genres         []string               `json:"genres"`
+	Images         []lidarrImage          `json:"images"`
+	AlbumType      string                 `json:"albumType"`
+	Statistics     lidarrAlbumStatistics  `json:"statistics"`
 }
+
 
 // EnrichArtist
 func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enrichers.ArtistData, error) {
@@ -261,66 +259,40 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 	return images, nil
 }
 
-// EnrichTrack
+// EnrichTrack derives Lidarr status from the album, not the individual track.
+// Lidarr only allows requesting at the album/artist level, so per-track status
+// must be album-level: "available" if the album is fully downloaded, "monitored"
+// if it is tracked but incomplete, or "pending" if it is not yet in Lidarr.
 func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enrichers.TrackData, error) {
-	lTrack, err := e.findTrack(ctx, track)
+	if track.Edges.Album == nil {
+		return &enrichers.TrackData{LidarrStatus: "pending"}, nil
+	}
+
+	lAlbum, err := e.findAlbum(ctx, track.Edges.Album)
 	if err != nil {
 		return nil, err
 	}
 
-	if lTrack == nil {
-		// Track not found. Distinguish between "album already in Lidarr but track
-		// matching failed" vs "album not in Lidarr at all". If the album is already
-		// monitored in Lidarr we should report "monitored" — not "pending" — because
-		// Lidarr tracks at album level and all tracks in the album share its status.
-		// Returning "pending" for a partial match-failure causes the same album to
-		// show inconsistent per-track statuses (some "available", some "pending").
-		if track.Edges.Album != nil {
-			lAlbum, albumErr := e.findAlbum(ctx, track.Edges.Album)
-			if albumErr == nil && lAlbum != nil {
-				// Album is in Lidarr — track number/title matching just failed.
-				// Derive status from the album rather than calling it "pending".
-				return &enrichers.TrackData{
-					LidarrStatus: "monitored",
-				}, nil
-			}
-			// Album not in Lidarr — submit it if we have an MBID.
-			if track.Edges.Album.MusicbrainzID != "" {
-				_, err := e.EnrichAlbum(ctx, track.Edges.Album)
-				if err != nil {
-					e.logger.Error("failed to submit album for missing track", "error", err, "track", track.Name)
-				}
+	if lAlbum == nil {
+		// Album not in Lidarr — submit it if we have an MBID.
+		if track.Edges.Album.MusicbrainzID != "" {
+			_, err := e.EnrichAlbum(ctx, track.Edges.Album)
+			if err != nil {
+				e.logger.Error("failed to submit album for missing track", "error", err, "track", track.Name)
 			}
 		}
-
-		return &enrichers.TrackData{
-			LidarrStatus: "pending",
-		}, nil
+		return &enrichers.TrackData{LidarrStatus: "pending"}, nil
 	}
 
+	// Derive status from album-level file statistics.
+	// "available" = all tracks downloaded; "monitored" = tracked but incomplete.
 	status := "monitored"
-	if lTrack.HasFile {
+	stats := lAlbum.Statistics
+	if stats.TotalTrackCount > 0 && stats.TrackFileCount >= stats.TotalTrackCount {
 		status = "available"
 	}
 
-	if track.LidarrID == nil {
-		e.logEvent(ctx, "lidarr_track_matched", fmt.Sprintf("Matched track in Lidarr: %s", lTrack.Title), map[string]interface{}{
-			"track_name": lTrack.Title,
-			"lidarr_id":  lTrack.ID,
-		})
-	}
-
-	data := &enrichers.TrackData{
-		LidarrStatus: status,
-		DurationMs:   lTrack.Duration,
-	}
-
-	// Only set LidarrID if we have a valid ID (> 0)
-	if lTrack.ID > 0 {
-		data.LidarrID = fmt.Sprintf("%d", lTrack.ID)
-	}
-
-	return data, nil
+	return &enrichers.TrackData{LidarrStatus: status}, nil
 }
 
 // Helper methods
@@ -618,47 +590,4 @@ func (e *Enricher) fetchAlbumByMBID(ctx context.Context, mbid string, artistID i
 	}
 
 	return nil, fmt.Errorf("album with mbid %s not found in lidarr despite existing", mbid)
-}
-
-func (e *Enricher) findTrack(ctx context.Context, track *ent.Track) (*lidarrTrack, error) {
-	if track.Edges.Album == nil {
-		return nil, nil
-	}
-
-	album, err := e.findAlbum(ctx, track.Edges.Album)
-	if err != nil || album == nil {
-		return nil, err
-	}
-
-	u := fmt.Sprintf("track?artistId=%d&albumId=%d", album.ArtistID, album.ID)
-	var tracks []lidarrTrack
-	err = e.doRequest(ctx, "GET", u, nil, &tracks)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, t := range tracks {
-		if track.TrackNumber != nil {
-			tnStr := fmt.Sprintf("%d", *track.TrackNumber)
-			var lidarrTnStr string
-			switch v := t.TrackNumber.(type) {
-			case float64:
-				lidarrTnStr = fmt.Sprintf("%.0f", v)
-			case string:
-				lidarrTnStr = v
-			}
-
-			if lidarrTnStr == tnStr {
-				// Secondary check on name if available?
-				// Just track number should be enough for an album
-				return &t, nil
-			}
-		}
-		// Fallback to title
-		if strings.EqualFold(t.Title, track.Name) {
-			return &t, nil
-		}
-	}
-
-	return nil, nil
 }
