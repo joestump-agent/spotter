@@ -364,6 +364,153 @@ func TestTrackTableRow_ImageURL_Regression_ArtistViewMissingCoverArt(t *testing.
 	assert.NotNil(t, album, "Album should be retrievable for artist top tracks")
 }
 
+// TestTrackTableRow_LidarrStatus tests the LidarrStatus helper method
+func TestTrackTableRow_LidarrStatus(t *testing.T) {
+	available := "available"
+	monitored := "monitored"
+
+	tests := []struct {
+		name     string
+		row      TrackTableRow
+		expected string
+	}{
+		{
+			name: "Track with LidarrStatus returns status",
+			row: TrackTableRow{
+				Track: &ent.Track{LidarrStatus: &available},
+			},
+			expected: "available",
+		},
+		{
+			name: "Track with nil LidarrStatus returns empty string",
+			row: TrackTableRow{
+				Track: &ent.Track{},
+			},
+			expected: "",
+		},
+		{
+			name: "Listen with linked track returns track status",
+			row: TrackTableRow{
+				Listen: &ent.Listen{
+					Edges: ent.ListenEdges{
+						Track: &ent.Track{LidarrStatus: &monitored},
+					},
+				},
+			},
+			expected: "monitored",
+		},
+		{
+			name: "Track takes precedence over Listen track",
+			row: TrackTableRow{
+				Track: &ent.Track{LidarrStatus: &available},
+				Listen: &ent.Listen{
+					Edges: ent.ListenEdges{
+						Track: &ent.Track{LidarrStatus: &monitored},
+					},
+				},
+			},
+			expected: "available",
+		},
+		{
+			name:     "Empty row returns empty string",
+			row:      TrackTableRow{},
+			expected: "",
+		},
+		{
+			name: "Listen without linked track returns empty string",
+			row: TrackTableRow{
+				Listen: &ent.Listen{},
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.row.LidarrStatus()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestTrackTableRow_LidarrAlbumURL tests the LidarrAlbumURL helper method
+func TestTrackTableRow_LidarrAlbumURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		row      TrackTableRow
+		expected string
+	}{
+		{
+			name: "BaseURL and album LidarrID set returns full URL",
+			row: TrackTableRow{
+				LidarrBaseURL: "http://lidarr:8686",
+				Track: &ent.Track{
+					Edges: ent.TrackEdges{
+						Album: &ent.Album{LidarrID: "abc-123-def"},
+					},
+				},
+			},
+			expected: "http://lidarr:8686/album/abc-123-def",
+		},
+		{
+			name: "Empty BaseURL returns empty string",
+			row: TrackTableRow{
+				LidarrBaseURL: "",
+				Track: &ent.Track{
+					Edges: ent.TrackEdges{
+						Album: &ent.Album{LidarrID: "abc-123-def"},
+					},
+				},
+			},
+			expected: "",
+		},
+		{
+			name: "Album with empty LidarrID returns empty string",
+			row: TrackTableRow{
+				LidarrBaseURL: "http://lidarr:8686",
+				Track: &ent.Track{
+					Edges: ent.TrackEdges{
+						Album: &ent.Album{LidarrID: ""},
+					},
+				},
+			},
+			expected: "",
+		},
+		{
+			name: "No album returns empty string",
+			row: TrackTableRow{
+				LidarrBaseURL: "http://lidarr:8686",
+				Track:         &ent.Track{},
+			},
+			expected: "",
+		},
+		{
+			name:     "Empty row returns empty string",
+			row:      TrackTableRow{},
+			expected: "",
+		},
+		{
+			name: "BaseURL without trailing slash is handled correctly",
+			row: TrackTableRow{
+				LidarrBaseURL: "http://lidarr:8686",
+				Track: &ent.Track{
+					Edges: ent.TrackEdges{
+						Album: &ent.Album{LidarrID: "xyz-789"},
+					},
+				},
+			},
+			expected: "http://lidarr:8686/album/xyz-789",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.row.LidarrAlbumURL()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 // TestTrackTableRow_ExplicitImageURL_Override tests that ExplicitImageURL properly overrides
 func TestTrackTableRow_ExplicitImageURL_Override(t *testing.T) {
 	// When ExplicitImageURL is set, it should always be returned
