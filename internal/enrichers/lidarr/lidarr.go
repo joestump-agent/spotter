@@ -269,11 +269,27 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 	}
 
 	if lTrack == nil {
-		// Track not found. Submit album if possible.
-		if track.Edges.Album != nil && track.Edges.Album.MusicbrainzID != "" {
-			_, err := e.EnrichAlbum(ctx, track.Edges.Album)
-			if err != nil {
-				e.logger.Error("failed to submit album for missing track", "error", err, "track", track.Name)
+		// Track not found. Distinguish between "album already in Lidarr but track
+		// matching failed" vs "album not in Lidarr at all". If the album is already
+		// monitored in Lidarr we should report "monitored" — not "pending" — because
+		// Lidarr tracks at album level and all tracks in the album share its status.
+		// Returning "pending" for a partial match-failure causes the same album to
+		// show inconsistent per-track statuses (some "available", some "pending").
+		if track.Edges.Album != nil {
+			lAlbum, albumErr := e.findAlbum(ctx, track.Edges.Album)
+			if albumErr == nil && lAlbum != nil {
+				// Album is in Lidarr — track number/title matching just failed.
+				// Derive status from the album rather than calling it "pending".
+				return &enrichers.TrackData{
+					LidarrStatus: "monitored",
+				}, nil
+			}
+			// Album not in Lidarr — submit it if we have an MBID.
+			if track.Edges.Album.MusicbrainzID != "" {
+				_, err := e.EnrichAlbum(ctx, track.Edges.Album)
+				if err != nil {
+					e.logger.Error("failed to submit album for missing track", "error", err, "track", track.Name)
+				}
 			}
 		}
 

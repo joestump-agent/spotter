@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,6 +17,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// discardLogger returns a no-op logger suitable for tests that exercise error
+// paths which call e.logger.Error/Warn (passing nil panics in those paths).
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 func TestNew(t *testing.T) {
 	cfg := &config.Config{}
@@ -480,6 +488,135 @@ func TestEnrichTrack_FoundByTitle(t *testing.T) {
 
 	assert.Equal(t, "31", data.LidarrID)
 	assert.Equal(t, "available", data.LidarrStatus)
+}
+
+// TestEnrichTrack_AlbumInLidarrButTrackMatchFails verifies that when the album
+// exists in Lidarr but the individual track cannot be matched (e.g. disc-format
+// track numbers like "1-04" vs our stored integer "4"), the status is reported
+// as "monitored" — not "pending".
+//
+// Regression test: previously findTrack returning nil always set status="pending",
+// causing two tracks from the same album to show inconsistent Lidarr statuses
+// (one "available" because it matched, another "pending" because it didn't).
+func TestEnrichTrack_AlbumInLidarrButTrackMatchFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/artist" {
+			json.NewEncoder(w).Encode([]lidarrArtist{
+				{ID: 10, ArtistName: "Aerosmith", ForeignArtistID: "mbid-artist"},
+			})
+			return
+		}
+		if r.URL.Path == "/api/v1/album" {
+			// Album IS in Lidarr.
+			json.NewEncoder(w).Encode([]lidarrAlbum{
+				{ID: 20, ArtistID: 10, Title: "Big Ones", ForeignAlbumID: "mbid-album"},
+			})
+			return
+		}
+		if r.URL.Path == "/api/v1/track" {
+			// Lidarr returns disc-format track numbers ("1-01", "1-02", etc.)
+			// which don't match our stored integer track numbers.
+			json.NewEncoder(w).Encode([]lidarrTrack{
+				{ID: 31, Title: "Amazing", TrackNumber: "1-01", HasFile: true},
+				{ID: 32, Title: "Blind Man", TrackNumber: "1-04", HasFile: false},
+			})
+			return
+		}
+		http.Error(w, fmt.Sprintf("unexpected: %s %s", r.Method, r.URL.Path), http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{}
+	cfg.Lidarr.BaseURL = server.URL
+	cfg.Lidarr.APIKey = "test-api-key"
+
+	factory := New(nil, cfg, nil)
+	enricher, err := factory(context.Background(), nil)
+	require.NoError(t, err)
+
+	// Our DB has TrackNumber=4 (integer), Lidarr has "1-04" — match will fail.
+	tn := 4
+	track := &ent.Track{
+		Name:        "Blind Man",
+		TrackNumber: &tn,
+		Edges: ent.TrackEdges{
+			Album: &ent.Album{
+				Name:          "Big Ones",
+				MusicbrainzID: "mbid-album",
+				Edges: ent.AlbumEdges{
+					Artist: &ent.Artist{Name: "Aerosmith", MusicbrainzID: "mbid-artist"},
+				},
+			},
+		},
+	}
+
+	trackEnricher := enricher.(enrichers.TrackEnricher)
+	data, err := trackEnricher.EnrichTrack(context.Background(), track)
+	require.NoError(t, err)
+	require.NotNil(t, data)
+
+	// Album is in Lidarr — should be "monitored", NOT "pending".
+	assert.Equal(t, "monitored", data.LidarrStatus,
+		"track should report 'monitored' when album is in Lidarr but track number format mismatch prevents exact match")
+}
+
+// TestEnrichTrack_AlbumNotInLidarr verifies that when the album is genuinely
+// absent from Lidarr, the status remains "pending" (the pre-existing behavior).
+func TestEnrichTrack_AlbumNotInLidarr(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/artist" {
+			json.NewEncoder(w).Encode([]lidarrArtist{
+				{ID: 10, ArtistName: "New Artist", ForeignArtistID: "mbid-artist"},
+			})
+			return
+		}
+		if r.URL.Path == "/api/v1/album" && r.Method == "GET" {
+			// Album is NOT in Lidarr yet.
+			json.NewEncoder(w).Encode([]lidarrAlbum{})
+			return
+		}
+		// EnrichAlbum will try album/lookup before adding — return empty so it
+		// errors gracefully (requires a non-nil logger, see discardLogger below).
+		if r.URL.Path == "/api/v1/album/lookup" {
+			json.NewEncoder(w).Encode([]lidarrAlbum{})
+			return
+		}
+		http.Error(w, fmt.Sprintf("unexpected: %s %s", r.Method, r.URL.Path), http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{}
+	cfg.Lidarr.BaseURL = server.URL
+	cfg.Lidarr.APIKey = "test-api-key"
+
+	// Must pass a real logger: EnrichAlbum logs errors when album lookup fails.
+	factory := New(discardLogger(), cfg, nil)
+	enricher, err := factory(context.Background(), nil)
+	require.NoError(t, err)
+
+	tn := 1
+	track := &ent.Track{
+		Name:        "New Track",
+		TrackNumber: &tn,
+		Edges: ent.TrackEdges{
+			Album: &ent.Album{
+				Name:          "Unknown Album",
+				MusicbrainzID: "mbid-unknown",
+				Edges: ent.AlbumEdges{
+					Artist: &ent.Artist{Name: "New Artist", MusicbrainzID: "mbid-artist"},
+				},
+			},
+		},
+	}
+
+	trackEnricher := enricher.(enrichers.TrackEnricher)
+	data, err := trackEnricher.EnrichTrack(context.Background(), track)
+	require.NoError(t, err)
+	require.NotNil(t, data)
+
+	// Album not in Lidarr — "pending" is correct.
+	assert.Equal(t, "pending", data.LidarrStatus,
+		"track should report 'pending' when album is genuinely absent from Lidarr")
 }
 
 // TestEnrichAlbum_NoArtistEdge verifies that findAlbum returns nil (not an
