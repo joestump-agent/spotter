@@ -82,18 +82,17 @@ type lidarrAlbumStatistics struct {
 }
 
 type lidarrAlbum struct {
-	ID             int                    `json:"id"`
-	Title          string                 `json:"title"`
-	ForeignAlbumID string                 `json:"foreignAlbumId"` // MusicBrainz ID
-	ArtistID       int                    `json:"artistId"`
-	Monitored      bool                   `json:"monitored"`
-	ReleaseDate    string                 `json:"releaseDate"`
-	Genres         []string               `json:"genres"`
-	Images         []lidarrImage          `json:"images"`
-	AlbumType      string                 `json:"albumType"`
-	Statistics     lidarrAlbumStatistics  `json:"statistics"`
+	ID             int                   `json:"id"`
+	Title          string                `json:"title"`
+	ForeignAlbumID string                `json:"foreignAlbumId"` // MusicBrainz ID
+	ArtistID       int                   `json:"artistId"`
+	Monitored      bool                  `json:"monitored"`
+	ReleaseDate    string                `json:"releaseDate"`
+	Genres         []string              `json:"genres"`
+	Images         []lidarrImage         `json:"images"`
+	AlbumType      string                `json:"albumType"`
+	Statistics     lidarrAlbumStatistics `json:"statistics"`
 }
-
 
 // EnrichArtist
 func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enrichers.ArtistData, error) {
