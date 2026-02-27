@@ -46,12 +46,13 @@ type SimilarArtistInfo struct {
 	Reason     string
 }
 
-func toTrackRowsFromStats(tracks []TrackListenCount) []components.TrackTableRow {
+func toTrackRowsFromStats(tracks []TrackListenCount, lidarrBaseURL string) []components.TrackTableRow {
 	rows := make([]components.TrackTableRow, len(tracks))
 	for i, t := range tracks {
 		rows[i] = components.TrackTableRow{
-			Track:     t.Track,
-			PlayCount: t.ListenCount,
+			Track:         t.Track,
+			PlayCount:     t.ListenCount,
+			LidarrBaseURL: lidarrBaseURL,
 		}
 	}
 	return rows
@@ -440,7 +441,7 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 								},
 							})
 						</div>
-						@components.TrackTable("top-tracks-table", toTrackRowsFromStats(stats.TopTracks), []string{"#", "track", "album", "duration", "popularity", "plays"}, nil, components.SortConfig{})
+						@components.TrackTable("top-tracks-table", toTrackRowsFromStats(stats.TopTracks, cfg.Lidarr.BaseURL), []string{"#", "track", "album", "duration", "popularity", "plays"}, nil, components.SortConfig{})
 					</div>
 				</div>
 			}

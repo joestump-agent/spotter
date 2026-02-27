@@ -122,7 +122,8 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 	rows := make([]components.TrackTableRow, len(listens))
 	for i, l := range listens {
 		rows[i] = components.TrackTableRow{
-			Listen: l,
+			Listen:        l,
+			LidarrBaseURL: h.Config.Lidarr.BaseURL,
 		}
 	}
 

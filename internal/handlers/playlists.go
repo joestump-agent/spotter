@@ -144,6 +144,7 @@ func (h *Handler) playlistTracksToRows(tracks []*ent.PlaylistTrack) []components
 			ExplicitArtistName: pt.ArtistName,
 			ExplicitAlbumName:  pt.AlbumName,
 			ExplicitDurationMs: pt.DurationMs,
+			LidarrBaseURL:      h.Config.Lidarr.BaseURL,
 		}
 
 		// If linked to catalog track, use enriched data

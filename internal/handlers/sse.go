@@ -49,7 +49,8 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 			case events.EventTypeRecentListen:
 				if listen, ok := event.Payload.(*ent.Listen); ok {
 					row := components.TrackTableRow{
-						Listen: listen,
+						Listen:        listen,
+						LidarrBaseURL: h.Config.Lidarr.BaseURL,
 					}
 					if err := components.TrackTableRowRender(row, []string{"source", "played_at", "track", "artist", "album"}, 0).Render(ctx, &buf); err != nil {
 						h.Logger.Error("failed to render recent listen", "error", err)

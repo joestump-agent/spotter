@@ -23,6 +23,9 @@ type TrackTableRow struct {
 	ExplicitTrackID    int
 	ExplicitArtistID   int
 	ExplicitAlbumID    int
+	// LidarrBaseURL is the base URL of the Lidarr instance (e.g. "http://lidarr:8686").
+	// When set, the Lidarr status icon links to the album's page in Lidarr.
+	LidarrBaseURL string
 }
 
 // Helper methods to extract display data from the row
@@ -187,6 +190,30 @@ func (r TrackTableRow) Album() *ent.Album {
 		return r.Listen.Edges.Album
 	}
 	return nil
+}
+
+func (r TrackTableRow) LidarrStatus() string {
+	var track *ent.Track
+	if r.Track != nil {
+		track = r.Track
+	} else if r.Listen != nil && r.Listen.Edges.Track != nil {
+		track = r.Listen.Edges.Track
+	}
+	if track == nil || track.LidarrStatus == nil {
+		return ""
+	}
+	return *track.LidarrStatus
+}
+
+func (r TrackTableRow) LidarrAlbumURL() string {
+	if r.LidarrBaseURL == "" {
+		return ""
+	}
+	album := r.Album()
+	if album == nil || album.LidarrID == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/album/%s", r.LidarrBaseURL, album.LidarrID)
 }
 
 func formatDuration(ms *int) string {
@@ -453,11 +480,9 @@ templ TrackTableRowRender(row TrackTableRow, initialColumns []string, index int)
 							<span class="icon-[heroicons--question-mark-circle] w-4 h-4 text-base-content/30"></span>
 						</div>
 					}
-					// Lidarr Status (based on the track)
-					if row.Track != nil {
-						@LidarrStatus(row.Track)
-					} else if row.Listen != nil && row.Listen.Edges.Track != nil {
-						@LidarrStatus(row.Listen.Edges.Track)
+					// Lidarr Status (album-level, links to Lidarr album page)
+					if row.LidarrStatus() != "" {
+						@LidarrStatus(row.LidarrStatus(), row.LidarrAlbumURL())
 					}
 				</div>
 			</div>

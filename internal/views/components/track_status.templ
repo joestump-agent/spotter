@@ -1,44 +1,64 @@
 package components
 
-import "spotter/ent"
-
-templ LidarrStatus(track *ent.Track) {
+templ LidarrStatus(status string, lidarrURL string) {
 	<div class="inline-flex items-center ml-1" title="Lidarr Status">
-		if track.LidarrStatus != nil {
-			switch *track.LidarrStatus {
+		if status != "" {
+			switch status {
 				case "available":
 					<div class="tooltip" data-tip="Available in Lidarr">
-						<span class="icon-[heroicons--check-badge] w-4 h-4 text-success"></span>
+						if lidarrURL != "" {
+							<a href={ templ.URL(lidarrURL) } target="_blank" rel="noopener noreferrer">
+								<span class="icon-[heroicons--check-badge] w-4 h-4 text-success"></span>
+							</a>
+						} else {
+							<span class="icon-[heroicons--check-badge] w-4 h-4 text-success"></span>
+						}
 					</div>
 				case "grabbed":
 					<div class="tooltip" data-tip="Downloading in Lidarr">
-						<span class="icon-[heroicons--arrow-down-tray] w-4 h-4 text-info animate-pulse"></span>
+						if lidarrURL != "" {
+							<a href={ templ.URL(lidarrURL) } target="_blank" rel="noopener noreferrer">
+								<span class="icon-[heroicons--arrow-down-tray] w-4 h-4 text-info animate-pulse"></span>
+							</a>
+						} else {
+							<span class="icon-[heroicons--arrow-down-tray] w-4 h-4 text-info animate-pulse"></span>
+						}
 					</div>
 				case "pending":
 					<div class="tooltip" data-tip="Requested in Lidarr">
-						<span class="icon-[heroicons--clock] w-4 h-4 text-warning"></span>
+						if lidarrURL != "" {
+							<a href={ templ.URL(lidarrURL) } target="_blank" rel="noopener noreferrer">
+								<span class="icon-[heroicons--clock] w-4 h-4 text-warning"></span>
+							</a>
+						} else {
+							<span class="icon-[heroicons--clock] w-4 h-4 text-warning"></span>
+						}
 					</div>
 				case "missing":
 					<div class="tooltip" data-tip="Missing in Lidarr">
-						<span class="icon-[heroicons--exclamation-circle] w-4 h-4 text-error"></span>
+						if lidarrURL != "" {
+							<a href={ templ.URL(lidarrURL) } target="_blank" rel="noopener noreferrer">
+								<span class="icon-[heroicons--exclamation-circle] w-4 h-4 text-error"></span>
+							</a>
+						} else {
+							<span class="icon-[heroicons--exclamation-circle] w-4 h-4 text-error"></span>
+						}
 					</div>
 				case "monitored":
 					<div class="tooltip" data-tip="Monitored in Lidarr">
-						<span class="icon-[heroicons--eye] w-4 h-4 text-info"></span>
+						if lidarrURL != "" {
+							<a href={ templ.URL(lidarrURL) } target="_blank" rel="noopener noreferrer">
+								<span class="icon-[heroicons--eye] w-4 h-4 text-info"></span>
+							</a>
+						} else {
+							<span class="icon-[heroicons--eye] w-4 h-4 text-info"></span>
+						}
 					</div>
 				default:
 					<div class="tooltip" data-tip="Lidarr status: unknown">
 						<span class="icon-[heroicons--question-mark-circle] w-4 h-4 text-base-content/50"></span>
 					</div>
 			}
-		} else if track.LidarrID != nil {
-			<div class="tooltip" data-tip="Tracked in Lidarr">
-				<span class="icon-[heroicons--server] w-4 h-4 text-base-content/50"></span>
-			</div>
-		} else {
-			<div class="tooltip" data-tip="Not tracked in Lidarr">
-				<span class="icon-[heroicons--server] w-4 h-4 text-base-content/30"></span>
-			</div>
 		}
 	</div>
 }

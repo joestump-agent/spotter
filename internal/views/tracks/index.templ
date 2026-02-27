@@ -28,11 +28,12 @@ func buildTrackSortBaseURL(currentPage int, artistFilter string) string {
 	return u
 }
 
-func toTrackRows(tracks []*ent.Track) []components.TrackTableRow {
+func toTrackRows(tracks []*ent.Track, lidarrBaseURL string) []components.TrackTableRow {
 	rows := make([]components.TrackTableRow, len(tracks))
 	for i, t := range tracks {
 		rows[i] = components.TrackTableRow{
-			Track: t,
+			Track:         t,
+			LidarrBaseURL: lidarrBaseURL,
 		}
 	}
 	return rows
@@ -89,7 +90,7 @@ templ Index(tracks []*ent.Track, currentPage int, totalPages int, cfg *config.Co
 								})
 							</div>
 						</div>
-						@components.TrackTable("tracks-table", toTrackRows(tracks), []string{"track", "artist", "album", "duration", "popularity"}, nil, components.SortConfig{
+						@components.TrackTable("tracks-table", toTrackRows(tracks, cfg.Lidarr.BaseURL), []string{"track", "artist", "album", "duration", "popularity"}, nil, components.SortConfig{
 							Column:    sortCol,
 							Direction: sortDir,
 							BaseURL:   buildTrackSortBaseURL(currentPage, artistFilter),

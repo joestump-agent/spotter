@@ -33,7 +33,7 @@ type TrackWithListens struct {
 	ListenCount int
 }
 
-func toTrackRowsFromAlbumStats(tracks []TrackWithListens) []components.TrackTableRow {
+func toTrackRowsFromAlbumStats(tracks []TrackWithListens, lidarrBaseURL string) []components.TrackTableRow {
 	rows := make([]components.TrackTableRow, len(tracks))
 	for i, t := range tracks {
 		index := i + 1
@@ -41,9 +41,10 @@ func toTrackRowsFromAlbumStats(tracks []TrackWithListens) []components.TrackTabl
 			index = *t.Track.TrackNumber
 		}
 		rows[i] = components.TrackTableRow{
-			Track:     t.Track,
-			PlayCount: t.ListenCount,
-			Index:     index,
+			Track:         t.Track,
+			PlayCount:     t.ListenCount,
+			Index:         index,
+			LidarrBaseURL: lidarrBaseURL,
 		}
 	}
 	return rows
@@ -405,7 +406,7 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, djs [
 							},
 						})
 					</div>
-					@components.TrackTable("album-tracks-table", toTrackRowsFromAlbumStats(tracks), []string{"#", "track", "duration", "popularity", "plays"}, nil, components.SortConfig{})
+					@components.TrackTable("album-tracks-table", toTrackRowsFromAlbumStats(tracks, cfg.Lidarr.BaseURL), []string{"#", "track", "duration", "popularity", "plays"}, nil, components.SortConfig{})
 				</div>
 			</div>
 			<!-- Metadata Table -->

@@ -11,19 +11,20 @@ import (
 )
 
 // MixtapeTrackRow converts a track to a TrackTableRow for display
-func mixtapeTrackRow(t *ent.Track, index int) components.TrackTableRow {
+func mixtapeTrackRow(t *ent.Track, index int, lidarrBaseURL string) components.TrackTableRow {
 	row := components.TrackTableRow{
-		Track: t,
-		Index: index + 1,
+		Track:         t,
+		Index:         index + 1,
+		LidarrBaseURL: lidarrBaseURL,
 	}
 	return row
 }
 
 // toMixtapeTrackRows converts tracks to TrackTableRows
-func toMixtapeTrackRows(tracks []*ent.Track) []components.TrackTableRow {
+func toMixtapeTrackRows(tracks []*ent.Track, lidarrBaseURL string) []components.TrackTableRow {
 	rows := make([]components.TrackTableRow, len(tracks))
 	for i, t := range tracks {
-		rows[i] = mixtapeTrackRow(t, i)
+		rows[i] = mixtapeTrackRow(t, i, lidarrBaseURL)
 	}
 	return rows
 }
@@ -375,7 +376,7 @@ templ MixtapeShow(m *ent.Mixtape, tracks []*ent.Track, djs []*ent.DJ, cfg *confi
 							</button>
 						</div>
 					} else {
-						@components.TrackTable("mixtape-tracks-table", toMixtapeTrackRows(tracks), []string{"#", "track", "artist", "album", "duration"}, nil, components.SortConfig{})
+						@components.TrackTable("mixtape-tracks-table", toMixtapeTrackRows(tracks, cfg.Lidarr.BaseURL), []string{"#", "track", "artist", "album", "duration"}, nil, components.SortConfig{})
 					}
 				</div>
 			</div>
