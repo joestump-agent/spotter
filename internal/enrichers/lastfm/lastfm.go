@@ -14,6 +14,7 @@ import (
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	tagsutil "spotter/internal/tags"
 )
 
 const (
@@ -258,10 +259,17 @@ func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enric
 		bio = cleanBio(response.Artist.Bio.Summary)
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tagsutil.TypedTag
+	for _, t := range tags {
+		typedTags = append(typedTags, tagsutil.TypedTag{Name: t, Type: "id3"})
+	}
+
 	result := &enrichers.ArtistData{
 		LastFMURL: response.Artist.URL,
 		Bio:       bio,
 		Tags:      tags,
+		TypedTags: typedTags,
 	}
 
 	// Set MusicBrainz ID if we got one and don't have one yet
@@ -383,8 +391,15 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		}
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tagsutil.TypedTag
+	for _, t := range tags {
+		typedTags = append(typedTags, tagsutil.TypedTag{Name: t, Type: "id3"})
+	}
+
 	result := &enrichers.AlbumData{
-		Tags: tags,
+		Tags:      tags,
+		TypedTags: typedTags,
 	}
 
 	// Set MusicBrainz ID if we got one
@@ -520,8 +535,15 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 		e.logger.Debug("failed to parse track duration", "duration", response.Track.Duration, "error", err)
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tagsutil.TypedTag
+	for _, t := range tags {
+		typedTags = append(typedTags, tagsutil.TypedTag{Name: t, Type: "id3"})
+	}
+
 	result := &enrichers.TrackData{
-		Tags: tags,
+		Tags:      tags,
+		TypedTags: typedTags,
 	}
 
 	if durationMs > 0 {

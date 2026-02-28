@@ -14,6 +14,7 @@ import (
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	tagsutil "spotter/internal/tags"
 )
 
 const (
@@ -372,10 +373,17 @@ func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enric
 		}
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tagsutil.TypedTag
+	for _, t := range tags {
+		typedTags = append(typedTags, tagsutil.TypedTag{Name: t, Type: "genre"})
+	}
+
 	return &enrichers.ArtistData{
 		MusicBrainzID: mbid,
 		SortName:      mb.SortName,
 		Tags:          tags,
+		TypedTags:     typedTags,
 	}, nil
 }
 
@@ -437,12 +445,19 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		}
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tagsutil.TypedTag
+	for _, t := range tags {
+		typedTags = append(typedTags, tagsutil.TypedTag{Name: t, Type: "genre"})
+	}
+
 	return &enrichers.AlbumData{
 		MusicBrainzID: mbid,
 		ReleaseDate:   rg.FirstReleaseDate,
 		Year:          year,
 		Tags:          tags,
 		AlbumType:     strings.ToLower(rg.PrimaryType),
+		TypedTags:     typedTags,
 	}, nil
 }
 
@@ -573,11 +588,18 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 		isrc = rec.ISRCs[0]
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tagsutil.TypedTag
+	for _, t := range tags {
+		typedTags = append(typedTags, tagsutil.TypedTag{Name: t, Type: "genre"})
+	}
+
 	return &enrichers.TrackData{
 		MusicBrainzID:  mbid,
 		ISRC:           isrc,
 		DurationMs:     rec.Length,
 		Tags:           tags,
 		MusicBrainzURL: fmt.Sprintf("https://musicbrainz.org/recording/%s", mbid),
+		TypedTags:      typedTags,
 	}, nil
 }
