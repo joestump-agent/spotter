@@ -1,0 +1,53 @@
+package components
+
+// TagView represents a displayable tag with its type for UI rendering.
+// Governing: SPEC-0014 REQ "UI Tag Visual Differentiation"
+type TagView struct {
+	Name    string
+	TagType string // "id3", "genre", "ai", "label", "source"
+}
+
+// TypedTagBadge renders a single tag with type-specific icon and DaisyUI badge color.
+// Governing: SPEC-0014 REQ "UI Tag Visual Differentiation", ADR-0011 (Tailwind + DaisyUI)
+templ TypedTagBadge(tag TagView) {
+	switch tag.TagType {
+		case "ai":
+			<span class="badge badge-accent gap-1">
+				<span class="icon-[heroicons--sparkles] w-3 h-3"></span>
+				{ tag.Name }
+			</span>
+		case "genre":
+			<span class="badge badge-primary gap-1">
+				<span class="icon-[heroicons--tag] w-3 h-3"></span>
+				{ tag.Name }
+			</span>
+		case "label":
+			<span class="badge badge-secondary gap-1">
+				<span class="icon-[heroicons--building-office] w-3 h-3"></span>
+				{ tag.Name }
+			</span>
+		case "source":
+			<span class="badge badge-info gap-1">
+				<span class="icon-[heroicons--server] w-3 h-3"></span>
+				{ tag.Name }
+			</span>
+		default:
+			<span class="badge badge-neutral gap-1">
+				<span class="icon-[heroicons--musical-note] w-3 h-3"></span>
+				{ tag.Name }
+			</span>
+	}
+}
+
+// TypedTagGroup renders a labeled group of tags of the same type.
+// Governing: SPEC-0014 REQ "UI Tag Visual Differentiation"
+templ TypedTagGroup(label string, tags []TagView) {
+	if len(tags) > 0 {
+		<div class="flex flex-wrap gap-1 items-center">
+			<span class="text-xs text-base-content/50 mr-1">{ label }</span>
+			for _, tag := range tags {
+				@TypedTagBadge(tag)
+			}
+		</div>
+	}
+}

@@ -258,6 +258,7 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 						<!-- Artist Details -->
 						<div class="flex-1 min-w-0">
 							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ artist.Name }</h1>
+							// TODO(SPEC-0014): Replace with TypedTagBadge after Tag schema PR #255 merges
 							<!-- Genres and AI Tags -->
 							if len(artist.Genres) > 0 || len(artist.AiTags) > 0 {
 								<div class="flex flex-wrap gap-2 mb-6">
@@ -445,6 +446,7 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 					</div>
 				</div>
 			}
+			// TODO(SPEC-0014): Replace with TypedTagGroup after Tag schema PR #255 merges
 			<!-- Track Tags & Genres Section -->
 			if trackTags := collectTrackTags(albums); len(trackTags) > 0 || len(collectTrackGenres(albums)) > 0 || len(collectTrackAITags(albums)) > 0 {
 				<div class="card bg-base-100 shadow-xl mb-8">
