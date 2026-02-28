@@ -1,4 +1,4 @@
-// Governing: ADR-0021 (encryption key rotation), ADR-0006 (AES-256-GCM encryption), SPEC key-rotation
+// Governing: ADR-0021 (encryption key rotation), ADR-0006 (AES-256-GCM encryption), ADR-0023 (multi-database support), SPEC key-rotation
 package main
 
 import (
@@ -11,8 +11,12 @@ import (
 
 	"spotter/internal/crypto"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+const driverSQLite3 = "sqlite3"
 
 // encryptedField describes a single encrypted column in the database.
 type encryptedField struct {
@@ -31,7 +35,7 @@ var allEncryptedFields = []encryptedField{
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] != "rotate-key" {
-		fmt.Fprintln(os.Stderr, "Usage: spotter-admin rotate-key --old-key=<hex> --new-key=<hex> [--db=<path>]")
+		fmt.Fprintln(os.Stderr, "Usage: spotter-admin rotate-key --old-key=<hex> --new-key=<hex> [--db=<dsn>]")
 		os.Exit(1)
 	}
 
@@ -39,18 +43,37 @@ func main() {
 	fs := flag.NewFlagSet("rotate-key", flag.ExitOnError)
 	oldKeyHex := fs.String("old-key", "", "Current 64-char hex encryption key (required)")
 	newKeyHex := fs.String("new-key", "", "New 64-char hex encryption key (required)")
-	dbPath := fs.String("db", "file:spotter.db?cache=shared&_fk=1", "SQLite database DSN")
+	dbDSNFlag := fs.String("db", "", "Database DSN (overrides SPOTTER_DATABASE_SOURCE env var)")
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		os.Exit(1)
 	}
 
-	if err := run(*oldKeyHex, *newKeyHex, *dbPath); err != nil {
+	// Governing: ADR-0023 (multi-database support)
+	// Determine database driver and DSN from environment or flags.
+	driver := os.Getenv("SPOTTER_DATABASE_DRIVER")
+	if driver == "" {
+		driver = driverSQLite3
+	}
+	dsn := os.Getenv("SPOTTER_DATABASE_SOURCE")
+	if dsn == "" {
+		dsn = "file:spotter.db?cache=shared&_fk=1"
+	}
+	if *dbDSNFlag != "" {
+		dsn = *dbDSNFlag
+	}
+
+	if driver != driverSQLite3 && driver != "postgres" && driver != "mysql" {
+		fmt.Fprintf(os.Stderr, "Error: unsupported SPOTTER_DATABASE_DRIVER %q (must be sqlite3, postgres, or mysql)\n", driver)
+		os.Exit(1)
+	}
+
+	if err := run(*oldKeyHex, *newKeyHex, driver, dsn); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(oldKeyHex, newKeyHex, dbDSN string) error {
+func run(oldKeyHex, newKeyHex, driver, dbDSN string) error {
 	// --- REQ "ROT-001": Validate required flags ---
 	if oldKeyHex == "" {
 		return fmt.Errorf("--old-key is required")
@@ -84,24 +107,30 @@ func run(oldKeyHex, newKeyHex, dbDSN string) error {
 		return fmt.Errorf("invalid new key: %w", err)
 	}
 
-	// --- REQ "ROT-005": Check database lock (try opening with exclusive locking) ---
-	db, err := sql.Open("sqlite3", dbDSN)
+	// --- REQ "ROT-005": Check database connectivity and lock (driver-aware) ---
+	// Governing: ADR-0023 (multi-database support)
+	db, err := sql.Open(driver, dbDSN)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer func() { _ = db.Close() }()
 
-	// Attempt to acquire an exclusive lock to check if the server is running.
-	if _, err := db.Exec("PRAGMA locking_mode=EXCLUSIVE"); err != nil {
-		return fmt.Errorf("database appears to be locked (is the server running?): %w", err)
-	}
-	// Try a write to actually test the lock.
-	if _, err := db.Exec("BEGIN EXCLUSIVE"); err != nil {
-		return fmt.Errorf("database is locked (is the server running?): %w", err)
-	}
-	// Roll back the test lock; the real transaction comes later.
-	if _, err := db.Exec("ROLLBACK"); err != nil {
-		return fmt.Errorf("failed to release test lock: %w", err)
+	if driver == driverSQLite3 {
+		// SQLite-specific: attempt to acquire an exclusive lock to check if the server is running.
+		if _, err := db.Exec("PRAGMA locking_mode=EXCLUSIVE"); err != nil {
+			return fmt.Errorf("database appears to be locked (is the server running?): %w", err)
+		}
+		if _, err := db.Exec("BEGIN EXCLUSIVE"); err != nil {
+			return fmt.Errorf("database is locked (is the server running?): %w", err)
+		}
+		if _, err := db.Exec("ROLLBACK"); err != nil {
+			return fmt.Errorf("failed to release test lock: %w", err)
+		}
+	} else {
+		// PostgreSQL/MySQL: verify connectivity with a ping.
+		if err := db.Ping(); err != nil {
+			return fmt.Errorf("failed to connect to database: %w", err)
+		}
 	}
 
 	// --- REQ "ROT-004": Pre-rotation validation ---
@@ -120,7 +149,7 @@ func run(oldKeyHex, newKeyHex, dbDSN string) error {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
-	counts, totalFields, err := reencryptAll(tx, oldEnc, newEnc)
+	counts, totalFields, err := reencryptAll(tx, oldEnc, newEnc, driver)
 	if err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: rollback failed: %v\n", rbErr)
@@ -210,8 +239,8 @@ func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (bool, error) {
 
 // reencryptAll re-encrypts all encrypted fields in a single transaction.
 // Returns per-table row counts and total field count.
-// Governing: SPEC key-rotation REQ "ROT-010", REQ "ROT-011", REQ "ROT-012", REQ "ROT-013"
-func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor) (map[string]int, int, error) {
+// Governing: SPEC key-rotation REQ "ROT-010", REQ "ROT-011", REQ "ROT-012", REQ "ROT-013", ADR-0023 (multi-database support)
+func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (map[string]int, int, error) {
 	counts := make(map[string]int)
 	totalFields := 0
 
@@ -272,7 +301,12 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor) (map[string]int,
 					return nil, 0, fmt.Errorf("encryption failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
 				}
 
-				updateSQL := fmt.Sprintf("UPDATE %s SET %s = ? WHERE id = ?", tf.table, col)
+				var updateSQL string
+				if driver == "postgres" {
+					updateSQL = fmt.Sprintf("UPDATE %s SET %s = $1 WHERE id = $2", tf.table, col)
+				} else {
+					updateSQL = fmt.Sprintf("UPDATE %s SET %s = ? WHERE id = ?", tf.table, col)
+				}
 				if _, err := tx.Exec(updateSQL, newCipher, id); err != nil {
 					_ = rows.Close()
 					return nil, 0, fmt.Errorf("update failed for %s.%s (row id=%d): %w", tf.table, col, id, err)

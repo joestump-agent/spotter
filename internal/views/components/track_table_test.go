@@ -433,10 +433,10 @@ func TestTrackTableRow_LidarrStatus(t *testing.T) {
 	}
 }
 
-// TestTrackTableRow_LidarrAlbumURL tests the LidarrAlbumURL helper method.
+// TestTrackTableRow_LidarrArtistURL tests the LidarrArtistURL helper method.
 // Lidarr's web UI routes artist pages by foreignArtistId (= MusicBrainz artist ID),
 // e.g. /artist/1964494f-9f1a-41c1-b054-80ef3b95025c — NOT by album or internal ID.
-func TestTrackTableRow_LidarrAlbumURL(t *testing.T) {
+func TestTrackTableRow_LidarrArtistURL(t *testing.T) {
 	const mbid = "1964494f-9f1a-41c1-b054-80ef3b95025c"
 
 	tests := []struct {
@@ -521,7 +521,7 @@ func TestTrackTableRow_LidarrAlbumURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.row.LidarrAlbumURL()
+			result := tt.row.LidarrArtistURL()
 			assert.Equal(t, tt.expected, result)
 		})
 	}

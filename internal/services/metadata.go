@@ -4,6 +4,7 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,6 +38,7 @@ import (
 // ADR-0015 (type-keyed enricher registry with factory pattern)
 type MetadataService struct {
 	client     *ent.Client
+	db         *sql.DB
 	config     *config.Config
 	logger     *slog.Logger
 	bus        *events.Bus
@@ -45,9 +47,10 @@ type MetadataService struct {
 }
 
 // NewMetadataService creates a new metadata service.
-func NewMetadataService(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *MetadataService {
+func NewMetadataService(client *ent.Client, db *sql.DB, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *MetadataService {
 	return &MetadataService{
 		client:   client,
+		db:       db,
 		config:   cfg,
 		logger:   logger,
 		bus:      bus,
@@ -731,7 +734,7 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 	// Upsert typed tags for the artist entity
 	// Governing: SPEC-0014 REQ "Enricher Integration", SPEC-0014 REQ "Denormalized Entity Tags Table"
 	if len(allTypedTags) > 0 {
-		if err := tags.UpsertTagsForEntity(ctx, u.ID, "artist", art.ID, allTypedTags); err != nil {
+		if err := tags.UpsertTagsForEntity(ctx, s.client, s.db, u.ID, "artist", art.ID, allTypedTags); err != nil {
 			s.logger.Warn("failed to upsert typed tags for artist", "artist", art.Name, "error", err)
 		}
 	}
@@ -1144,7 +1147,7 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 	// Upsert typed tags for the album entity
 	// Governing: SPEC-0014 REQ "Enricher Integration", SPEC-0014 REQ "Denormalized Entity Tags Table"
 	if len(allTypedTags) > 0 {
-		if err := tags.UpsertTagsForEntity(ctx, u.ID, "album", alb.ID, allTypedTags); err != nil {
+		if err := tags.UpsertTagsForEntity(ctx, s.client, s.db, u.ID, "album", alb.ID, allTypedTags); err != nil {
 			s.logger.Warn("failed to upsert typed tags for album", "album", alb.Name, "error", err)
 		}
 	}
@@ -1439,7 +1442,7 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 	// Upsert typed tags for the track entity
 	// Governing: SPEC-0014 REQ "Enricher Integration", SPEC-0014 REQ "Denormalized Entity Tags Table"
 	if len(allTypedTags) > 0 {
-		if err := tags.UpsertTagsForEntity(ctx, u.ID, "track", t.ID, allTypedTags); err != nil {
+		if err := tags.UpsertTagsForEntity(ctx, s.client, s.db, u.ID, "track", t.ID, allTypedTags); err != nil {
 			s.logger.Warn("failed to upsert typed tags for track", "track", t.Name, "error", err)
 		}
 	}

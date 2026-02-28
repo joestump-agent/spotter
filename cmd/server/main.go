@@ -94,6 +94,15 @@ func main() {
 			logger.Error("failed to close database client", "error", err)
 		}
 	}()
+
+	// Open a persistent raw *sql.DB for operations outside the Ent client (e.g. entity_tags upserts).
+	// Governing: SPEC-0014 REQ "Denormalized Entity Tags Table"
+	rawDB, err := database.OpenRawDB(cfg.Database.Driver, cfg.Database.Source)
+	if err != nil {
+		logger.Error("failed to open raw database connection", "error", err)
+		os.Exit(1)
+	}
+	defer func() { _ = rawDB.Close() }()
 	// Initialize Event Bus
 	bus := events.NewBus()
 
@@ -109,7 +118,7 @@ func main() {
 	playlistSyncSvc.Register(navidrome.New(logger, cfg))
 
 	// Initialize Metadata Service (for catalog enrichment)
-	metadataSvc := services.NewMetadataService(client, cfg, logger, bus)
+	metadataSvc := services.NewMetadataService(client, rawDB, cfg, logger, bus)
 	metadataSvc.Register(enrichers.TypeLidarr, enricherLidarr.New(logger, cfg, client))
 	metadataSvc.Register(enrichers.TypeMusicBrainz, enricherMusicbrainz.New(logger, cfg))
 	metadataSvc.Register(enrichers.TypeNavidrome, enricherNavidrome.New(logger, cfg))

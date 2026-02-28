@@ -205,11 +205,11 @@ func (r TrackTableRow) LidarrStatus() string {
 	return *track.LidarrStatus
 }
 
-// LidarrAlbumURL returns the Lidarr deep link URL for the artist page.
+// LidarrArtistURL returns the Lidarr deep link URL for the artist page.
 // Lidarr's web UI routes artists by their foreignArtistId (= MusicBrainz artist ID),
 // e.g. /artist/1964494f-9f1a-41c1-b054-80ef3b95025c.
 // We confirm the artist is tracked in Lidarr (LidarrID set) before building the link.
-func (r TrackTableRow) LidarrAlbumURL() string {
+func (r TrackTableRow) LidarrArtistURL() string {
 	if r.LidarrBaseURL == "" {
 		return ""
 	}
@@ -491,7 +491,7 @@ templ TrackTableRowRender(row TrackTableRow, initialColumns []string, index int)
 					}
 					// Lidarr Status (album-level, links to Lidarr album page)
 					if row.LidarrStatus() != "" {
-						@LidarrStatus(row.LidarrStatus(), row.LidarrAlbumURL())
+						@LidarrStatus(row.LidarrStatus(), row.LidarrArtistURL())
 					}
 				</div>
 			</div>

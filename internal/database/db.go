@@ -14,6 +14,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+const driverPostgres = "postgres"
+
 func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client, error) {
 	client, err := ent.Open(driver, source)
 	if err != nil {
@@ -40,7 +42,7 @@ func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client,
 		_ = client.Close()
 		return nil, fmt.Errorf("failed opening raw db for entity_tags migration: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if err := CreateEntityTagsTable(ctx, driver, db); err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("failed creating entity_tags table: %v", err)
@@ -52,11 +54,21 @@ func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client,
 // driverToStdlib maps Ent dialect names to database/sql driver names.
 func driverToStdlib(driver string) string {
 	switch driver {
-	case "postgres":
-		return "postgres"
+	case driverPostgres:
+		return driverPostgres
 	case "mysql":
 		return "mysql"
 	default:
 		return "sqlite3"
 	}
+}
+
+// OpenRawDB opens a persistent *sql.DB connection using the same driver/source
+// as NewClient. Callers are responsible for closing the returned db.
+func OpenRawDB(driver, source string) (*sql.DB, error) {
+	db, err := sql.Open(driverToStdlib(driver), source)
+	if err != nil {
+		return nil, fmt.Errorf("failed opening raw db (%s): %w", driver, err)
+	}
+	return db, nil
 }
