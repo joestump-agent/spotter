@@ -106,6 +106,10 @@ func TestClassifyError_MessageBasedFatal(t *testing.T) {
 		{"unauthorized_message", "unauthorized: token expired"},
 		{"forbidden_message", "forbidden: insufficient permissions"},
 		{"invalid_api_key", "invalid api key provided"},
+		// Providers that return plain "returned status NNN" messages without HTTPStatusError
+		{"plain_status_401", "spotify API returned status 401"},
+		{"plain_status_403", "spotify API returned status 403"},
+		{"plain_status_404", "spotify API returned status 404"},
 	}
 
 	for _, tt := range tests {

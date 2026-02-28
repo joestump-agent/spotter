@@ -151,6 +151,12 @@ func isFatalErrorMessage(msg string) bool {
 		"invalid credentials",
 		"revoked",
 		"deactivated",
+		// Catch plain "returned status 4xx" messages from providers that
+		// don't wrap errors in HTTPStatusError (e.g. "spotify API returned status 403").
+		// 4xx responses are client errors and won't succeed on retry.
+		"status 401",
+		"status 403",
+		"status 404",
 	}
 	for _, pattern := range fatalPatterns {
 		if strings.Contains(msg, pattern) {
