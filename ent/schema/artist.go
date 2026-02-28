@@ -106,6 +106,7 @@ func (Artist) Edges() []ent.Edge {
 		edge.To("images", ArtistImage.Type),
 		edge.To("listens", Listen.Type),
 		edge.To("playlist_tracks", PlaylistTrack.Type),
+		edge.From("tag_entities", Tag.Type).Ref("artists"),
 	}
 }
 
