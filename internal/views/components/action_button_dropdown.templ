@@ -343,18 +343,19 @@ templ dropdownActionItem(action DropdownAction) {
 			} else {
 				hx-swap="none"
 			}
-			class={ "flex items-center gap-2", action.IconColor }
+			class={ "flex items-center gap-2 relative", action.IconColor }
 			onclick="this.closest('details').removeAttribute('open')"
 		>
 			if action.IconClass != "" {
-				<span class={ action.IconClass, "w-4 h-4" }></span>
+				<span class={ action.IconClass, "w-4 h-4 htmx-indicator-hide" }></span>
 			}
-			<div class="flex flex-col items-start">
+			<div class="flex flex-col items-start htmx-indicator-hide">
 				<span>{ action.Label }</span>
 				if action.Description != "" {
 					<span class="text-xs text-base-content/60">{ action.Description }</span>
 				}
 			</div>
+			<span class="loading loading-spinner loading-xs htmx-indicator absolute"></span>
 		</button>
 	} else if action.HtmxGet != "" {
 		// HTMX GET action
@@ -366,18 +367,19 @@ templ dropdownActionItem(action DropdownAction) {
 			} else {
 				hx-swap="none"
 			}
-			class={ "flex items-center gap-2", action.IconColor }
+			class={ "flex items-center gap-2 relative", action.IconColor }
 			onclick="this.closest('details').removeAttribute('open')"
 		>
 			if action.IconClass != "" {
-				<span class={ action.IconClass, "w-4 h-4" }></span>
+				<span class={ action.IconClass, "w-4 h-4 htmx-indicator-hide" }></span>
 			}
-			<div class="flex flex-col items-start">
+			<div class="flex flex-col items-start htmx-indicator-hide">
 				<span>{ action.Label }</span>
 				if action.Description != "" {
 					<span class="text-xs text-base-content/60">{ action.Description }</span>
 				}
 			</div>
+			<span class="loading loading-spinner loading-xs htmx-indicator absolute"></span>
 		</button>
 	}
 }
