@@ -16,6 +16,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+const driverSQLite3 = "sqlite3"
+
 // encryptedField describes a single encrypted column in the database.
 type encryptedField struct {
 	table  string
@@ -50,7 +52,7 @@ func main() {
 	// Determine database driver and DSN from environment or flags.
 	driver := os.Getenv("SPOTTER_DATABASE_DRIVER")
 	if driver == "" {
-		driver = "sqlite3"
+		driver = driverSQLite3
 	}
 	dsn := os.Getenv("SPOTTER_DATABASE_SOURCE")
 	if dsn == "" {
@@ -60,7 +62,7 @@ func main() {
 		dsn = *dbDSNFlag
 	}
 
-	if driver != "sqlite3" && driver != "postgres" && driver != "mysql" {
+	if driver != driverSQLite3 && driver != "postgres" && driver != "mysql" {
 		fmt.Fprintf(os.Stderr, "Error: unsupported SPOTTER_DATABASE_DRIVER %q (must be sqlite3, postgres, or mysql)\n", driver)
 		os.Exit(1)
 	}
@@ -113,7 +115,7 @@ func run(oldKeyHex, newKeyHex, driver, dbDSN string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	if driver == "sqlite3" {
+	if driver == driverSQLite3 {
 		// SQLite-specific: attempt to acquire an exclusive lock to check if the server is running.
 		if _, err := db.Exec("PRAGMA locking_mode=EXCLUSIVE"); err != nil {
 			return fmt.Errorf("database appears to be locked (is the server running?): %w", err)
