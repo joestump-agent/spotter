@@ -189,11 +189,36 @@ func (h *Handler) SyncNavidrome(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(ctx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for navidrome sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "Navidrome sync failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeNavidrome); err != nil {
 			h.Logger.Error("failed to sync navidrome", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "Navidrome sync failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Sync Complete",
+				Message:  "Navidrome sync complete",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
@@ -260,11 +285,36 @@ func (h *Handler) RebuildNavidrome(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(ctx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for navidrome rebuild sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Rebuild Failed",
+					Message:  "Navidrome rebuild failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeNavidrome); err != nil {
 			h.Logger.Error("failed to sync navidrome after rebuild", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Rebuild Failed",
+					Message:  "Navidrome rebuild sync failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Rebuild Complete",
+				Message:  "Navidrome rebuild complete",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
@@ -294,11 +344,36 @@ func (h *Handler) SyncSpotify(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(ctx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for spotify sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "Spotify sync failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeSpotify); err != nil {
 			h.Logger.Error("failed to sync spotify", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "Spotify sync failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Sync Complete",
+				Message:  "Spotify sync complete",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
@@ -365,11 +440,36 @@ func (h *Handler) RebuildSpotify(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(ctx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for spotify rebuild sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Rebuild Failed",
+					Message:  "Spotify rebuild failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeSpotify); err != nil {
 			h.Logger.Error("failed to sync spotify after rebuild", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Rebuild Failed",
+					Message:  "Spotify rebuild sync failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Rebuild Complete",
+				Message:  "Spotify rebuild complete",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
@@ -399,11 +499,36 @@ func (h *Handler) SyncLastFM(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(ctx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for lastfm sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "Last.fm sync failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeLastFM); err != nil {
 			h.Logger.Error("failed to sync lastfm", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "Last.fm sync failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Sync Complete",
+				Message:  "Last.fm sync complete",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
@@ -457,11 +582,36 @@ func (h *Handler) RebuildLastFM(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(ctx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for lastfm rebuild sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Rebuild Failed",
+					Message:  "Last.fm rebuild failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeLastFM); err != nil {
 			h.Logger.Error("failed to sync lastfm after rebuild", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Rebuild Failed",
+					Message:  "Last.fm rebuild sync failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Rebuild Complete",
+				Message:  "Last.fm rebuild complete",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
@@ -718,11 +868,36 @@ func (h *Handler) TaskSyncListens(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(ctx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for listen sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Task Failed",
+					Message:  "Listen sync failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.Syncer.SyncRecentListens(ctx, freshUser); err != nil {
 			h.Logger.Error("failed to sync listens", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Task Failed",
+					Message:  "Listen sync failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Task Complete",
+				Message:  "All listens synced successfully",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
@@ -753,11 +928,36 @@ func (h *Handler) TaskSyncPlaylists(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(ctx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for playlist sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Task Failed",
+					Message:  "Playlist sync failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.Syncer.SyncPlaylists(ctx, freshUser); err != nil {
 			h.Logger.Error("failed to sync playlists", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Task Failed",
+					Message:  "Playlist sync failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Task Complete",
+				Message:  "All playlists synced successfully",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
@@ -799,11 +999,36 @@ func (h *Handler) TaskEnrichMetadata(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(ctx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for metadata enrichment", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Task Failed",
+					Message:  "Metadata enrichment failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.MetadataSvc.SyncAll(ctx, freshUser); err != nil {
 			h.Logger.Error("failed to run metadata enrichment", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Task Failed",
+					Message:  "Metadata enrichment failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Task Complete",
+				Message:  "Metadata enrichment complete",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
@@ -1044,17 +1269,51 @@ func (h *Handler) TaskResetData(w http.ResponseWriter, r *http.Request) {
 		freshUser, err := h.Client.User.Get(bgCtx, userID)
 		if err != nil {
 			h.Logger.Error("failed to fetch user for reset sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Reset Failed",
+					Message:  "Re-sync after reset failed: could not load user",
+					IconType: "error",
+				},
+			})
 			return
 		}
 		if err := h.Syncer.Sync(bgCtx, freshUser); err != nil {
 			h.Logger.Error("failed to sync after reset", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Reset Failed",
+					Message:  "Re-sync after reset failed",
+					IconType: "error",
+				},
+			})
+			return
 		}
 		// Also run metadata enrichment if available
 		if h.MetadataSvc != nil {
 			if err := h.MetadataSvc.SyncAll(bgCtx, freshUser); err != nil {
 				h.Logger.Error("failed to run metadata after reset", "error", err)
+				h.Bus.Publish(userID, events.Event{
+					Type: events.EventTypeNotification,
+					Payload: events.NotificationPayload{
+						Title:    "Reset Partial",
+						Message:  "Data re-synced but metadata enrichment failed",
+						IconType: "warning",
+					},
+				})
+				return
 			}
 		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title:    "Reset Complete",
+				Message:  "Data reset and re-sync complete",
+				IconType: "success",
+			},
+		})
 	}()
 
 	w.WriteHeader(http.StatusOK)
