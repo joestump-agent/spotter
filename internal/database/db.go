@@ -62,3 +62,13 @@ func driverToStdlib(driver string) string {
 		return "sqlite3"
 	}
 }
+
+// OpenRawDB opens a persistent *sql.DB connection using the same driver/source
+// as NewClient. Callers are responsible for closing the returned db.
+func OpenRawDB(driver, source string) (*sql.DB, error) {
+	db, err := sql.Open(driverToStdlib(driver), source)
+	if err != nil {
+		return nil, fmt.Errorf("failed opening raw db (%s): %w", driver, err)
+	}
+	return db, nil
+}

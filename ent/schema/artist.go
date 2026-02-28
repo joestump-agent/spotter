@@ -51,9 +51,10 @@ func (Artist) Fields() []ent.Field {
 			Optional().
 			MaxLen(50000). // Bios can be long
 			Comment("Artist biography from Last.fm or other sources"),
+		// Deprecated: migrated to Tag entity (SPEC-0014, 2026-02-28)
 		field.JSON("tags", []string{}).
 			Optional().
-			Comment("Genre tags and social tags from various sources"),
+			Comment("Deprecated: migrated to Tag entity. Genre tags and social tags from various sources"),
 		field.Int("popularity").
 			Optional().
 			Nillable().
@@ -62,9 +63,10 @@ func (Artist) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Follower count from Spotify"),
+		// Deprecated: migrated to Tag entity (SPEC-0014, 2026-02-28)
 		field.JSON("genres", []string{}).
 			Optional().
-			Comment("Genre list from Spotify"),
+			Comment("Deprecated: migrated to Tag entity. Genre list from Spotify"),
 		field.Time("created_at").
 			Default(time.Now).
 			Immutable(),
@@ -84,9 +86,10 @@ func (Artist) Fields() []ent.Field {
 			Optional().
 			MaxLen(50000).
 			Comment("AI-generated biography for the artist"),
+		// Deprecated: migrated to Tag entity (SPEC-0014, 2026-02-28)
 		field.JSON("ai_tags", []string{}).
 			Optional().
-			Comment("AI-generated tags for the artist (max 5)"),
+			Comment("Deprecated: migrated to Tag entity. AI-generated tags for the artist (max 5)"),
 		field.Time("last_ai_enriched_at").
 			Optional().
 			Nillable().
