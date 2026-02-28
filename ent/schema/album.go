@@ -122,6 +122,7 @@ func (Album) Edges() []ent.Edge {
 		edge.To("images", AlbumImage.Type),
 		edge.To("listens", Listen.Type),
 		edge.To("playlist_tracks", PlaylistTrack.Type),
+		edge.From("tag_entities", Tag.Type).Ref("albums"),
 	}
 }
 

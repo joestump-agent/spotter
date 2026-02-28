@@ -56,5 +56,7 @@ func (User) Edges() []ent.Edge {
 		edge.To("mixtapes", Mixtape.Type),
 		// Similar artists relationships
 		edge.To("similar_artists", SimilarArtist.Type),
+		// Tag system
+		edge.To("tags", Tag.Type),
 	}
 }

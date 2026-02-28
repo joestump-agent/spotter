@@ -127,6 +127,7 @@ func (Track) Edges() []ent.Edge {
 			Unique(),
 		edge.To("listens", Listen.Type),
 		edge.To("playlist_tracks", PlaylistTrack.Type),
+		edge.From("tag_entities", Tag.Type).Ref("tracks"),
 	}
 }
 
