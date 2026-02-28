@@ -623,6 +623,14 @@ func AuthMiddleware(client *ent.Client, jwtManager *auth.JWTManager, logger *slo
 					w.WriteHeader(http.StatusUnauthorized)
 					return
 				}
+				// EventSource requests (SSE) must not be redirected — browsers
+				// follow redirects transparently and then reconnect on error,
+				// creating a tight polling loop against /auth/login. Return 401
+				// instead so the browser's EventSource closes without retrying.
+				if r.Header.Get("Accept") == "text/event-stream" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
 				http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 			}
 
