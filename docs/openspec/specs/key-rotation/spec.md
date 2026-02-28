@@ -3,11 +3,11 @@
 **Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-02-21
-**Governing ADRs:** ADR-0021 (encryption key rotation), ADR-0006 (AES-256-GCM application-layer encryption), ADR-0003 (SQLite embedded database)
+**Governing ADRs:** ADR-0021 (encryption key rotation), ADR-0006 (AES-256-GCM application-layer encryption), ADR-0023 (multi-database support: PostgreSQL, MySQL, SQLite)
 
 ## Overview
 
-This spec defines the `spotter admin rotate-key` subcommand that atomically re-encrypts all sensitive credential fields in the SQLite database from an old encryption key to a new one. The operation runs offline (server must be stopped), executes within a single SQLite transaction, and includes a post-commit verification step.
+This spec defines the `spotter admin rotate-key` subcommand that atomically re-encrypts all sensitive credential fields in the database from an old encryption key to a new one. The operation runs offline (server must be stopped), executes within a single database transaction, and includes a post-commit verification step. The subcommand supports PostgreSQL, MySQL, and SQLite via the `SPOTTER_DATABASE_DRIVER` and `SPOTTER_DATABASE_SOURCE` environment variables.
 
 ## Scope
 
@@ -30,7 +30,7 @@ Out of scope: Automated key generation, key storage recommendations (documented 
 **REQ-ROT-001** — The `rotate-key` subcommand MUST accept the following flags:
 - `--old-key` (required): The current 64-character hex encryption key
 - `--new-key` (required): The new 64-character hex encryption key
-- `--db` (optional): Path to the SQLite database file (defaults to the configured database source)
+- `--db` (optional): Database DSN (overrides `SPOTTER_DATABASE_SOURCE` env var; defaults to `file:spotter.db?cache=shared&_fk=1` for SQLite)
 
 **REQ-ROT-002** — Both `--old-key` and `--new-key` MUST be validated as exactly 64 hexadecimal characters (representing 32 bytes for AES-256). The subcommand MUST exit with a non-zero status and descriptive error if validation fails.
 
@@ -38,11 +38,11 @@ Out of scope: Automated key generation, key storage recommendations (documented 
 
 **REQ-ROT-004** — Before modifying any data, the subcommand MUST attempt to decrypt at least one encrypted field with the `--old-key` to verify the key is correct. If no encrypted fields exist in the database, the subcommand MUST print a warning and exit successfully.
 
-**REQ-ROT-005** — The subcommand MUST verify that the SQLite database is not locked by another process (i.e., the server is not running). If the database is locked, the subcommand MUST exit with an error instructing the operator to stop the server first.
+**REQ-ROT-005** — The subcommand MUST verify database availability before proceeding. For SQLite, it MUST check that the database is not locked by another process. For PostgreSQL and MySQL, it MUST verify connectivity with a ping. If the check fails, the subcommand MUST exit with an error instructing the operator to stop the server first.
 
 ### Transaction Atomicity
 
-**REQ-ROT-010** — All re-encryption operations MUST execute within a single SQLite transaction (`BEGIN ... COMMIT`). If any operation fails, the entire transaction MUST be rolled back.
+**REQ-ROT-010** — All re-encryption operations MUST execute within a single database transaction (`BEGIN ... COMMIT`). If any operation fails, the entire transaction MUST be rolled back.
 
 **REQ-ROT-011** — The subcommand MUST re-encrypt the following fields:
 
