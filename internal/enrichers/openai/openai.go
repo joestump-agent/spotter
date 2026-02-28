@@ -21,6 +21,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
 	"spotter/internal/llm"
+	"spotter/internal/tags"
 
 	"github.com/nfnt/resize"
 	_ "golang.org/x/image/webp"
@@ -483,10 +484,17 @@ func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enric
 	existingTags := append(artist.Tags, artist.Genres...)
 	aiTags := deduplicateTags(aiResp.Tags, existingTags, 5)
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tags.TypedTag
+	for _, t := range aiTags {
+		typedTags = append(typedTags, tags.TypedTag{Name: t, Type: "ai"})
+	}
+
 	result := &enrichers.ArtistData{
 		AISummary:   aiResp.Summary,
 		AIBiography: aiResp.Biography,
 		AITags:      aiTags,
+		TypedTags:   typedTags,
 	}
 
 	e.logger.Debug("enriched artist with AI",
@@ -637,12 +645,19 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		})
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tags.TypedTag
+	for _, t := range aiTags {
+		typedTags = append(typedTags, tags.TypedTag{Name: t, Type: "ai"})
+	}
+
 	result := &enrichers.AlbumData{
 		AISummary:          aiResp.Summary,
 		AITags:             aiTags,
 		DominantColors:     dominantColors,
 		CoverArtCommentary: aiResp.CoverArtCommentary,
 		Recommendations:    recommendations,
+		TypedTags:          typedTags,
 	}
 
 	e.logger.Debug("enriched album with AI",
@@ -765,9 +780,16 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 	existingTags := append(track.Tags, track.Genres...)
 	aiTags := deduplicateTags(aiResp.Tags, existingTags, 5)
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tags.TypedTag
+	for _, t := range aiTags {
+		typedTags = append(typedTags, tags.TypedTag{Name: t, Type: "ai"})
+	}
+
 	result := &enrichers.TrackData{
 		AISummary: aiResp.Summary,
 		AITags:    aiTags,
+		TypedTags: typedTags,
 	}
 
 	e.logger.Debug("enriched track with AI",
