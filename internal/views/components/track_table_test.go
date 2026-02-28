@@ -433,24 +433,64 @@ func TestTrackTableRow_LidarrStatus(t *testing.T) {
 	}
 }
 
-// TestTrackTableRow_LidarrAlbumURL tests the LidarrAlbumURL helper method
+// TestTrackTableRow_LidarrAlbumURL tests the LidarrAlbumURL helper method.
+// Lidarr's web UI routes artist pages by foreignArtistId (= MusicBrainz artist ID),
+// e.g. /artist/1964494f-9f1a-41c1-b054-80ef3b95025c — NOT by album or internal ID.
 func TestTrackTableRow_LidarrAlbumURL(t *testing.T) {
+	const mbid = "1964494f-9f1a-41c1-b054-80ef3b95025c"
+
 	tests := []struct {
 		name     string
 		row      TrackTableRow
 		expected string
 	}{
 		{
-			name: "BaseURL and album LidarrID set returns full URL",
+			name: "Artist with LidarrID and MusicbrainzID returns artist URL",
 			row: TrackTableRow{
 				LidarrBaseURL: "http://lidarr:8686",
 				Track: &ent.Track{
 					Edges: ent.TrackEdges{
-						Album: &ent.Album{LidarrID: "abc-123-def"},
+						Artist: &ent.Artist{LidarrID: "42", MusicbrainzID: mbid},
 					},
 				},
 			},
-			expected: "http://lidarr:8686/album/abc-123-def",
+			expected: "http://lidarr:8686/artist/" + mbid,
+		},
+		{
+			name: "Listen with artist edge returns artist URL",
+			row: TrackTableRow{
+				LidarrBaseURL: "http://lidarr:8686",
+				Listen: &ent.Listen{
+					Edges: ent.ListenEdges{
+						Artist: &ent.Artist{LidarrID: "42", MusicbrainzID: mbid},
+					},
+				},
+			},
+			expected: "http://lidarr:8686/artist/" + mbid,
+		},
+		{
+			name: "Artist not in Lidarr (empty LidarrID) returns empty string",
+			row: TrackTableRow{
+				LidarrBaseURL: "http://lidarr:8686",
+				Track: &ent.Track{
+					Edges: ent.TrackEdges{
+						Artist: &ent.Artist{LidarrID: "", MusicbrainzID: mbid},
+					},
+				},
+			},
+			expected: "",
+		},
+		{
+			name: "Artist without MusicbrainzID returns empty string",
+			row: TrackTableRow{
+				LidarrBaseURL: "http://lidarr:8686",
+				Track: &ent.Track{
+					Edges: ent.TrackEdges{
+						Artist: &ent.Artist{LidarrID: "42", MusicbrainzID: ""},
+					},
+				},
+			},
+			expected: "",
 		},
 		{
 			name: "Empty BaseURL returns empty string",
@@ -458,26 +498,14 @@ func TestTrackTableRow_LidarrAlbumURL(t *testing.T) {
 				LidarrBaseURL: "",
 				Track: &ent.Track{
 					Edges: ent.TrackEdges{
-						Album: &ent.Album{LidarrID: "abc-123-def"},
+						Artist: &ent.Artist{LidarrID: "42", MusicbrainzID: mbid},
 					},
 				},
 			},
 			expected: "",
 		},
 		{
-			name: "Album with empty LidarrID returns empty string",
-			row: TrackTableRow{
-				LidarrBaseURL: "http://lidarr:8686",
-				Track: &ent.Track{
-					Edges: ent.TrackEdges{
-						Album: &ent.Album{LidarrID: ""},
-					},
-				},
-			},
-			expected: "",
-		},
-		{
-			name: "No album returns empty string",
+			name: "No artist edge returns empty string",
 			row: TrackTableRow{
 				LidarrBaseURL: "http://lidarr:8686",
 				Track:         &ent.Track{},
@@ -488,18 +516,6 @@ func TestTrackTableRow_LidarrAlbumURL(t *testing.T) {
 			name:     "Empty row returns empty string",
 			row:      TrackTableRow{},
 			expected: "",
-		},
-		{
-			name: "BaseURL without trailing slash is handled correctly",
-			row: TrackTableRow{
-				LidarrBaseURL: "http://lidarr:8686",
-				Track: &ent.Track{
-					Edges: ent.TrackEdges{
-						Album: &ent.Album{LidarrID: "xyz-789"},
-					},
-				},
-			},
-			expected: "http://lidarr:8686/album/xyz-789",
 		},
 	}
 

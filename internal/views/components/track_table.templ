@@ -205,15 +205,24 @@ func (r TrackTableRow) LidarrStatus() string {
 	return *track.LidarrStatus
 }
 
+// LidarrAlbumURL returns the Lidarr deep link URL for the artist page.
+// Lidarr's web UI routes artists by their foreignArtistId (= MusicBrainz artist ID),
+// e.g. /artist/1964494f-9f1a-41c1-b054-80ef3b95025c.
+// We confirm the artist is tracked in Lidarr (LidarrID set) before building the link.
 func (r TrackTableRow) LidarrAlbumURL() string {
 	if r.LidarrBaseURL == "" {
 		return ""
 	}
-	album := r.Album()
-	if album == nil || album.LidarrID == "" {
+	var artist *ent.Artist
+	if r.Track != nil && r.Track.Edges.Artist != nil {
+		artist = r.Track.Edges.Artist
+	} else if r.Listen != nil && r.Listen.Edges.Artist != nil {
+		artist = r.Listen.Edges.Artist
+	}
+	if artist == nil || artist.LidarrID == "" || artist.MusicbrainzID == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/album/%s", r.LidarrBaseURL, album.LidarrID)
+	return fmt.Sprintf("%s/artist/%s", r.LidarrBaseURL, artist.MusicbrainzID)
 }
 
 func formatDuration(ms *int) string {
