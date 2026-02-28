@@ -29,6 +29,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
 	"spotter/internal/events"
+	"spotter/internal/tags"
 )
 
 // MetadataService handles catalog building and metadata enrichment.
@@ -625,6 +626,7 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 	update := s.client.Artist.UpdateOne(art)
 	var allTags []string
 	var allGenres []string
+	var allTypedTags []tags.TypedTag
 	enrichersUsed := []string{}
 
 	for _, e := range enricherList {
@@ -680,6 +682,10 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 		allTags = append(allTags, data.Tags...)
 		allGenres = append(allGenres, data.Genres...)
 
+		// Collect typed tags from enricher
+		// Governing: SPEC-0014 REQ "Enricher Integration"
+		allTypedTags = append(allTypedTags, data.TypedTags...)
+
 		// Handle AI-specific fields
 		if data.AISummary != "" {
 			update = update.SetAiSummary(data.AISummary)
@@ -720,6 +726,14 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 	_, err := update.Save(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Upsert typed tags for the artist entity
+	// Governing: SPEC-0014 REQ "Enricher Integration", SPEC-0014 REQ "Denormalized Entity Tags Table"
+	if len(allTypedTags) > 0 {
+		if err := tags.UpsertTagsForEntity(ctx, u.ID, "artist", art.ID, allTypedTags); err != nil {
+			s.logger.Warn("failed to upsert typed tags for artist", "artist", art.Name, "error", err)
+		}
 	}
 
 	// Log enrichment event
@@ -1009,6 +1023,7 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 
 	update := s.client.Album.UpdateOne(alb)
 	var allTags []string
+	var allTypedTags []tags.TypedTag
 	enrichersUsed := []string{}
 
 	for _, e := range enricherList {
@@ -1065,6 +1080,10 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 
 		allTags = append(allTags, data.Tags...)
 
+		// Collect typed tags from enricher
+		// Governing: SPEC-0014 REQ "Enricher Integration"
+		allTypedTags = append(allTypedTags, data.TypedTags...)
+
 		// Handle AI-specific fields
 		if data.AISummary != "" {
 			update = update.SetAiSummary(data.AISummary)
@@ -1120,6 +1139,14 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 	_, err := update.Save(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Upsert typed tags for the album entity
+	// Governing: SPEC-0014 REQ "Enricher Integration", SPEC-0014 REQ "Denormalized Entity Tags Table"
+	if len(allTypedTags) > 0 {
+		if err := tags.UpsertTagsForEntity(ctx, u.ID, "album", alb.ID, allTypedTags); err != nil {
+			s.logger.Warn("failed to upsert typed tags for album", "album", alb.Name, "error", err)
+		}
 	}
 
 	// Log enrichment event
@@ -1296,6 +1323,7 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 	update := s.client.Track.UpdateOne(t)
 	var allTags []string
 	var allGenres []string
+	var allTypedTags []tags.TypedTag
 	enrichersUsed := []string{}
 
 	for _, e := range enricherList {
@@ -1380,6 +1408,10 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 		allTags = append(allTags, data.Tags...)
 		allGenres = append(allGenres, data.Genres...)
 
+		// Collect typed tags from enricher
+		// Governing: SPEC-0014 REQ "Enricher Integration"
+		allTypedTags = append(allTypedTags, data.TypedTags...)
+
 		// Handle AI-specific fields
 		if data.AISummary != "" {
 			update = update.SetAiSummary(data.AISummary)
@@ -1402,6 +1434,14 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 	_, err := update.Save(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Upsert typed tags for the track entity
+	// Governing: SPEC-0014 REQ "Enricher Integration", SPEC-0014 REQ "Denormalized Entity Tags Table"
+	if len(allTypedTags) > 0 {
+		if err := tags.UpsertTagsForEntity(ctx, u.ID, "track", t.ID, allTypedTags); err != nil {
+			s.logger.Warn("failed to upsert typed tags for track", "track", t.Name, "error", err)
+		}
 	}
 
 	// Log enrichment event (only for tracks with enrichers used to avoid spam)

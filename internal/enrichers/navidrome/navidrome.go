@@ -15,6 +15,7 @@ import (
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	"spotter/internal/tags"
 )
 
 const (
@@ -501,10 +502,17 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 
 	alb := response.SubsonicResponse.Album
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tags.TypedTag
+	if alb.Genre != "" {
+		typedTags = append(typedTags, tags.TypedTag{Name: alb.Genre, Type: "genre"})
+	}
+
 	result := &enrichers.AlbumData{
 		Year:        alb.Year,
 		Genre:       alb.Genre,
 		TotalTracks: alb.SongCount,
+		TypedTags:   typedTags,
 	}
 
 	if alb.MusicBrainzID != "" {
@@ -661,11 +669,18 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 
 	song := response.SubsonicResponse.Song
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tags.TypedTag
+	if song.Genre != "" {
+		typedTags = append(typedTags, tags.TypedTag{Name: song.Genre, Type: "genre"})
+	}
+
 	result := &enrichers.TrackData{
 		NavidromeID: trackID,
 		DurationMs:  song.Duration * 1000, // Navidrome returns seconds
 		TrackNumber: song.Track,
 		DiscNumber:  song.DiscNumber,
+		TypedTags:   typedTags,
 	}
 
 	if song.Genre != "" {

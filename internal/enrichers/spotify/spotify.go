@@ -13,6 +13,7 @@ import (
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	"spotter/internal/tags"
 
 	"golang.org/x/oauth2"
 	spotifyOAuth "golang.org/x/oauth2/spotify"
@@ -402,11 +403,18 @@ func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enric
 	popularity := sp.Popularity
 	followers := sp.Followers.Total
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tags.TypedTag
+	for _, g := range sp.Genres {
+		typedTags = append(typedTags, tags.TypedTag{Name: g, Type: "genre"})
+	}
+
 	return &enrichers.ArtistData{
 		SpotifyID:     spotifyID,
 		Genres:        sp.Genres,
 		Popularity:    &popularity,
 		FollowerCount: &followers,
+		TypedTags:     typedTags,
 	}, nil
 }
 
@@ -490,6 +498,15 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		}
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tags.TypedTag
+	for _, g := range sp.Genres {
+		typedTags = append(typedTags, tags.TypedTag{Name: g, Type: "genre"})
+	}
+	if sp.Label != "" {
+		typedTags = append(typedTags, tags.TypedTag{Name: sp.Label, Type: "label"})
+	}
+
 	return &enrichers.AlbumData{
 		SpotifyID:   spotifyID,
 		ReleaseDate: sp.ReleaseDate,
@@ -499,6 +516,7 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		Label:       sp.Label,
 		TotalTracks: sp.TotalTracks,
 		Popularity:  sp.Popularity,
+		TypedTags:   typedTags,
 	}, nil
 }
 

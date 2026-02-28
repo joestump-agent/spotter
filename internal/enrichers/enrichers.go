@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"spotter/ent"
+	"spotter/internal/tags"
 )
 
 // Type identifies the enricher source.
@@ -27,6 +28,7 @@ const (
 type Priority int
 
 // ArtistData contains enrichment data for an artist.
+// Governing: SPEC-0014 REQ "Enricher Integration"
 type ArtistData struct {
 	MusicBrainzID string
 	SpotifyID     string
@@ -43,6 +45,9 @@ type ArtistData struct {
 	AISummary   string
 	AIBiography string
 	AITags      []string
+	// Typed tags for unified tag taxonomy
+	// Governing: SPEC-0014 REQ "Enricher Integration"
+	TypedTags []tags.TypedTag
 }
 
 // RecommendedAlbum contains data about a recommended album.
@@ -56,6 +61,7 @@ type RecommendedAlbum struct {
 }
 
 // AlbumData contains enrichment data for an album.
+// Governing: SPEC-0014 REQ "Enricher Integration"
 type AlbumData struct {
 	MusicBrainzID string
 	SpotifyID     string
@@ -74,9 +80,13 @@ type AlbumData struct {
 	DominantColors     []string
 	CoverArtCommentary string
 	Recommendations    []RecommendedAlbum
+	// Typed tags for unified tag taxonomy
+	// Governing: SPEC-0014 REQ "Enricher Integration"
+	TypedTags []tags.TypedTag
 }
 
 // TrackData contains enrichment data for a track.
+// Governing: SPEC-0014 REQ "Enricher Integration"
 type TrackData struct {
 	MusicBrainzID    string
 	SpotifyID        string
@@ -102,6 +112,9 @@ type TrackData struct {
 	// AI-generated fields
 	AISummary string
 	AITags    []string
+	// Typed tags for unified tag taxonomy
+	// Governing: SPEC-0014 REQ "Enricher Integration"
+	TypedTags []tags.TypedTag
 }
 
 // ImageData contains data about an image to download.
