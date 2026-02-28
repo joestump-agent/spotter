@@ -171,7 +171,13 @@ And exits with zero status
 ## Implementation Notes
 
 - Subcommand entry: `cmd/admin/main.go` or integrated into `cmd/server/main.go` as `spotter admin rotate-key`
-- Direct SQL: use `database/sql` with `mattn/go-sqlite3` to bypass Ent hooks
+- Direct SQL: use `database/sql` with driver determined by `SPOTTER_DATABASE_DRIVER` env var (default: `sqlite3`, valid: `sqlite3`, `postgres`, `mysql`) to bypass Ent hooks
+- Drivers: `mattn/go-sqlite3`, `lib/pq` (PostgreSQL), `go-sql-driver/mysql` — all imported as side-effect imports
+- DSN: read from `SPOTTER_DATABASE_SOURCE` env var, overridden by `--db` flag. Examples:
+  - SQLite: `file:spotter.db?cache=shared&_fk=1`
+  - PostgreSQL: `postgresql://spotter:pass@localhost:5432/spotter?sslmode=disable`
+  - MySQL: `spotter:pass@tcp(localhost:3306)/spotter`
 - Encryptor reuse: instantiate two `crypto.Encryptor` instances (old key and new key)
 - Table/column names: must match Ent-generated schema (check `ent/migrate/schema.go` for exact names)
-- Governing comment: `// Governing: ADR-0021 (key rotation), ADR-0006 (AES-256-GCM encryption), SPEC key-rotation`
+- SQL placeholders: PostgreSQL uses `$1`, `$2`; SQLite and MySQL use `?`
+- Governing comment: `// Governing: ADR-0021 (key rotation), ADR-0006 (AES-256-GCM encryption), ADR-0023 (multi-database support), SPEC key-rotation`

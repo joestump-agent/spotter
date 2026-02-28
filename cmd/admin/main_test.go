@@ -120,7 +120,7 @@ func TestParseHexKey(t *testing.T) {
 func TestRunIdenticalKeys(t *testing.T) {
 	key := randomHexKey(t)
 	_, dsn := testDB(t)
-	err := run(key, key, dsn)
+	err := run(key, key, "sqlite3", dsn)
 	if err == nil {
 		t.Fatal("expected error for identical keys")
 	}
@@ -135,7 +135,7 @@ func TestRunNoEncryptedFields(t *testing.T) {
 	_, dsn := testDB(t)
 
 	// No rows in any table => should warn and exit cleanly.
-	err := run(oldKey, newKey, dsn)
+	err := run(oldKey, newKey, "sqlite3", dsn)
 	if err != nil {
 		t.Fatalf("expected no error for empty database, got: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestRunFullRotation(t *testing.T) {
 	}
 
 	// Run rotation.
-	if err := run(oldKeyHex, newKeyHex, dsn); err != nil {
+	if err := run(oldKeyHex, newKeyHex, "sqlite3", dsn); err != nil {
 		t.Fatalf("run() error: %v", err)
 	}
 
@@ -244,7 +244,7 @@ func TestRunWrongOldKey(t *testing.T) {
 	}
 
 	// Try to rotate with the wrong old key.
-	err := run(wrongKeyHex, newKeyHex, dsn)
+	err := run(wrongKeyHex, newKeyHex, "sqlite3", dsn)
 	if err == nil {
 		t.Fatal("expected error when old key is wrong")
 	}
@@ -265,7 +265,7 @@ func TestRunMultipleRows(t *testing.T) {
 		}
 	}
 
-	if err := run(oldKeyHex, newKeyHex, dsn); err != nil {
+	if err := run(oldKeyHex, newKeyHex, "sqlite3", dsn); err != nil {
 		t.Fatalf("run() error: %v", err)
 	}
 
@@ -315,7 +315,7 @@ func TestRunSkipsEmptyFields(t *testing.T) {
 		t.Fatalf("insert: %v", err)
 	}
 
-	if err := run(oldKeyHex, newKeyHex, dsn); err != nil {
+	if err := run(oldKeyHex, newKeyHex, "sqlite3", dsn); err != nil {
 		t.Fatalf("run() error: %v", err)
 	}
 
@@ -328,26 +328,26 @@ func TestRunSkipsEmptyFields(t *testing.T) {
 }
 
 func TestRunInvalidOldKeyFormat(t *testing.T) {
-	err := run("notahexkey", randomHexKey(t), "file::memory:")
+	err := run("notahexkey", randomHexKey(t), "sqlite3", "file::memory:")
 	if err == nil {
 		t.Fatal("expected error for invalid old key format")
 	}
 }
 
 func TestRunInvalidNewKeyFormat(t *testing.T) {
-	err := run(randomHexKey(t), "tooshort", "file::memory:")
+	err := run(randomHexKey(t), "tooshort", "sqlite3", "file::memory:")
 	if err == nil {
 		t.Fatal("expected error for invalid new key format")
 	}
 }
 
 func TestRunMissingKeys(t *testing.T) {
-	err := run("", randomHexKey(t), "file::memory:")
+	err := run("", randomHexKey(t), "sqlite3", "file::memory:")
 	if err == nil {
 		t.Fatal("expected error for missing old key")
 	}
 
-	err = run(randomHexKey(t), "", "file::memory:")
+	err = run(randomHexKey(t), "", "sqlite3", "file::memory:")
 	if err == nil {
 		t.Fatal("expected error for missing new key")
 	}
