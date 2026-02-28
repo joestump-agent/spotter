@@ -13,6 +13,7 @@ import (
 	"spotter/ent/syncevent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	"spotter/internal/tags"
 	"strconv"
 	"strings"
 	"time"
@@ -129,10 +130,17 @@ func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enric
 		})
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tags.TypedTag
+	for _, g := range lArtist.Genres {
+		typedTags = append(typedTags, tags.TypedTag{Name: g, Type: "genre"})
+	}
+
 	data := &enrichers.ArtistData{
 		MusicBrainzID: lArtist.ForeignArtistID,
 		Bio:           lArtist.Overview,
 		Genres:        lArtist.Genres,
+		TypedTags:     typedTags,
 	}
 
 	// Only set LidarrID if we have a valid ID (> 0)
@@ -219,11 +227,18 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		})
 	}
 
+	// Governing: SPEC-0014 REQ "Enricher Integration", ADR-0015 (Pluggable Enricher Registry)
+	var typedTags []tags.TypedTag
+	for _, g := range lAlbum.Genres {
+		typedTags = append(typedTags, tags.TypedTag{Name: g, Type: "genre"})
+	}
+
 	data := &enrichers.AlbumData{
 		MusicBrainzID: lAlbum.ForeignAlbumID,
 		AlbumType:     lAlbum.AlbumType,
 		ReleaseDate:   lAlbum.ReleaseDate,
 		Genre:         strings.Join(lAlbum.Genres, ", "),
+		TypedTags:     typedTags,
 	}
 
 	// Only set LidarrID if we have a valid ID (> 0)
