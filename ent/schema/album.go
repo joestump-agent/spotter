@@ -53,13 +53,15 @@ func (Album) Fields() []ent.Field {
 		field.Int("year").
 			Optional().
 			Comment("Release year extracted from release_date"),
+		// Deprecated: migrated to Tag entity (SPEC-0014, 2026-02-28)
 		field.String("genre").
 			Optional().
 			MaxLen(255).
-			Comment("Primary genre of the album"),
+			Comment("Deprecated: migrated to Tag entity. Primary genre of the album"),
+		// Deprecated: migrated to Tag entity (SPEC-0014, 2026-02-28)
 		field.JSON("tags", []string{}).
 			Optional().
-			Comment("Tags/genres from various sources"),
+			Comment("Deprecated: migrated to Tag entity. Tags/genres from various sources"),
 		field.Int("popularity").
 			Optional().
 			Comment("Popularity score (0-100, from Spotify)"),
@@ -70,10 +72,11 @@ func (Album) Fields() []ent.Field {
 			Optional().
 			MaxLen(50).
 			Comment("Type: album, single, compilation, ep"),
+		// Deprecated: migrated to Tag entity (SPEC-0014, 2026-02-28)
 		field.String("label").
 			Optional().
 			MaxLen(255).
-			Comment("Record label"),
+			Comment("Deprecated: migrated to Tag entity. Record label"),
 		field.Time("created_at").
 			Default(time.Now).
 			Immutable(),
@@ -88,9 +91,10 @@ func (Album) Fields() []ent.Field {
 			Optional().
 			MaxLen(10000).
 			Comment("AI-generated summary of the album including artist thoughts and context"),
+		// Deprecated: migrated to Tag entity (SPEC-0014, 2026-02-28)
 		field.JSON("ai_tags", []string{}).
 			Optional().
-			Comment("AI-generated tags for the album (max 5)"),
+			Comment("Deprecated: migrated to Tag entity. AI-generated tags for the album (max 5)"),
 		field.JSON("dominant_colors", []string{}).
 			Optional().
 			Comment("AI-generated dominant colors from the cover art"),
