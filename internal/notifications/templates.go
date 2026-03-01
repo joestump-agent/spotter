@@ -52,7 +52,7 @@ type emailData struct {
 	CooldownDays   int
 }
 
-func buildEmail(provider string, syncErr error, baseURL string) (subject, body string) {
+func buildEmail(provider string, syncErr error, baseURL string, cooldownDays int) (subject, body string) {
 	subject = fmt.Sprintf("[Spotter] %s sync error — action required", provider)
 
 	data := emailData{
@@ -60,7 +60,7 @@ func buildEmail(provider string, syncErr error, baseURL string) (subject, body s
 		ErrorSummary:   sanitizeError(syncErr),
 		Timestamp:      time.Now().UTC().Format(time.RFC3339),
 		PreferencesURL: baseURL + "/preferences/providers",
-		CooldownDays:   7,
+		CooldownDays:   cooldownDays,
 	}
 
 	var buf bytes.Buffer

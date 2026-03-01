@@ -110,7 +110,7 @@ func (n *DBNotifier) NotifyIfNeeded(ctx context.Context, u *ent.User, provider s
 
 	// Build and send the email
 	// Governing: SPEC-0015 REQ "Email Content"
-	subject, body := buildEmail(provider, syncErr, n.baseURL)
+	subject, body := buildEmail(provider, syncErr, n.baseURL, n.cooldownDays)
 	if err := n.mailer.Send(u.Email, subject, body); err != nil {
 		// Governing: SPEC-0015 REQ "SMTP Configuration" scenario "SMTP send failure"
 		// On send failure, do NOT write the sync_notification record so we can retry next tick
