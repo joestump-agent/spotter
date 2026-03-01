@@ -30,9 +30,11 @@ func buildProviderDropdownConfig(props ProviderProps) ActionButtonDropdownConfig
 	// Build the actions list
 	actions := []DropdownAction{
 		{
-			Label:     "Sync Now",
-			IconClass: "icon-[heroicons--arrow-path]",
-			HtmxPost:  props.SyncURL,
+			Label:      "Sync Now",
+			IconClass:  "icon-[heroicons--arrow-path]",
+			HtmxPost:   props.SyncURL,
+			HtmxTarget: "#toasts",
+			HtmxSwap:   "beforeend",
 		},
 		{
 			Label:     "Rebuild Data",

@@ -651,14 +651,14 @@ func AuthMiddleware(client *ent.Client, jwtManager *auth.JWTManager, logger *slo
 
 			claims, err := jwtManager.ValidateToken(cookie.Value)
 			if err != nil {
-				logger.Debug("invalid JWT token", "error", err)
+				logger.Info("auth: invalid JWT token", "path", r.URL.Path, "method", r.Method, "error", err)
 				redirectToLogin()
 				return
 			}
 
 			u, err := client.User.Get(r.Context(), claims.UserID)
 			if err != nil {
-				logger.Debug("user not found for JWT claims", "user_id", claims.UserID, "error", err)
+				logger.Warn("auth: user not found for JWT claims", "user_id", claims.UserID, "path", r.URL.Path, "error", err)
 				redirectToLogin()
 				return
 			}

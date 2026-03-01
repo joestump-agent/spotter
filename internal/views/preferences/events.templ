@@ -346,7 +346,8 @@ templ Tasks(user *ent.User, tasks []types.Task, events []*ent.SyncEvent, selecte
 					<button
 						class="btn btn-error"
 						hx-post="/preferences/tasks/reset"
-						hx-swap="none"
+						hx-target="#toasts"
+						hx-swap="beforeend"
 						onclick="document.getElementById('reset-confirm-modal').close()"
 					>
 						<span class="icon-[heroicons--trash] w-4 h-4"></span>
@@ -385,7 +386,8 @@ templ taskButton(taskID string, taskName string) {
 		<button
 			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/sync-listens"
-			hx-swap="none"
+			hx-target="#toasts"
+			hx-swap="beforeend"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
@@ -395,7 +397,8 @@ templ taskButton(taskID string, taskName string) {
 		<button
 			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/sync-playlists"
-			hx-swap="none"
+			hx-target="#toasts"
+			hx-swap="beforeend"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
@@ -405,7 +408,8 @@ templ taskButton(taskID string, taskName string) {
 		<button
 			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/enrich-metadata"
-			hx-swap="none"
+			hx-target="#toasts"
+			hx-swap="beforeend"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
@@ -415,7 +419,8 @@ templ taskButton(taskID string, taskName string) {
 		<button
 			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/sync-artist-images"
-			hx-swap="none"
+			hx-target="#toasts"
+			hx-swap="beforeend"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
@@ -425,7 +430,8 @@ templ taskButton(taskID string, taskName string) {
 		<button
 			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/sync-album-images"
-			hx-swap="none"
+			hx-target="#toasts"
+			hx-swap="beforeend"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>
@@ -435,7 +441,8 @@ templ taskButton(taskID string, taskName string) {
 		<button
 			class="btn btn-primary btn-sm w-24 gap-2 relative"
 			hx-post="/preferences/tasks/cleanup"
-			hx-swap="none"
+			hx-target="#toasts"
+			hx-swap="beforeend"
 		>
 			<span class="icon-[heroicons--play] w-4 h-4 htmx-indicator-hide"></span>
 			<span class="htmx-indicator-hide">Run</span>

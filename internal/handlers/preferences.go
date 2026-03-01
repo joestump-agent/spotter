@@ -21,6 +21,7 @@ import (
 	"spotter/internal/events"
 	"spotter/internal/providers"
 	"spotter/internal/types"
+	"spotter/internal/views/components"
 	"spotter/internal/views/preferences"
 )
 
@@ -174,15 +175,6 @@ func (h *Handler) SyncNavidrome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Sync Started",
-			Message:  "Syncing Navidrome data in the background...",
-			IconType: "info",
-		},
-	})
-
 	userID := u.ID
 	go func() {
 		ctx := context.Background()
@@ -221,7 +213,7 @@ func (h *Handler) SyncNavidrome(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Sync Started", "Syncing Navidrome data in the background...", "info"))
 }
 
 // RebuildNavidrome deletes all Navidrome data and re-syncs
@@ -270,15 +262,6 @@ func (h *Handler) RebuildNavidrome(w http.ResponseWriter, r *http.Request) {
 
 	h.Logger.Info("deleted all navidrome data for user", "username", u.Username)
 
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Rebuild Started",
-			Message:  "Deleted Navidrome data. Re-syncing in the background...",
-			IconType: "warning",
-		},
-	})
-
 	userID := u.ID
 	go func() {
 		ctx := context.Background()
@@ -317,7 +300,7 @@ func (h *Handler) RebuildNavidrome(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Rebuild Started", "Deleted Navidrome data. Re-syncing in the background...", "warning"))
 }
 
 // SyncSpotify triggers a sync for Spotify data
@@ -328,15 +311,6 @@ func (h *Handler) SyncSpotify(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Sync Started",
-			Message:  "Syncing Spotify data in the background...",
-			IconType: "info",
-		},
-	})
 
 	userID := u.ID
 	go func() {
@@ -376,7 +350,7 @@ func (h *Handler) SyncSpotify(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Sync Started", "Syncing Spotify data in the background...", "info"))
 }
 
 // RebuildSpotify deletes all Spotify data and re-syncs
@@ -425,15 +399,6 @@ func (h *Handler) RebuildSpotify(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to delete spotify sync events", "error", err)
 	}
 
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Rebuild Started",
-			Message:  fmt.Sprintf("Deleted %d listens and %d playlists. Re-syncing...", deleted, deletedPlaylists),
-			IconType: "warning",
-		},
-	})
-
 	userID := u.ID
 	go func() {
 		ctx := context.Background()
@@ -472,7 +437,7 @@ func (h *Handler) RebuildSpotify(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Rebuild Started", fmt.Sprintf("Deleted %d listens and %d playlists. Re-syncing...", deleted, deletedPlaylists), "warning"))
 }
 
 // SyncLastFM triggers a sync for Last.fm data
@@ -483,15 +448,6 @@ func (h *Handler) SyncLastFM(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Sync Started",
-			Message:  "Syncing Last.fm data in the background...",
-			IconType: "info",
-		},
-	})
 
 	userID := u.ID
 	go func() {
@@ -531,7 +487,7 @@ func (h *Handler) SyncLastFM(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Sync Started", "Syncing Last.fm data in the background...", "info"))
 }
 
 // RebuildLastFM deletes all Last.fm data and re-syncs
@@ -566,15 +522,6 @@ func (h *Handler) RebuildLastFM(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.Logger.Error("failed to delete lastfm sync events", "error", err)
 	}
-
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Rebuild Started",
-			Message:  fmt.Sprintf("Deleted %d listens. Re-syncing...", deleted),
-			IconType: "warning",
-		},
-	})
 
 	userID := u.ID
 	go func() {
@@ -614,7 +561,7 @@ func (h *Handler) RebuildLastFM(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Rebuild Started", fmt.Sprintf("Deleted %d listens. Re-syncing...", deleted), "warning"))
 }
 
 // PreferencesTasks shows the tasks management page with event history
@@ -853,15 +800,6 @@ func (h *Handler) TaskSyncListens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Task Started",
-			Message:  "Syncing all listens in the background...",
-			IconType: "info",
-		},
-	})
-
 	userID := u.ID
 	go func() {
 		ctx := context.Background()
@@ -900,7 +838,7 @@ func (h *Handler) TaskSyncListens(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Task Started", "Syncing all listens in the background...", "info"))
 }
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-050 (on-demand sync via HTTP), REQ-SYNC-051 (returns immediately, sync in background)
@@ -912,15 +850,6 @@ func (h *Handler) TaskSyncPlaylists(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Task Started",
-			Message:  "Syncing all playlists in the background...",
-			IconType: "info",
-		},
-	})
 
 	userID := u.ID
 	go func() {
@@ -960,7 +889,7 @@ func (h *Handler) TaskSyncPlaylists(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Task Started", "Syncing all playlists in the background...", "info"))
 }
 
 // TaskEnrichMetadata triggers metadata enrichment
@@ -972,26 +901,9 @@ func (h *Handler) TaskEnrichMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.MetadataSvc == nil {
-		h.Bus.Publish(u.ID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Error",
-				Message:  "Metadata service is not configured",
-				IconType: "error",
-			},
-		})
-		w.WriteHeader(http.StatusOK)
+		h.Render(w, r, components.Toast("Error", "Metadata service is not configured", "error"))
 		return
 	}
-
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Task Started",
-			Message:  "Running metadata enrichment in the background...",
-			IconType: "info",
-		},
-	})
 
 	userID := u.ID
 	go func() {
@@ -1031,7 +943,7 @@ func (h *Handler) TaskEnrichMetadata(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Task Started", "Running metadata enrichment in the background...", "info"))
 }
 
 // TaskSyncArtistImages triggers a sync of all artist images
@@ -1043,26 +955,9 @@ func (h *Handler) TaskSyncArtistImages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.MetadataSvc == nil {
-		h.Bus.Publish(u.ID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Error",
-				Message:  "Metadata service is not configured",
-				IconType: "error",
-			},
-		})
-		w.WriteHeader(http.StatusOK)
+		h.Render(w, r, components.Toast("Error", "Metadata service is not configured", "error"))
 		return
 	}
-
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Task Started",
-			Message:  "Syncing all artist images in the background...",
-			IconType: "info",
-		},
-	})
 
 	userID := u.ID
 	go func() {
@@ -1095,7 +990,7 @@ func (h *Handler) TaskSyncArtistImages(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Task Started", "Syncing all artist images in the background...", "info"))
 }
 
 // TaskSyncAlbumImages triggers a sync of all album images
@@ -1107,26 +1002,9 @@ func (h *Handler) TaskSyncAlbumImages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.MetadataSvc == nil {
-		h.Bus.Publish(u.ID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Error",
-				Message:  "Metadata service is not configured",
-				IconType: "error",
-			},
-		})
-		w.WriteHeader(http.StatusOK)
+		h.Render(w, r, components.Toast("Error", "Metadata service is not configured", "error"))
 		return
 	}
-
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Task Started",
-			Message:  "Syncing all album artwork in the background...",
-			IconType: "info",
-		},
-	})
 
 	userID := u.ID
 	go func() {
@@ -1159,7 +1037,7 @@ func (h *Handler) TaskSyncAlbumImages(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Task Started", "Syncing all album artwork in the background...", "info"))
 }
 
 // TaskResetData deletes all user data and re-syncs
@@ -1252,15 +1130,6 @@ func (h *Handler) TaskResetData(w http.ResponseWriter, r *http.Request) {
 			"artists":   deletedArtists,
 		})
 
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Data Reset Complete",
-			Message:  fmt.Sprintf("Deleted %d listens, %d playlists. Re-syncing...", deletedListens, deletedPlaylists),
-			IconType: "warning",
-		},
-	})
-
 	// Re-sync everything in the background
 	// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 	userID := u.ID
@@ -1316,7 +1185,7 @@ func (h *Handler) TaskResetData(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Data Reset", fmt.Sprintf("Deleted %d listens, %d playlists. Re-syncing...", deletedListens, deletedPlaylists), "warning"))
 }
 
 // TaskCleanup runs cleanup tasks (delete old events, etc.)
@@ -1330,15 +1199,6 @@ func (h *Handler) TaskCleanup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	h.logEvent(ctx, u, syncevent.EventTypeCleanupStarted, "system", "Starting cleanup tasks", nil)
-
-	h.Bus.Publish(u.ID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    "Cleanup Started",
-			Message:  "Running cleanup tasks...",
-			IconType: "info",
-		},
-	})
 
 	// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 	userID := u.ID
@@ -1388,7 +1248,7 @@ func (h *Handler) TaskCleanup(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.WriteHeader(http.StatusOK)
+	h.Render(w, r, components.Toast("Cleanup Started", "Running cleanup tasks...", "info"))
 }
 
 // logEvent persists a sync event to the database

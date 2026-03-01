@@ -6,3 +6,21 @@
 .htmx-request.htmx-indicator-hide {
     display: none !important;
 }
+
+/* Hide spinner by default; show only during active HTMX request */
+.htmx-indicator {
+    display: none !important;
+}
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+    display: inline-flex !important;
+}
+
+/* Toast entry animation — CSS-only so it works even when scripts don't execute (SSE swap) */
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.toast-item {
+    animation: toastIn 0.3s ease forwards;
+}

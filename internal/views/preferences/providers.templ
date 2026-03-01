@@ -166,7 +166,8 @@ templ NavidromeRebuildModal() {
 				<button
 					class="btn btn-warning"
 					hx-post="/preferences/navidrome/rebuild"
-					hx-swap="none"
+					hx-target="#toasts"
+					hx-swap="beforeend"
 					onclick="document.getElementById('navidrome-rebuild-modal').close()"
 				>
 					<span class="icon-[heroicons--trash] w-5 h-5"></span>
@@ -221,7 +222,8 @@ templ SpotifyRebuildModal() {
 				<button
 					class="btn btn-warning"
 					hx-post="/preferences/spotify/rebuild"
-					hx-swap="none"
+					hx-target="#toasts"
+					hx-swap="beforeend"
 					onclick="document.getElementById('spotify-rebuild-modal').close()"
 				>
 					<span class="icon-[heroicons--trash] w-5 h-5"></span>
@@ -276,7 +278,8 @@ templ LastFMRebuildModal() {
 				<button
 					class="btn btn-warning"
 					hx-post="/preferences/lastfm/rebuild"
-					hx-swap="none"
+					hx-target="#toasts"
+					hx-swap="beforeend"
 					onclick="document.getElementById('lastfm-rebuild-modal').close()"
 				>
 					<span class="icon-[heroicons--trash] w-5 h-5"></span>

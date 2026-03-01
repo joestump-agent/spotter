@@ -69,6 +69,7 @@ type DropdownAction struct {
 	HtmxPost   string // HTMX POST URL
 	HtmxGet    string // HTMX GET URL
 	HtmxTarget string // HTMX swap target (default: none/swap-none)
+	HtmxSwap   string // HTMX swap mode (default: outerHTML when target set, none otherwise)
 	ModalID    string // Modal ID to open
 	Href       string // Regular link
 
@@ -339,7 +340,11 @@ templ dropdownActionItem(action DropdownAction) {
 			hx-post={ action.HtmxPost }
 			if action.HtmxTarget != "" {
 				hx-target={ action.HtmxTarget }
-				hx-swap="outerHTML"
+				if action.HtmxSwap != "" {
+					hx-swap={ action.HtmxSwap }
+				} else {
+					hx-swap="outerHTML"
+				}
 			} else {
 				hx-swap="none"
 			}
@@ -363,7 +368,11 @@ templ dropdownActionItem(action DropdownAction) {
 			hx-get={ action.HtmxGet }
 			if action.HtmxTarget != "" {
 				hx-target={ action.HtmxTarget }
-				hx-swap="outerHTML"
+				if action.HtmxSwap != "" {
+					hx-swap={ action.HtmxSwap }
+				} else {
+					hx-swap="outerHTML"
+				}
 			} else {
 				hx-swap="none"
 			}

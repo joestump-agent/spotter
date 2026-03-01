@@ -22,12 +22,6 @@ script initToast(id string) {
 		}, 300);
 	};
 
-	// Animate in after a brief delay
-	setTimeout(function() {
-		toast.style.opacity = '1';
-		toast.style.transform = 'translateY(0)';
-	}, 50);
-
 	// Auto-dismiss after 5 seconds
 	setTimeout(function() {
 		if (toast && toast.parentNode) {
@@ -52,7 +46,7 @@ templ Toast(title, message, iconType string) {
 			templ.KV("alert-error", iconType == "error"),
 		}
 		role="alert"
-		style="opacity: 0; transform: translateY(-8px); transition: opacity 0.3s ease, transform 0.3s ease;"
+		style="transition: opacity 0.3s ease, transform 0.3s ease;"
 	>
 		<div class="flex gap-3 items-start flex-1 min-w-0 overflow-hidden">
 			if iconType == "play" || iconType == "success" {
