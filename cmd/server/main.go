@@ -27,6 +27,7 @@ import (
 	enricherOpenai "spotter/internal/enrichers/openai"
 	enricherSpotify "spotter/internal/enrichers/spotify"
 	"spotter/internal/events"
+	"spotter/internal/mailer"
 	"spotter/internal/handlers"
 	internalMiddleware "spotter/internal/middleware"
 	"spotter/internal/providers/lastfm"
@@ -105,6 +106,23 @@ func main() {
 	defer func() { _ = rawDB.Close() }()
 	// Initialize Event Bus
 	bus := events.NewBus()
+
+	// Governing: SPEC-0015 REQ "SMTP Configuration", ADR-0026
+	// Initialize Mailer (NoopMailer if SMTP not configured)
+	mailClient := mailer.New(mailer.Config{
+		Host:     cfg.SMTP.Host,
+		Port:     cfg.SMTP.Port,
+		Username: cfg.SMTP.Username,
+		Password: cfg.SMTP.Password,
+		From:     cfg.SMTP.From,
+		TLS:      cfg.SMTP.TLS,
+	}, logger)
+	if mailClient.IsConfigured() {
+		logger.Info("smtp configured", "host", cfg.SMTP.Host, "port", cfg.SMTP.Port)
+	} else {
+		logger.Info("smtp disabled, using noop mailer")
+	}
+	_ = mailClient // will be used by notification service in #263
 
 	// Governing: ADR-0016 (pluggable provider factory), SPEC listen-playlist-sync REQ-SYNC-001 (factory registration at startup)
 	// Initialize Sync Service (for playlists and listens)

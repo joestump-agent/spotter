@@ -62,6 +62,36 @@ func (c LastFMConfig) LogValue() slog.Value {
 	)
 }
 
+// Governing: SPEC-0015 REQ "SMTP Configuration", ADR-0026
+// SMTPConfig holds SMTP server configuration for email notifications.
+type SMTPConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	From     string `mapstructure:"from"`
+	TLS      bool   `mapstructure:"tls"`
+}
+
+// Governing: SPEC-0015 REQ "SMTP Configuration", ADR-0026
+// LogValue redacts sensitive fields when logging SMTPConfig via slog.
+func (c SMTPConfig) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("host", c.Host),
+		slog.Int("port", c.Port),
+		slog.String("username", "[REDACTED]"),
+		slog.String("password", "[REDACTED]"),
+		slog.String("from", c.From),
+		slog.Bool("tls", c.TLS),
+	)
+}
+
+// Governing: SPEC-0015 REQ "SMTP Configuration", ADR-0026
+// NotificationsConfig holds notification behavior settings.
+type NotificationsConfig struct {
+	FailureCooldownDays int `mapstructure:"failure_cooldown_days"`
+}
+
 // Governing: ADR-0019 (structured metrics), ADR-0010 (slog), SPEC observability REQ "FMT-001", REQ "FMT-002"
 type Config struct {
 	Log struct {
@@ -110,8 +140,10 @@ type Config struct {
 		BaseURL string `mapstructure:"base_url"` // Base URL for API (for LiteLLM or compatible proxies)
 		Model   string `mapstructure:"model"`    // Model to use for enrichment (e.g., gpt-4o, gpt-4-turbo)
 	} `mapstructure:"openai"`
-	PlaylistSync PlaylistSyncConfig `mapstructure:"playlist_sync"`
-	Vibes        VibesConfig        `mapstructure:"vibes"`
+	SMTP          SMTPConfig          `mapstructure:"smtp"`
+	Notifications NotificationsConfig `mapstructure:"notifications"`
+	PlaylistSync  PlaylistSyncConfig  `mapstructure:"playlist_sync"`
+	Vibes         VibesConfig         `mapstructure:"vibes"`
 	Metadata     struct {
 		Enabled  bool   `mapstructure:"enabled"`  // Enable/disable metadata enrichment
 		Interval string `mapstructure:"interval"` // Sync interval (e.g., "1h", "30m")
@@ -259,6 +291,18 @@ func Load() (*Config, error) {
 	v.SetDefault("openai.api_key", "")
 	v.SetDefault("openai.base_url", "https://api.openai.com/v1")
 	v.SetDefault("openai.model", "gpt-4o")
+
+	// Governing: SPEC-0015 REQ "SMTP Configuration", ADR-0026
+	// SMTP defaults
+	v.SetDefault("smtp.host", "")
+	v.SetDefault("smtp.port", 587)
+	v.SetDefault("smtp.username", "")
+	v.SetDefault("smtp.password", "")
+	v.SetDefault("smtp.from", "")
+	v.SetDefault("smtp.tls", true)
+
+	// Notification defaults
+	v.SetDefault("notifications.failure_cooldown_days", 7)
 
 	// Playlist sync defaults
 	v.SetDefault("playlist_sync.sync_interval", "1h")
