@@ -372,9 +372,6 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, djs [
 								if album.MusicbrainzID != "" {
 									@components.ExternalLinkBadge("MusicBrainz", fmt.Sprintf("https://musicbrainz.org/release-group/%s", album.MusicbrainzID), "icon-[heroicons--globe-alt]", "badge-warning")
 								}
-								if album.Edges.Artist != nil && album.Edges.Artist.LidarrID != "" && album.Edges.Artist.LidarrID != "0" && album.Edges.Artist.MusicbrainzID != "" {
-									@components.ExternalLinkBadge("Lidarr", fmt.Sprintf("%s/artist/%s", cfg.Lidarr.BaseURL, album.Edges.Artist.MusicbrainzID), "icon-[heroicons--check-badge]", "badge-success")
-								}
 							</div>
 						</div>
 					</div>
