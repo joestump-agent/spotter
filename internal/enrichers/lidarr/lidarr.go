@@ -87,6 +87,7 @@ type lidarrAlbum struct {
 	Title          string                `json:"title"`
 	ForeignAlbumID string                `json:"foreignAlbumId"` // MusicBrainz ID
 	ArtistID       int                   `json:"artistId"`
+	Artist         *lidarrArtist         `json:"artist,omitempty"`
 	Monitored      bool                  `json:"monitored"`
 	ReleaseDate    string                `json:"releaseDate"`
 	Genres         []string              `json:"genres"`
@@ -569,6 +570,7 @@ func (e *Enricher) addAlbum(ctx context.Context, mbid string, artistID int) (*li
 		"title":          albumToAdd.Title,
 		"foreignAlbumId": albumToAdd.ForeignAlbumID,
 		"artistId":       artistID,
+		"artist":         albumToAdd.Artist,
 		"monitored":      true,
 		"albumType":      albumToAdd.AlbumType,
 		"releaseDate":    albumToAdd.ReleaseDate,
