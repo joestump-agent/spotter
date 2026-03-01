@@ -3,6 +3,7 @@ package notifications
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -32,6 +33,11 @@ func (n *NoopNotifier) NotifyIfNeeded(_ context.Context, _ *ent.User, _ string, 
 
 func (n *NoopNotifier) ClearCooldown(_ context.Context, _ int, _ string) error {
 	return nil
+}
+
+// Governing: SPEC-0015 REQ "Preferences UI — Email Address and Notification Status"
+func (n *NoopNotifier) SendTest(_ context.Context, _ *ent.User) error {
+	return fmt.Errorf("SMTP is not configured")
 }
 
 // DBNotifier persists notification state in the database and sends email via SMTP.
@@ -140,6 +146,22 @@ func (n *DBNotifier) NotifyIfNeeded(ctx context.Context, u *ent.User, provider s
 	n.logger.Info("sent sync failure notification",
 		"user_id", u.ID, "provider", provider, "email", u.Email)
 	return nil
+}
+
+// SendTest sends a test notification email to the user to verify SMTP configuration.
+// Governing: SPEC-0015 REQ "Preferences UI — Email Address and Notification Status"
+func (n *DBNotifier) SendTest(_ context.Context, u *ent.User) error {
+	if u.Email == "" {
+		return fmt.Errorf("no email address configured")
+	}
+	if !n.mailer.IsConfigured() {
+		return fmt.Errorf("SMTP is not configured")
+	}
+
+	subject := "[Spotter] Test notification"
+	body := fmt.Sprintf("Hi,\n\nThis is a test notification from Spotter.\n\nYour email notifications are working correctly.\n\nInstance: %s\n\n— Spotter\n", n.baseURL)
+
+	return n.mailer.Send(u.Email, subject, body)
 }
 
 // ClearCooldown deletes the sync_notification record for a user+provider pair,
