@@ -1,6 +1,7 @@
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import type * as OpenApiPlugin from 'docusaurus-plugin-openapi-docs';
 
 // ============================================================
 // CONFIGURE THESE VALUES FOR YOUR PROJECT
@@ -17,10 +18,6 @@ const config: Config = {
   tagline: PROJECT_TAGLINE,
   favicon: 'img/favicon.ico',
 
-  future: {
-    v4: true,
-  },
-
   url: SITE_URL,
   baseUrl: BASE_URL,
 
@@ -32,7 +29,36 @@ const config: Config = {
     mermaid: true,
   },
 
-  themes: ['@docusaurus/theme-mermaid'],
+  themes: ['@docusaurus/theme-mermaid', 'docusaurus-theme-openapi-docs'],
+
+  plugins: [
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'api-docs',
+        path: 'docs-api',
+        routeBasePath: 'api',
+        sidebarPath: './sidebars-api.ts',
+      },
+    ],
+    [
+      'docusaurus-plugin-openapi-docs',
+      {
+        id: 'openapi',
+        docsPluginId: 'api-docs',
+        config: {
+          spotter: {
+            specPath: '../openapi.yaml',
+            outputDir: 'docs-api',
+            sidebarOptions: {
+              groupPathsBy: 'tag',
+              categoryLinkSource: 'tag',
+            },
+          },
+        },
+      } satisfies OpenApiPlugin.Options,
+    ],
+  ],
 
   i18n: {
     defaultLocale: 'en',
@@ -77,6 +103,11 @@ const config: Config = {
           label: 'Specifications',
         },
         {
+          to: '/api/spotter',
+          label: 'API',
+          position: 'left',
+        },
+        {
           href: GITHUB_URL,
           label: 'GitHub',
           position: 'right',
@@ -96,6 +127,10 @@ const config: Config = {
             {
               label: 'Specifications',
               to: '/specs',
+            },
+            {
+              label: 'API Reference',
+              to: '/api/spotter',
             },
           ],
         },

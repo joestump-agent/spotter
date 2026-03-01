@@ -1,0 +1,1 @@
+{"responses":{"200":{"description":"PNG image binary","content":{"image/png":{"schema":{"type":"string","format":"binary"}}}},"302":{"description":"Redirect to login if unauthenticated"},"404":{"description":"Image not found"}}}

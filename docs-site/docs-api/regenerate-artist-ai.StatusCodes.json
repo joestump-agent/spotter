@@ -1,0 +1,1 @@
+{"responses":{"200":{"description":"HTML fragment for HTMX partial page update","content":{"text/html":{"schema":{"type":"string"}}}},"302":{"description":"Redirect to login if unauthenticated"},"404":{"description":"Artist not found"}}}

@@ -1,0 +1,1 @@
+{"responses":{"200":{"description":"Genre suggestions","content":{"application/json":{"schema":{"type":"object","properties":{"suggestions":{"type":"array","items":{"type":"string"},"description":"List of genre suggestions from the user's library"}},"required":["suggestions"],"title":"GenreSuggestions"}}}},"302":{"description":"Redirect to login if unauthenticated"}}}

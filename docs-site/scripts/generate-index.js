@@ -102,8 +102,10 @@ function generate() {
 
   const safeTitle = projectTitle.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const content = `---
-title: "${safeTitle}"
-slug: /
+title: "Overview"
+sidebar_label: "Overview"
+sidebar_position: 0
+slug: /overview
 ---
 
 # ${projectTitle}

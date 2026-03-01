@@ -1,0 +1,71 @@
+---
+id: post-login
+title: "Submit login credentials"
+description: "Authenticates the user against a Navidrome instance. On success, sets the `spotter_token`"
+sidebar_label: "Submit login credentials"
+hide_title: true
+hide_table_of_contents: true
+api: eJzVVd9v2zYQ/lcOetoAOfa6l8JZBmQdsKZzm2BOsQFOsNLS2WJDkRp5smMY+t93R8qJ7HTdXvdiS+T9+u6++7TPSK1DNl1kly1VaEkXirSz2X2elRgKr5v4Oh3eYwB+hjagB7VW2gYCBR/URpfe1QhyoGyBZ3BtIbRFgSHkEJCS36fQOCL0f5J7QPvpzhbOPWgEZUvwWGqPhVi6aFxJwEatU7CV0qb1mLMdtd6meMatNV85X8NWU8VxAL13HmrOK553Nssz16CP0K5KRtO4QDPx4xuPf7UY6CdX7rLpPr5yDWxFvsU8K5wlBi5XqmlM36Dx42i73Y4k66j1BhlEKT77LBQV1kqeaNcg53LLz4yIEzVeiiCNQW6lfVbVOLAM5LVdZ6etf+7sk0/H0VQIW+fLL/lLWYoE58Hon2M+mXRdPgC/eC5wkOu+65IZz9CGBOTVZCJ/x/FnJ0M5mgg4C+qIb4fJZkf9JnykcUW1+WJfe7Spou8nr14W8VvPJiHTE5EkeU/KVWtO6uD8FaoSfUQ2c/3pV9LnGT6qujFyNI49nCON3kRK/1e/o4W4+OHzln48hxtF1cX4HN4SNdfW7M5hzsOYa8KLmXqMsDlZjVS5A6PjpKiSSkxPbp7hJqJZMOM8NzKrON50zAaFMhU7TV9PXk9e8ONn3KBxTS2T6O4lTtF6Tbwhi8HbXMAlFqQlFpUYYFWN/hV3HFxLzGTCb4n2x7Bj67RdueiuKTZmnizg8uaK3QRIqu67s8nZy5oP1jqwHPGmBWeVgboNugCjl175HdTKMgcEFvA2w7LVhhJDf3E5FJUG71oOkgMhTyf9iuTlUZ/e3r7/g/XkiiRJ43WtvDY7Tpf6PPJomTwYDWcw0IszeM+9Br5unLasb0nBkt3Kq7WUFGRhYg5mKguFMnc2UrZtSqnhDC4h1MoYsG29ZKRu9TLiu/n1hxinccYw04AfeZiWRqXX/A8frzi6NMoGhnJnj5VfgFUM1TCIjVYM7d3vt9BL9Dcn2v0tV8TVsLARrxl7xOZJKVFGWJ45WvLlVEkT+GSjjBZA5dc/H6zbonPcN56a0KLnzbxd1pp63S+421K9MuGUEPtnLfnff776hYqKyITUsTVxoff9zi+ytPO8nrLWcrDfL1XAj950nRzzZ873C7xh3qql7NjivjtoXhSJB97XafYmNW50K2nF3LRpn//tA9jlhxCX3LiGBs7Pai6C8iRcN9fzW7Za9p/fmsPw6SBkPnyRervub5rlF0g=
+sidebar_class_name: "post api-method"
+info_path: api//spotter-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Submit login credentials"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"post"}
+  path={"/login"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Authenticates the user against a Navidrome instance. On success, sets the `spotter_token`
+cookie and redirects to the home page. On failure, returns the login form with an error message.
+
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  parameters={undefined}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./post-login.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./post-login.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

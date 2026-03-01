@@ -1,12 +1,12 @@
 {
-  "version": "1.8.1",
+  "version": "1.8.3",
   "mode": "scaffold",
   "siteDir": "docs-site",
   "createdAt": "2026-02-22T00:00:00Z",
-  "updatedAt": "2026-02-22T00:00:00Z",
+  "updatedAt": "2026-03-01T00:00:00Z",
   "files": {
     "docs-site/scripts/build-docs.js": {
-      "checksum": "sha256:b66a17dc160edf133a6ef05a4a902f4a7bed341d726e0c0aa2137e4fe0aa93d5",
+      "checksum": "sha256:32a29daa720e23b357d640735438f9f4918c5bde13c72d437b0bd1d79234cdca",
       "managed": true
     },
     "docs-site/scripts/build-spec-mapping.js": {
@@ -14,7 +14,7 @@
       "managed": true
     },
     "docs-site/scripts/generate-index.js": {
-      "checksum": "sha256:7880e1ae99ca20d8de55a87e4d2be0693fd86cbde0c44bb89f47dbd4d0ae05f2",
+      "checksum": "sha256:f2bfe4f8091329bf356d44612208c240790e07a77265bf785e5e8d73ed448f78",
       "managed": true
     },
     "docs-site/scripts/mdx-escape.js": {
@@ -70,7 +70,7 @@
       "managed": true
     },
     "docs-site/src/css/custom.css": {
-      "checksum": "sha256:3b5eb2431bc8bb1292043174288e3ca9f5147170c495f0c91976641cd1dac0da",
+      "checksum": "sha256:ebb415ff9940f682477d29968981fad0b1bc00e5db943bd590e085313be1013b",
       "managed": true
     },
     "docs-site/src/theme/MDXComponents.tsx": {

@@ -1,0 +1,1595 @@
+openapi: 3.0.3
+info:
+  title: Spotter API
+  version: 1.0.0
+  description: |
+    Spotter is a personal music library management app built with Go, chi router, templ templates, and HTMX.
+    It is primarily a server-rendered HTML application. Most endpoints return HTML fragments for HTMX partial
+    page updates. A small number of endpoints return JSON for polling or event-driven UI patterns.
+
+    Authentication is handled via a JWT cookie (`spotter_token`). All protected routes require this cookie.
+    Login is validated against a Navidrome instance.
+
+servers:
+  - url: http://localhost:8080
+    description: Development
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: spotter_token
+
+  schemas:
+    GenreSuggestions:
+      type: object
+      properties:
+        suggestions:
+          type: array
+          items:
+            type: string
+          description: List of genre suggestions from the user's library
+      required:
+        - suggestions
+
+    ArtistSuggestions:
+      type: object
+      properties:
+        suggestions:
+          type: array
+          items:
+            type: string
+          description: List of artist suggestions from the user's library
+      required:
+        - suggestions
+
+    PlaylistSyncStatus:
+      type: object
+      properties:
+        synced_count:
+          type: integer
+          description: Number of tracks successfully synced
+        error_count:
+          type: integer
+          description: Number of tracks that failed to sync
+        total:
+          type: integer
+          description: Total number of tracks in the playlist
+        status:
+          type: string
+          description: Overall sync status (e.g. "syncing", "complete", "error")
+      required:
+        - synced_count
+        - error_count
+        - total
+        - status
+
+    PlaylistSyncProgress:
+      type: object
+      properties:
+        percent:
+          type: number
+          format: float
+          description: Completion percentage (0-100)
+        synced:
+          type: integer
+          description: Number of tracks synced so far
+        total:
+          type: integer
+          description: Total number of tracks to sync
+      required:
+        - percent
+        - synced
+        - total
+
+    SSEEvent:
+      type: object
+      description: Server-Sent Event payload
+      properties:
+        type:
+          type: string
+          description: Event type identifier
+        payload:
+          type: object
+          description: Event-specific payload data
+          additionalProperties: true
+      required:
+        - type
+        - payload
+
+  responses:
+    HTMLFragment:
+      description: HTML fragment for HTMX partial page update
+      content:
+        text/html:
+          schema:
+            type: string
+
+    HTMLPage:
+      description: Full HTML page response
+      content:
+        text/html:
+          schema:
+            type: string
+
+    ImagePNG:
+      description: PNG image binary
+      content:
+        image/png:
+          schema:
+            type: string
+            format: binary
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+      description: Page number for pagination
+
+    PerPageParam:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        default: 25
+        minimum: 1
+        maximum: 100
+      description: Number of items per page
+
+    SearchParam:
+      name: q
+      in: query
+      schema:
+        type: string
+      description: Search query string
+
+security: []
+
+tags:
+  - name: Authentication
+    description: Login, logout, and OAuth provider flows
+  - name: Home
+    description: Home dashboard and playlist generation
+  - name: Library
+    description: Music library browsing — artists, albums, and tracks
+  - name: Playlists
+    description: Playlist management and sync operations
+  - name: Vibes
+    description: DJ profiles and mixtape management
+  - name: Preferences
+    description: User preferences and provider configuration
+  - name: Tasks
+    description: Background task management
+  - name: Events
+    description: Server-Sent Events stream
+
+paths:
+
+  # ---------------------------------------------------------------------------
+  # Authentication
+  # ---------------------------------------------------------------------------
+
+  /auth/login:
+    get:
+      tags: [Authentication]
+      summary: Login page
+      description: Returns the HTML login form. No authentication required.
+      operationId: getLoginPage
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+
+  /login:
+    post:
+      tags: [Authentication]
+      summary: Submit login credentials
+      description: |
+        Authenticates the user against a Navidrome instance. On success, sets the `spotter_token`
+        cookie and redirects to the home page. On failure, returns the login form with an error message.
+      operationId: postLogin
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                  description: Navidrome username
+                password:
+                  type: string
+                  format: password
+                  description: Navidrome password
+              required:
+                - username
+                - password
+      responses:
+        '302':
+          description: Redirect to home page on successful authentication
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /
+            Set-Cookie:
+              schema:
+                type: string
+                example: spotter_token=<jwt>; Path=/; HttpOnly; SameSite=Lax
+        '200':
+          description: Login form with error message on authentication failure
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /logout:
+    get:
+      tags: [Authentication]
+      summary: Log out
+      description: Clears the session cookie and redirects to the login page.
+      operationId: getLogout
+      responses:
+        '302':
+          description: Redirect to login page
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /auth/login
+
+  /auth/spotify/login:
+    get:
+      tags: [Authentication]
+      summary: Initiate Spotify OAuth
+      description: Redirects the user to Spotify's OAuth authorization page.
+      operationId: getSpotifyLogin
+      security:
+        - cookieAuth: []
+      responses:
+        '302':
+          description: Redirect to Spotify OAuth authorization URL
+          headers:
+            Location:
+              schema:
+                type: string
+
+  /auth/spotify/callback:
+    get:
+      tags: [Authentication]
+      summary: Spotify OAuth callback
+      description: Handles the OAuth callback from Spotify. Exchanges the authorization code for tokens and stores the Spotify integration credentials.
+      operationId: getSpotifyCallback
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Authorization code from Spotify
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: CSRF state token
+      responses:
+        '302':
+          description: Redirect to preferences page on success or error
+          headers:
+            Location:
+              schema:
+                type: string
+
+  /auth/lastfm/login:
+    get:
+      tags: [Authentication]
+      summary: Initiate Last.fm OAuth
+      description: Redirects the user to Last.fm's OAuth authorization page.
+      operationId: getLastfmLogin
+      security:
+        - cookieAuth: []
+      responses:
+        '302':
+          description: Redirect to Last.fm OAuth authorization URL
+          headers:
+            Location:
+              schema:
+                type: string
+
+  /auth/lastfm/callback:
+    get:
+      tags: [Authentication]
+      summary: Last.fm OAuth callback
+      description: Handles the OAuth callback from Last.fm. Exchanges the token for a session key and stores the Last.fm integration credentials.
+      operationId: getLastfmCallback
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Authentication token from Last.fm
+      responses:
+        '302':
+          description: Redirect to preferences page on success or error
+          headers:
+            Location:
+              schema:
+                type: string
+
+  # ---------------------------------------------------------------------------
+  # Home
+  # ---------------------------------------------------------------------------
+
+  /:
+    get:
+      tags: [Home]
+      summary: Home dashboard
+      description: Returns the main application dashboard showing recent activity and library overview.
+      operationId: getHome
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /generate:
+    post:
+      tags: [Home]
+      summary: Generate a playlist
+      description: Generates a new playlist using AI based on the provided prompt.
+      operationId: postGenerate
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                prompt:
+                  type: string
+                  description: Natural language prompt describing the desired playlist
+              required:
+                - prompt
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  # ---------------------------------------------------------------------------
+  # Events (SSE)
+  # ---------------------------------------------------------------------------
+
+  /events:
+    get:
+      tags: [Events]
+      summary: Server-Sent Events stream
+      description: |
+        Establishes a persistent Server-Sent Events connection for real-time updates.
+        Each event contains a JSON payload with a `type` field identifying the event category
+        and a `payload` object with event-specific data.
+
+        Common event types include task progress updates, sync status changes, and enrichment completion notifications.
+      operationId: getEvents
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Newline-delimited SSE messages. Each message has the format:
+                  `data: {"type": "<event-type>", "payload": {...}}`
+
+  # ---------------------------------------------------------------------------
+  # Library - Artists
+  # ---------------------------------------------------------------------------
+
+  /library/artists:
+    get:
+      tags: [Library]
+      summary: List artists
+      description: Returns a paginated, searchable list of artists in the library.
+      operationId: listArtists
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SearchParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /library/artist/{id}:
+    get:
+      tags: [Library]
+      summary: Get artist detail
+      description: Returns the detail page for a specific artist including biography, albums, and similar artists.
+      operationId: getArtist
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Artist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Artist not found
+
+  /library/artist/{id}.png:
+    get:
+      tags: [Library]
+      summary: Get artist image
+      description: Returns the artist's thumbnail image. Requires authentication.
+      operationId: getArtistImage
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Artist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/ImagePNG'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Image not found
+
+  /library/artist/{id}/regenerate-ai:
+    post:
+      tags: [Library]
+      summary: Regenerate AI metadata for artist
+      description: Triggers AI regeneration of the artist's biography and metadata. Returns an HTML fragment with the updated content.
+      operationId: regenerateArtistAI
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Artist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Artist not found
+
+  /library/artist/{id}/find-similar:
+    post:
+      tags: [Library]
+      summary: Find similar artists
+      description: Triggers a search for artists similar to the specified artist and returns an HTML fragment with results.
+      operationId: findSimilarArtists
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Artist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Artist not found
+
+  /library/artist/{id}/create-mixtape:
+    post:
+      tags: [Library]
+      summary: Create mixtape from artist
+      description: Creates a new mixtape seeded with tracks from the specified artist and returns an HTML fragment.
+      operationId: createMixtapeFromArtist
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Artist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Artist not found
+
+  # ---------------------------------------------------------------------------
+  # Library - Albums
+  # ---------------------------------------------------------------------------
+
+  /library/albums:
+    get:
+      tags: [Library]
+      summary: List albums
+      description: Returns a paginated, searchable list of albums in the library.
+      operationId: listAlbums
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SearchParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /library/album/{id}:
+    get:
+      tags: [Library]
+      summary: Get album detail
+      description: Returns the detail page for a specific album including tracklist and metadata.
+      operationId: getAlbum
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Album ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Album not found
+
+  /library/album/{id}.png:
+    get:
+      tags: [Library]
+      summary: Get album image
+      description: Returns the album's cover art image. Requires authentication.
+      operationId: getAlbumImage
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Album ID
+      responses:
+        '200':
+          $ref: '#/components/responses/ImagePNG'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Image not found
+
+  /library/album/{id}/regenerate-ai:
+    post:
+      tags: [Library]
+      summary: Regenerate AI metadata for album
+      description: Triggers AI regeneration of the album's description and metadata. Returns an HTML fragment with the updated content.
+      operationId: regenerateAlbumAI
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Album ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Album not found
+
+  /library/album/{id}/create-mixtape:
+    post:
+      tags: [Library]
+      summary: Create mixtape from album
+      description: Creates a new mixtape seeded with tracks from the specified album and returns an HTML fragment.
+      operationId: createMixtapeFromAlbum
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Album ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Album not found
+
+  # ---------------------------------------------------------------------------
+  # Library - Tracks
+  # ---------------------------------------------------------------------------
+
+  /library/tracks:
+    get:
+      tags: [Library]
+      summary: List tracks
+      description: Returns a paginated, searchable list of tracks in the library.
+      operationId: listTracks
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SearchParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /library/track/{id}:
+    get:
+      tags: [Library]
+      summary: Get track detail
+      description: Returns the detail page for a specific track.
+      operationId: getTrack
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Track ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Track not found
+
+  /library/track/{id}/regenerate-ai:
+    post:
+      tags: [Library]
+      summary: Regenerate AI metadata for track
+      description: Triggers AI regeneration of the track's metadata and annotations. Returns an HTML fragment with the updated content.
+      operationId: regenerateTrackAI
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Track ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Track not found
+
+  # ---------------------------------------------------------------------------
+  # Recent
+  # ---------------------------------------------------------------------------
+
+  /recent:
+    get:
+      tags: [Library]
+      summary: Recent listens
+      description: Returns a paginated list of recently played tracks, optionally filtered by provider.
+      operationId: getRecent
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SearchParam'
+        - name: provider
+          in: query
+          schema:
+            type: string
+            enum: [navidrome, lastfm, spotify]
+          description: Filter recent listens by provider
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  # ---------------------------------------------------------------------------
+  # Playlists
+  # ---------------------------------------------------------------------------
+
+  /playlists:
+    get:
+      tags: [Playlists]
+      summary: List playlists
+      description: Returns a paginated list of playlists.
+      operationId: listPlaylists
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /playlists/{id}:
+    get:
+      tags: [Playlists]
+      summary: Get playlist detail
+      description: Returns the detail page for a specific playlist including tracklist and sync status.
+      operationId: getPlaylist
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Playlist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Playlist not found
+
+  /playlists/{id}/sync-status:
+    get:
+      tags: [Playlists]
+      summary: Get playlist sync status
+      description: Returns the current sync status for a playlist as JSON. Used for polling during sync operations.
+      operationId: getPlaylistSyncStatus
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Playlist ID
+      responses:
+        '200':
+          description: Playlist sync status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistSyncStatus'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Playlist not found
+
+  /playlists/{id}/sync-progress:
+    get:
+      tags: [Playlists]
+      summary: Get playlist sync progress
+      description: Returns the current sync progress percentage for a playlist. Used for progress bar updates.
+      operationId: getPlaylistSyncProgress
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Playlist ID
+      responses:
+        '200':
+          description: Playlist sync progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistSyncProgress'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Playlist not found
+
+  /playlists/{id}/toggle-sync:
+    post:
+      tags: [Playlists]
+      summary: Toggle playlist sync
+      description: Enables or disables automatic syncing for the playlist. Returns an HTML fragment with the updated sync toggle control.
+      operationId: togglePlaylistSync
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Playlist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Playlist not found
+
+  /playlists/{id}/sync:
+    post:
+      tags: [Playlists]
+      summary: Sync playlist
+      description: Triggers an immediate sync of the playlist to Navidrome. Returns an HTML fragment with sync progress.
+      operationId: syncPlaylist
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Playlist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Playlist not found
+
+  /playlists/{id}/rebuild-sync:
+    post:
+      tags: [Playlists]
+      summary: Rebuild playlist sync
+      description: Clears existing sync state and performs a full resync of the playlist. Returns an HTML fragment with progress.
+      operationId: rebuildPlaylistSync
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Playlist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Playlist not found
+
+  /playlists/{id}/ai/generate-metadata:
+    post:
+      tags: [Playlists]
+      summary: Generate AI metadata for playlist
+      description: Uses AI to generate a title, description, and other metadata for the playlist. Returns an HTML fragment.
+      operationId: generatePlaylistMetadata
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Playlist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Playlist not found
+
+  /playlists/{id}/ai/generate-artwork:
+    post:
+      tags: [Playlists]
+      summary: Generate AI artwork for playlist
+      description: Uses AI to generate cover artwork for the playlist. Returns an HTML fragment with the new artwork.
+      operationId: generatePlaylistArtwork
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Playlist ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Playlist not found
+
+  # ---------------------------------------------------------------------------
+  # Vibes - DJs
+  # ---------------------------------------------------------------------------
+
+  /vibes/djs:
+    get:
+      tags: [Vibes]
+      summary: List DJ profiles
+      description: Returns the DJ profiles page listing all configured virtual DJ personalities.
+      operationId: listDJs
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+    post:
+      tags: [Vibes]
+      summary: Create DJ profile
+      description: Creates a new DJ profile with the specified name, genres, and style prompt. Returns an HTML fragment.
+      operationId: createDJ
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Display name for the DJ profile
+                genres:
+                  type: array
+                  items:
+                    type: string
+                  description: List of genres this DJ specializes in
+                style_prompt:
+                  type: string
+                  description: Natural language description of the DJ's style and preferences
+              required:
+                - name
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /vibes/djs/{id}:
+    get:
+      tags: [Vibes]
+      summary: Get DJ profile detail
+      description: Returns the detail page for a specific DJ profile including associated mixtapes.
+      operationId: getDJ
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: DJ profile ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: DJ profile not found
+
+    put:
+      tags: [Vibes]
+      summary: Update DJ profile
+      description: Updates an existing DJ profile. Returns an HTML fragment with the updated profile.
+      operationId: updateDJ
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: DJ profile ID
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Display name for the DJ profile
+                genres:
+                  type: array
+                  items:
+                    type: string
+                  description: List of genres this DJ specializes in
+                style_prompt:
+                  type: string
+                  description: Natural language description of the DJ's style and preferences
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: DJ profile not found
+
+    delete:
+      tags: [Vibes]
+      summary: Delete DJ profile
+      description: Deletes the specified DJ profile and all associated mixtapes. Returns an HTML fragment confirming deletion.
+      operationId: deleteDJ
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: DJ profile ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: DJ profile not found
+
+  /vibes/djs/suggestions/genres:
+    get:
+      tags: [Vibes]
+      summary: Get genre suggestions
+      description: Returns a list of genre suggestions derived from the user's library. Used for autocomplete in the DJ profile form.
+      operationId: getDJGenreSuggestions
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Genre suggestions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenreSuggestions'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /vibes/djs/suggestions/artists:
+    get:
+      tags: [Vibes]
+      summary: Get artist suggestions
+      description: Returns a list of artist suggestions derived from the user's library. Used for autocomplete in DJ and mixtape forms.
+      operationId: getDJArtistSuggestions
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Artist suggestions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtistSuggestions'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  # ---------------------------------------------------------------------------
+  # Vibes - Mixtapes
+  # ---------------------------------------------------------------------------
+
+  /vibes/mixtapes:
+    get:
+      tags: [Vibes]
+      summary: List mixtapes
+      description: Returns a paginated list of mixtapes.
+      operationId: listMixtapes
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+    post:
+      tags: [Vibes]
+      summary: Create mixtape
+      description: Creates a new mixtape associated with a DJ profile. Returns an HTML fragment.
+      operationId: createMixtape
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name for the mixtape
+                dj_id:
+                  type: integer
+                  description: ID of the DJ profile to associate with this mixtape
+                description:
+                  type: string
+                  description: Optional description of the mixtape's theme or mood
+              required:
+                - name
+                - dj_id
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /vibes/mixtapes/{id}:
+    get:
+      tags: [Vibes]
+      summary: Get mixtape detail
+      description: Returns the detail page for a specific mixtape including its tracklist.
+      operationId: getMixtape
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Mixtape ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Mixtape not found
+
+    put:
+      tags: [Vibes]
+      summary: Update mixtape
+      description: Updates an existing mixtape's metadata. Returns an HTML fragment with the updated mixtape.
+      operationId: updateMixtape
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Mixtape ID
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name for the mixtape
+                dj_id:
+                  type: integer
+                  description: ID of the DJ profile to associate with this mixtape
+                description:
+                  type: string
+                  description: Optional description of the mixtape's theme or mood
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Mixtape not found
+
+    delete:
+      tags: [Vibes]
+      summary: Delete mixtape
+      description: Deletes the specified mixtape. Returns an HTML fragment confirming deletion.
+      operationId: deleteMixtape
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Mixtape ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Mixtape not found
+
+  /vibes/mixtapes/{id}/toggle-sync:
+    post:
+      tags: [Vibes]
+      summary: Toggle mixtape sync
+      description: Enables or disables automatic syncing of the mixtape to Navidrome. Returns an HTML fragment with the updated sync toggle.
+      operationId: toggleMixtapeSync
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Mixtape ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Mixtape not found
+
+  /vibes/mixtapes/{id}/generate:
+    post:
+      tags: [Vibes]
+      summary: Generate mixtape tracks
+      description: Uses the associated DJ profile's style to generate a tracklist for the mixtape. Returns an HTML fragment with the generated tracks.
+      operationId: generateMixtapeTracks
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Mixtape ID
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+        '404':
+          description: Mixtape not found
+
+  # ---------------------------------------------------------------------------
+  # Preferences - Appearance
+  # ---------------------------------------------------------------------------
+
+  /preferences/appearance:
+    get:
+      tags: [Preferences]
+      summary: Get appearance preferences
+      description: Returns the appearance preferences page for configuring UI settings.
+      operationId: getAppearancePreferences
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+    post:
+      tags: [Preferences]
+      summary: Update appearance preferences
+      description: Saves appearance preferences such as theme and display options. Returns an HTML fragment with confirmation.
+      operationId: postAppearancePreferences
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Appearance preference key-value pairs (theme, density, etc.)
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  # ---------------------------------------------------------------------------
+  # Preferences - Providers
+  # ---------------------------------------------------------------------------
+
+  /preferences/providers:
+    get:
+      tags: [Preferences]
+      summary: Get provider preferences
+      description: Returns the provider configuration page for managing Navidrome, Spotify, and Last.fm integrations.
+      operationId: getProviderPreferences
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/navidrome/sync:
+    post:
+      tags: [Preferences]
+      summary: Sync Navidrome library
+      description: Triggers an incremental sync of the Navidrome music library. Returns an HTML fragment with sync status.
+      operationId: syncNavidrome
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/navidrome/rebuild:
+    post:
+      tags: [Preferences]
+      summary: Rebuild Navidrome library
+      description: Performs a full rebuild/resync of the Navidrome music library, clearing existing data. Returns an HTML fragment.
+      operationId: rebuildNavidrome
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/spotify/sync:
+    post:
+      tags: [Preferences]
+      summary: Sync Spotify data
+      description: Triggers an incremental sync of Spotify playlists and listening history. Returns an HTML fragment.
+      operationId: syncSpotify
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/spotify/rebuild:
+    post:
+      tags: [Preferences]
+      summary: Rebuild Spotify data
+      description: Performs a full rebuild of Spotify data, clearing existing Spotify sync state. Returns an HTML fragment.
+      operationId: rebuildSpotify
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/spotify/disconnect:
+    post:
+      tags: [Preferences]
+      summary: Disconnect Spotify
+      description: Removes the Spotify OAuth credentials and disconnects the integration. Returns an HTML fragment.
+      operationId: disconnectSpotify
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/lastfm/sync:
+    post:
+      tags: [Preferences]
+      summary: Sync Last.fm data
+      description: Triggers an incremental sync of Last.fm scrobbles and listening history. Returns an HTML fragment.
+      operationId: syncLastfm
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/lastfm/rebuild:
+    post:
+      tags: [Preferences]
+      summary: Rebuild Last.fm data
+      description: Performs a full rebuild of Last.fm data, re-importing all scrobble history. Returns an HTML fragment.
+      operationId: rebuildLastfm
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/lastfm/disconnect:
+    post:
+      tags: [Preferences]
+      summary: Disconnect Last.fm
+      description: Removes the Last.fm session key and disconnects the integration. Returns an HTML fragment.
+      operationId: disconnectLastfm
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  # ---------------------------------------------------------------------------
+  # Preferences - Tasks
+  # ---------------------------------------------------------------------------
+
+  /preferences/tasks:
+    get:
+      tags: [Tasks]
+      summary: Get background tasks page
+      description: Returns the background tasks management page showing task history and controls.
+      operationId: getTasksPage
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/tasks/sync-listens:
+    post:
+      tags: [Tasks]
+      summary: Sync listens task
+      description: Triggers a background task to sync listening history from all connected providers. Returns an HTML fragment.
+      operationId: syncListensTask
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/tasks/sync-playlists:
+    post:
+      tags: [Tasks]
+      summary: Sync playlists task
+      description: Triggers a background task to sync playlists from all connected providers. Returns an HTML fragment.
+      operationId: syncPlaylistsTask
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/tasks/enrich-metadata:
+    post:
+      tags: [Tasks]
+      summary: Enrich metadata task
+      description: Triggers a background task to enrich artist and album metadata using AI and external sources. Returns an HTML fragment.
+      operationId: enrichMetadataTask
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/tasks/sync-artist-images:
+    post:
+      tags: [Tasks]
+      summary: Sync artist images task
+      description: Triggers a background task to download and store artist images. Returns an HTML fragment.
+      operationId: syncArtistImagesTask
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/tasks/sync-album-images:
+    post:
+      tags: [Tasks]
+      summary: Sync album images task
+      description: Triggers a background task to download and store album cover art. Returns an HTML fragment.
+      operationId: syncAlbumImagesTask
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/tasks/reset:
+    post:
+      tags: [Tasks]
+      summary: Reset all tasks
+      description: Resets the state of all background tasks, clearing any error or stale running states. Returns an HTML fragment.
+      operationId: resetTasks
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated
+
+  /preferences/tasks/cleanup:
+    post:
+      tags: [Tasks]
+      summary: Cleanup task data
+      description: Runs cleanup routines to remove orphaned records and stale data from the database. Returns an HTML fragment.
+      operationId: cleanupTasks
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLFragment'
+        '302':
+          description: Redirect to login if unauthenticated

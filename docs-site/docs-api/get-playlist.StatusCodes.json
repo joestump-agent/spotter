@@ -1,0 +1,1 @@
+{"responses":{"200":{"description":"Full HTML page response","content":{"text/html":{"schema":{"type":"string"}}}},"302":{"description":"Redirect to login if unauthenticated"},"404":{"description":"Playlist not found"}}}

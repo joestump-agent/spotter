@@ -1,0 +1,66 @@
+---
+id: get-events
+title: "Server-Sent Events stream"
+description: "Establishes a persistent Server-Sent Events connection for real-time updates."
+sidebar_label: "Server-Sent Events stream"
+hide_title: true
+hide_table_of_contents: true
+api: eJztVVGPIzUM/itWnkBqu4WnU4WQVlAdC3cLUvcE0s2KpjNuxzST5JJMj9Go/x07mZYry73xSB/amcT+bH+2v44q6UNUq/dqfUKbonqeqQZjHcgnclat1DomvTMUW4ygwWOIFBObwgbDCcN8I8/FGWpnLdbiCHsXIKA280QdQu8bnTAuKrvWdQso5mKdNFmB/XHz8yN4PRinG/hIqeWzbRo8bmFPaBqghj1oP5A9QGrxgsCgBxeGymrbiMsEsQW3+4MTKVDZdh491rSnGjgTzYlU9jvXdZxpgZJgEcjWpm8Qko5H8MEdAsZ4yX4GcbA1MB+p51pbbQ9yKKHRBqrbrlTVeYOZA+uSRNTyIrWrmXJMYH5/aJjbA6aJ9pmKWPeB0sC9GFXt3JHwvk8tvz6fuSmciGcU5F6N6uvlUn5uG7XZrDk35rxjNOGWgcUq4Z/pbuKgXPNhrFvsdL7mwtmbr5hb9c/uP+JHQxbnDRrqKGEDEqZjVjQXv4DczukVWh1zc7j3nU6rym6F6xWMVY5SqRVU6puSihx8W6kZn0xNk+txsVicz1um6iyfmeowtW6iipPzWhhRpZzCmgxhzKT1wfBdm5Jf3d0ZV2vTuphWr5avli/q+p4RjPPSMSX0XtjfCC+F5E97cKVJe/oJB4YjQSkm/GZ1l0n0LiUMvyd3RClBzPYuu1MyYrEpFnD/ywO7Seoln68Wy8XLLC/WdFk9Z7WBro88xoZ2QYcBOm2Z+zx62nvY9WSmuX/tZjylBMH1DDKDhDyZ5buMs0zuD09vf+PRfEgSxAfqdCAzcLjC7DygbTBgNnwjEcw00At4y+zy5DfekSx/wNQHW+z2QR+6LAmiAxKDtzsk0qayXkblIghwD7HTxoDtux1X6vYvEbM4CI53xogA8GMZoiYQ/8K7B0YXovKWVVZ6JnJREpXCeFcbw0WcSIva/PoEpXXwxfamZ9svOSPOhlc/sX6wRyZPUvnQU2BhaClOvhzqjTtQxj9pQ1IQi9BBJI17AY/6RE1wrH5yoG0tHopnwjNv3DUZi2lu/kVKr5t8MxHj34v9vzD/p8I87XcWS94Pyp3KijJOqvNe4fUvUoRFTsZxpyO+C+Z8luMPPQYRcH488R5xezDrNzug5jXKMnVk/Vip+7pGL5LGo9NfI9/ItOjSVf9er5/YWL9Qo2NWo+lB4C9XdvgE/FaYZlMO8n2efcZlHIvWcWUX+3L1WY+pxou1UPjMIv4X5l/6Sw==
+sidebar_class_name: "get api-method"
+info_path: api//spotter-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Server-Sent Events stream"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/events"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Establishes a persistent Server-Sent Events connection for real-time updates.
+Each event contains a JSON payload with a `type` field identifying the event category
+and a `payload` object with event-specific data.
+
+Common event types include task progress updates, sync status changes, and enrichment completion notifications.
+
+
+<ParamsDetails
+  parameters={undefined}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-events.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-events.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

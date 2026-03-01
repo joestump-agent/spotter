@@ -5,10 +5,12 @@
   "scripts": {
     "docusaurus": "docusaurus",
     "build-content": "node scripts/build-docs.js",
+    "gen-api-docs": "docusaurus gen-api-docs all",
+    "clean-api-docs": "docusaurus clean-api-docs all",
     "watch-content": "chokidar '../docs/openspec/**/*' '../docs/adrs/**/*' -c 'npm run build-content' --initial",
-    "start": "npm run build-content && docusaurus start",
+    "start": "npm run build-content && npm run gen-api-docs && docusaurus start",
     "dev": "concurrently --kill-others \"npm run watch-content\" \"docusaurus start\"",
-    "build": "npm run build-content && docusaurus build",
+    "build": "npm run build-content && npm run gen-api-docs && docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",
@@ -21,6 +23,9 @@
     "@docusaurus/theme-mermaid": "^3.9.2",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
+    "docusaurus-plugin-openapi-docs": "^4.5.1",
+    "docusaurus-plugin-sass": "^0.2.6",
+    "docusaurus-theme-openapi-docs": "^4.5.1",
     "prism-react-renderer": "^2.3.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
@@ -34,8 +39,16 @@
     "typescript": "~5.6.2"
   },
   "browserslist": {
-    "production": [">0.5%", "not dead", "not op_mini all"],
-    "development": ["last 3 chrome version", "last 3 firefox version", "last 5 safari version"]
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
   },
   "engines": {
     "node": ">=20.0"

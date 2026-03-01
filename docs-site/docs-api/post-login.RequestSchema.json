@@ -1,0 +1,1 @@
+{"title":"Body","body":{"required":true,"content":{"application/x-www-form-urlencoded":{"schema":{"type":"object","properties":{"username":{"type":"string","description":"Navidrome username"},"password":{"type":"string","format":"password","description":"Navidrome password"}},"required":["username","password"]}}}}}

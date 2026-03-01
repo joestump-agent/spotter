@@ -1,0 +1,1 @@
+{"responses":{"302":{"description":"Redirect to login page","headers":{"Location":{"schema":{"type":"string","example":"/auth/login"}}}}}}

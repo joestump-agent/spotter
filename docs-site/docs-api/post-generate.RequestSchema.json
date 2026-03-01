@@ -1,0 +1,1 @@
+{"title":"Body","body":{"required":true,"content":{"application/x-www-form-urlencoded":{"schema":{"type":"object","properties":{"prompt":{"type":"string","description":"Natural language prompt describing the desired playlist"}},"required":["prompt"]}}}}}

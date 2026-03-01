@@ -1,99 +1,48 @@
 /**
- * Spotter Docs - Spotify-Inspired Theme
+ * Design Plugin - Docusaurus Custom Styles
  *
- * Styles for the Spotter documentation site with Spotify-inspired
- * dark theme and badge/component styles for ADR and OpenSpec content.
+ * Styles for ADR and OpenSpec documentation components.
+ * Includes badge components, RFC 2119 keyword highlighting,
+ * and dark mode support.
  */
 
-/* ============================================
-   Spotify-Inspired Color Palette
-   ============================================ */
 :root {
-  --ifm-color-primary: #1DB954;
-  --ifm-color-primary-dark: #18a349;
-  --ifm-color-primary-darker: #169a45;
-  --ifm-color-primary-darkest: #117f38;
-  --ifm-color-primary-light: #22cf5f;
-  --ifm-color-primary-lighter: #2fd768;
-  --ifm-color-primary-lightest: #4de07f;
+  --ifm-color-primary: #D4764E;
+  --ifm-color-primary-dark: #C06840;
+  --ifm-color-primary-darker: #B5623C;
+  --ifm-color-primary-darkest: #954F31;
+  --ifm-color-primary-light: #DA8A66;
+  --ifm-color-primary-lighter: #DD9270;
+  --ifm-color-primary-lightest: #E4A98E;
+  --ifm-background-color: #FAF9F6;
+  --ifm-font-color-base: #2E2E2E;
+  --ifm-font-color-secondary: #555555;
   --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(29, 185, 84, 0.1);
-
-  /* Spotify custom vars */
-  --spotify-black: #191414;
-  --spotify-dark-gray: #282828;
-  --spotify-medium-gray: #3E3E3E;
-  --spotify-light-gray: #B3B3B3;
-  --spotify-green: #1DB954;
-  --spotify-white: #FFFFFF;
+  --ifm-heading-font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 }
 
 [data-theme='dark'] {
-  --ifm-color-primary: #1DB954;
-  --ifm-color-primary-dark: #18a349;
-  --ifm-color-primary-darker: #169a45;
-  --ifm-color-primary-darkest: #117f38;
-  --ifm-color-primary-light: #22cf5f;
-  --ifm-color-primary-lighter: #2fd768;
-  --ifm-color-primary-lightest: #4de07f;
-  --docusaurus-highlighted-code-line-bg: rgba(29, 185, 84, 0.15);
-
-  --ifm-background-color: #191414;
-  --ifm-background-surface-color: #282828;
-  --ifm-navbar-background-color: #121212;
-  --ifm-footer-background-color: #121212;
-  --ifm-card-background-color: #282828;
+  --ifm-color-primary: #E89B78;
+  --ifm-color-primary-dark: #E28558;
+  --ifm-color-primary-darker: #DF7A48;
+  --ifm-color-primary-darkest: #D05E24;
+  --ifm-color-primary-light: #EEB198;
+  --ifm-color-primary-lighter: #F1BCA8;
+  --ifm-color-primary-lightest: #F7D3C4;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-background-color: #1b1b1d;
+  --ifm-font-color-base: #e3e3e3;
+  --ifm-font-color-secondary: #b0b0b0;
+  --ifm-navbar-background-color: #242526;
+  --ifm-navbar-link-color: #e3e3e3;
+  --ifm-menu-color: #d4d4d4;
+  --ifm-menu-color-active: #E89B78;
+  --ifm-menu-color-background-active: rgba(232, 155, 120, 0.1);
 }
 
-/* Dark mode by default feels more Spotify */
-html[data-theme='dark'] {
-  background-color: var(--spotify-black);
-}
-
-/* ============================================
-   Navbar Styling
-   ============================================ */
-[data-theme='dark'] .navbar {
-  background-color: #121212;
-  border-bottom: 1px solid #282828;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-.navbar__brand {
-  font-weight: 700;
-  letter-spacing: -0.5px;
-}
-
-[data-theme='dark'] .navbar__link {
-  color: var(--spotify-light-gray);
-}
-
-[data-theme='dark'] .navbar__link:hover,
-[data-theme='dark'] .navbar__link--active {
-  color: var(--spotify-white);
-}
-
-/* ============================================
-   Sidebar Styling
-   ============================================ */
-[data-theme='dark'] .menu {
-  background-color: #121212;
-}
-
-[data-theme='dark'] .menu__link {
-  color: var(--spotify-light-gray);
-  border-radius: 4px;
-}
-
-[data-theme='dark'] .menu__link:hover {
-  color: var(--spotify-white);
-  background-color: rgba(255, 255, 255, 0.07);
-}
-
-[data-theme='dark'] .menu__link--active {
-  color: var(--spotify-white);
-  background-color: rgba(29, 185, 84, 0.15);
-  font-weight: 600;
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--ifm-heading-font-family);
 }
 
 /* ============================================
@@ -120,21 +69,15 @@ html[data-theme='dark'] {
 .severity-badge.critical { background-color: #dc3545; color: white; border-color: #c82333; }
 .severity-badge.high { background-color: #fd7e14; color: white; border-color: #e96b02; }
 .severity-badge.medium { background-color: #ffc107; color: black; border-color: #e0a800; }
-.severity-badge.low { background-color: #1DB954; color: white; border-color: #18a349; }
+.severity-badge.low { background-color: #28a745; color: white; border-color: #1e7e34; }
 .severity-badge.info { background-color: #17a2b8; color: white; border-color: #138496; }
 .severity-badge.unknown { background-color: #6c757d; color: white; border-color: #5a6268; }
 
 /* Domain Badge */
 .domain-badge {
-  background-color: rgba(29, 185, 84, 0.2);
-  color: #1DB954;
-  border-color: rgba(29, 185, 84, 0.4);
-}
-
-[data-theme='dark'] .domain-badge {
-  background-color: rgba(29, 185, 84, 0.15);
-  color: #4de07f;
-  border-color: rgba(29, 185, 84, 0.3);
+  background-color: #6c757d;
+  color: white;
+  border-color: #5a6268;
 }
 
 /* Priority Badge */
@@ -146,8 +89,8 @@ html[data-theme='dark'] {
 
 /* Status Badge */
 .status-badge.approved,
-.status-badge.accepted { background-color: #1DB954; color: white; border-color: #18a349; }
-.status-badge.active { background-color: #1DB954; color: white; border-color: #18a349; }
+.status-badge.accepted { background-color: #28a745; color: white; border-color: #1e7e34; }
+.status-badge.active { background-color: #28a745; color: white; border-color: #1e7e34; }
 .status-badge.proposed { background-color: #17a2b8; color: white; border-color: #138496; }
 .status-badge.draft { background-color: #17a2b8; color: white; border-color: #138496; }
 .status-badge.deprecated { background-color: #6c757d; color: white; border-color: #5a6268; }
@@ -157,7 +100,7 @@ html[data-theme='dark'] {
 .status-badge.unknown { background-color: #6c757d; color: white; border-color: #5a6268; }
 
 /* Date Badge */
-.date-badge { background-color: #3E3E3E; color: #B3B3B3; border-color: #5a5a5a; }
+.date-badge { background-color: #6c757d; color: white; border-color: #5a6268; }
 
 /* RFC Level Badge */
 .rfc-level-badge.critical { background-color: #dc3545; color: white; border-color: #c82333; }
@@ -186,8 +129,8 @@ html[data-theme='dark'] {
 }
 .rfc-keyword.may,
 .rfc-keyword.optional {
-  background-color: rgba(29, 185, 84, 0.12);
-  color: #117f38;
+  background-color: rgba(23, 162, 184, 0.12);
+  color: #0c5460;
 }
 
 [data-theme='dark'] .rfc-keyword.must,
@@ -203,12 +146,12 @@ html[data-theme='dark'] {
 }
 [data-theme='dark'] .rfc-keyword.may,
 [data-theme='dark'] .rfc-keyword.optional {
-  background-color: rgba(29, 185, 84, 0.2);
-  color: #4de07f;
+  background-color: rgba(23, 162, 184, 0.2);
+  color: #bee5eb;
 }
 
 /* ============================================
-   ADR Consequence Keywords
+   ADR Consequence Keywords (Good, Bad, Neutral, etc.)
    ============================================ */
 .consequence-keyword {
   font-weight: 700;
@@ -216,8 +159,8 @@ html[data-theme='dark'] {
   border-radius: 0.2rem;
 }
 .consequence-keyword.good {
-  background-color: rgba(29, 185, 84, 0.15);
-  color: #117f38;
+  background-color: rgba(40, 167, 69, 0.15);
+  color: #155724;
 }
 .consequence-keyword.neutral {
   background-color: rgba(23, 162, 184, 0.15);
@@ -234,8 +177,8 @@ html[data-theme='dark'] {
 }
 
 [data-theme='dark'] .consequence-keyword.good {
-  background-color: rgba(29, 185, 84, 0.25);
-  color: #4de07f;
+  background-color: rgba(40, 167, 69, 0.25);
+  color: #c3e6cb;
 }
 [data-theme='dark'] .consequence-keyword.neutral {
   background-color: rgba(23, 162, 184, 0.25);
@@ -261,25 +204,25 @@ html[data-theme='dark'] {
   text-decoration: none;
   padding: 0.1rem 0.35rem;
   border-radius: 0.25rem;
-  background-color: rgba(29, 185, 84, 0.1);
+  background-color: rgba(212, 118, 78, 0.1);
   color: var(--ifm-color-primary-dark);
-  border: 1px solid rgba(29, 185, 84, 0.2);
+  border: 1px solid rgba(212, 118, 78, 0.2);
   transition: background-color 0.2s, border-color 0.2s;
   white-space: nowrap;
 }
 .rfc-ref:hover {
-  background-color: rgba(29, 185, 84, 0.2);
-  border-color: rgba(29, 185, 84, 0.4);
+  background-color: rgba(212, 118, 78, 0.2);
+  border-color: rgba(212, 118, 78, 0.4);
   text-decoration: none;
 }
 [data-theme='dark'] .rfc-ref {
-  background-color: rgba(29, 185, 84, 0.15);
+  background-color: rgba(232, 155, 120, 0.15);
   color: var(--ifm-color-primary-light);
-  border-color: rgba(29, 185, 84, 0.3);
+  border-color: rgba(232, 155, 120, 0.3);
 }
 [data-theme='dark'] .rfc-ref:hover {
-  background-color: rgba(29, 185, 84, 0.25);
-  border-color: rgba(29, 185, 84, 0.5);
+  background-color: rgba(232, 155, 120, 0.25);
+  border-color: rgba(232, 155, 120, 0.5);
 }
 
 /* ============================================
@@ -293,8 +236,8 @@ html[data-theme='dark'] {
   background-color: var(--ifm-background-surface-color);
 }
 .requirement-box:target {
-  border-color: var(--ifm-color-primary);
-  box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.2);
+  border-color: var(--ifm-color-primary-darker);
+  box-shadow: 0 0 0 3px var(--ifm-color-primary-light);
 }
 .requirement-header {
   display: flex;
@@ -348,226 +291,3 @@ html[data-theme='dark'] {
   color: var(--ifm-color-emphasis-900);
 }
 
-/* ============================================
-   Homepage Hero
-   ============================================ */
-.hero--spotter {
-  background: linear-gradient(135deg, #121212 0%, #191414 50%, #1a1a1a 100%);
-  padding: 5rem 0 4rem;
-  text-align: center;
-  border-bottom: 1px solid #282828;
-  position: relative;
-  overflow: hidden;
-}
-
-.hero--spotter::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(ellipse at center, rgba(29, 185, 84, 0.08) 0%, transparent 60%);
-  pointer-events: none;
-}
-
-.hero__title--spotter {
-  font-size: 4rem;
-  font-weight: 900;
-  color: #FFFFFF;
-  margin-bottom: 1rem;
-  letter-spacing: -2px;
-  line-height: 1;
-}
-
-.hero__title--spotter span {
-  color: #1DB954;
-}
-
-.hero__subtitle--spotter {
-  font-size: 1.25rem;
-  color: #B3B3B3;
-  max-width: 600px;
-  margin: 0 auto 2.5rem;
-  line-height: 1.6;
-}
-
-.hero__logo {
-  font-size: 5rem;
-  margin-bottom: 1.5rem;
-  display: block;
-}
-
-.hero__cta {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.button--spotify {
-  background-color: #1DB954 !important;
-  border-color: #1DB954 !important;
-  color: #000000 !important;
-  font-weight: 700 !important;
-  border-radius: 500px !important;
-  padding: 0.75rem 2rem !important;
-  font-size: 0.875rem !important;
-  letter-spacing: 0.1em !important;
-  text-transform: uppercase !important;
-  transition: transform 0.1s, background-color 0.2s !important;
-}
-
-.button--spotify:hover {
-  background-color: #1ed760 !important;
-  border-color: #1ed760 !important;
-  transform: scale(1.04) !important;
-}
-
-.button--spotify-outline {
-  background-color: transparent !important;
-  border: 2px solid rgba(255,255,255,0.3) !important;
-  color: #FFFFFF !important;
-  font-weight: 700 !important;
-  border-radius: 500px !important;
-  padding: 0.75rem 2rem !important;
-  font-size: 0.875rem !important;
-  letter-spacing: 0.1em !important;
-  text-transform: uppercase !important;
-  transition: border-color 0.2s !important;
-}
-
-.button--spotify-outline:hover {
-  border-color: rgba(255,255,255,0.7) !important;
-  color: #FFFFFF !important;
-}
-
-/* ============================================
-   Feature Cards
-   ============================================ */
-.features-section {
-  background-color: #121212;
-  padding: 4rem 0;
-}
-
-.features-section-alt {
-  background-color: #191414;
-  padding: 4rem 0;
-}
-
-.section-title {
-  text-align: center;
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: #FFFFFF;
-  margin-bottom: 0.5rem;
-}
-
-.section-subtitle {
-  text-align: center;
-  color: #B3B3B3;
-  font-size: 1rem;
-  margin-bottom: 3rem;
-}
-
-.feature-card {
-  background-color: #282828;
-  border-radius: 12px;
-  padding: 2rem 1.75rem;
-  height: 100%;
-  transition: background-color 0.2s, transform 0.2s;
-  text-decoration: none !important;
-  display: block;
-  border: 1px solid transparent;
-  cursor: pointer;
-}
-
-.feature-card:hover {
-  background-color: #3E3E3E;
-  transform: translateY(-4px);
-  border-color: rgba(29, 185, 84, 0.3);
-  text-decoration: none !important;
-}
-
-.feature-card__icon {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
-  display: block;
-}
-
-.feature-card__title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #FFFFFF;
-  margin-bottom: 0.5rem;
-  text-decoration: none !important;
-}
-
-.feature-card__description {
-  font-size: 0.9rem;
-  color: #B3B3B3;
-  line-height: 1.6;
-  margin-bottom: 1rem;
-}
-
-.feature-card__link {
-  color: #1DB954 !important;
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.feature-card__link:hover {
-  color: #1ed760 !important;
-  text-decoration: underline;
-}
-
-/* ============================================
-   Stats Bar
-   ============================================ */
-.stats-bar {
-  background-color: #282828;
-  border-top: 1px solid #3E3E3E;
-  border-bottom: 1px solid #3E3E3E;
-  padding: 2rem 0;
-}
-
-.stat-item {
-  text-align: center;
-  padding: 0 1.5rem;
-}
-
-.stat-number {
-  font-size: 2.5rem;
-  font-weight: 900;
-  color: #1DB954;
-  line-height: 1;
-  margin-bottom: 0.25rem;
-}
-
-.stat-label {
-  font-size: 0.85rem;
-  color: #B3B3B3;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
-/* ============================================
-   Footer
-   ============================================ */
-[data-theme='dark'] .footer {
-  background-color: #121212;
-  border-top: 1px solid #282828;
-}
-
-[data-theme='dark'] .footer__title {
-  color: #FFFFFF;
-}
-
-[data-theme='dark'] .footer__link-item {
-  color: #B3B3B3;
-}
-
-[data-theme='dark'] .footer__link-item:hover {
-  color: #1DB954;
-}

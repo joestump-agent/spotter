@@ -1,0 +1,1 @@
+{"responses":{"302":{"description":"Redirect to preferences page on success or error","headers":{"Location":{"schema":{"type":"string"}}}}}}
