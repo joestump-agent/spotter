@@ -69,7 +69,7 @@ func setupTestSyncer(t *testing.T) (*ent.Client, *services.Syncer, *events.Bus) 
 	cfg := &config.Config{}
 	bus := events.NewBus()
 
-	syncer := services.NewSyncer(client, cfg, logger, bus)
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
 	return client, syncer, bus
 }
 
@@ -831,7 +831,7 @@ func TestSyncer_PreservesCatalogLinksOnPlaylistSync(t *testing.T) {
 	defer client.Close()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bus := events.NewBus()
-	syncer := services.NewSyncer(client, &config.Config{}, logger, bus)
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
 
 	// Create user
 	user, err := client.User.Create().

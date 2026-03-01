@@ -188,6 +188,13 @@ func (h *Handler) LastFMCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Governing: SPEC-0015 REQ "Cooldown Reset on Recovery" — Provider reconnected via OAuth
+	if h.Notifier != nil {
+		if err := h.Notifier.ClearCooldown(r.Context(), u.ID, "lastfm"); err != nil {
+			h.Logger.Error("failed to clear lastfm notification cooldown", "error", err)
+		}
+	}
+
 	h.Logger.Info("successfully connected Last.fm account",
 		"username", u.Username,
 		"lastfm_username", authResult.DisplayName)

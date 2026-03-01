@@ -30,6 +30,7 @@ import (
 	"spotter/internal/handlers"
 	"spotter/internal/mailer"
 	internalMiddleware "spotter/internal/middleware"
+	"spotter/internal/notifications"
 	"spotter/internal/providers/lastfm"
 	"spotter/internal/providers/navidrome"
 	"spotter/internal/providers/spotify"
@@ -122,11 +123,21 @@ func main() {
 	} else {
 		logger.Info("smtp disabled, using noop mailer")
 	}
-	_ = mailClient // will be used by notification service in #263
+
+	// Governing: SPEC-0015 REQ "Notification Trigger", REQ "Cooldown Persistence", ADR-0026
+	// Initialize Notifier (DBNotifier if SMTP configured, NoopNotifier otherwise)
+	var notifier services.SyncNotifier
+	if mailClient.IsConfigured() {
+		notifier = notifications.NewDBNotifier(client, mailClient, cfg.Notifications.FailureCooldownDays, cfg.Navidrome.BaseURL, logger)
+		logger.Info("notification service initialized", "cooldown_days", cfg.Notifications.FailureCooldownDays)
+	} else {
+		notifier = notifications.NewNoopNotifier()
+		logger.Info("notification service disabled (smtp not configured)")
+	}
 
 	// Governing: ADR-0016 (pluggable provider factory), SPEC listen-playlist-sync REQ-SYNC-001 (factory registration at startup)
 	// Initialize Sync Service (for playlists and listens)
-	syncer := services.NewSyncer(client, cfg, logger, bus)
+	syncer := services.NewSyncer(client, cfg, logger, bus, notifier)
 	syncer.Register(navidrome.New(logger, cfg))
 	syncer.Register(spotify.New(logger, cfg))
 	syncer.Register(lastfm.New(logger, cfg))
@@ -161,7 +172,7 @@ func main() {
 	logger.Info("similar artists service initialized")
 
 	// Initialize Handlers
-	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, playlistEnhancer, similarArtistsSvc, bus)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, metadataSvc, playlistSyncSvc, mixtapeGenerator, playlistEnhancer, similarArtistsSvc, bus, notifier)
 
 	// Governing: ADR-0007 (graceful shutdown), ADR-0018 (graceful shutdown), SPEC graceful-shutdown REQ "SHUTDOWN-001"
 	// Governing: SPEC graceful-shutdown REQ-SIG-001 (signal.NotifyContext for SIGTERM/SIGINT)

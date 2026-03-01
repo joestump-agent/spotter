@@ -19,6 +19,13 @@ import (
 	"spotter/internal/providers"
 )
 
+// SyncNotifier handles email notifications for sync failures with cooldown.
+// Governing: SPEC-0015 REQ "Notification Trigger", REQ "Cooldown Reset on Recovery", ADR-0026
+type SyncNotifier interface {
+	NotifyIfNeeded(ctx context.Context, u *ent.User, provider string, syncErr error) error
+	ClearCooldown(ctx context.Context, userID int, provider string) error
+}
+
 // Governing: ADR-0020 (exponential backoff and circuit breaker), ADR-0007 (event bus for notifications), SPEC error-handling
 type Syncer struct {
 	client    *ent.Client
@@ -27,9 +34,10 @@ type Syncer struct {
 	bus       *events.Bus
 	factories []providers.Factory
 	backoff   *BackoffManager
+	notifier  SyncNotifier
 }
 
-func NewSyncer(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *Syncer {
+func NewSyncer(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus *events.Bus, notifier SyncNotifier) *Syncer {
 	return &Syncer{
 		client:    client,
 		config:    cfg,
@@ -37,6 +45,7 @@ func NewSyncer(client *ent.Client, cfg *config.Config, logger *slog.Logger, bus 
 		bus:       bus,
 		factories: []providers.Factory{},
 		backoff:   NewBackoffManager(),
+		notifier:  notifier,
 	}
 }
 
@@ -296,6 +305,12 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			// Governing: SPEC error-handling REQ-NOTIFY-001, REQ-NOTIFY-002, REQ-NOTIFY-003
 			if errClass == ErrorClassFatal {
 				s.publishFatalNotification(u.ID, backoffKey, providerName, err)
+				// Governing: SPEC-0015 REQ "Notification Trigger"
+				if s.notifier != nil {
+					if notifyErr := s.notifier.NotifyIfNeeded(ctx, u, providerName, err); notifyErr != nil {
+						s.logger.Error("failed to send email notification", "error", notifyErr, "provider", providerName)
+					}
+				}
 			}
 			// Log sync failed event
 			s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName, fmt.Sprintf("Failed to fetch listens from %s: %v", providerName, err), nil)
@@ -305,6 +320,12 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 		// Record success to reset backoff state
 		// Governing: SPEC error-handling REQ-RECOVER-001, REQ-RECOVER-002
 		s.backoff.RecordSuccess(backoffKey)
+		// Governing: SPEC-0015 REQ "Cooldown Reset on Recovery"
+		if s.notifier != nil {
+			if notifyErr := s.notifier.ClearCooldown(ctx, u.ID, providerName); notifyErr != nil {
+				s.logger.Error("failed to clear notification cooldown", "error", notifyErr, "provider", providerName)
+			}
+		}
 
 		allAdded += totalAdded
 		if totalAdded > 0 {
@@ -387,6 +408,12 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 			// Governing: SPEC error-handling REQ-NOTIFY-001, REQ-NOTIFY-002, REQ-NOTIFY-003
 			if errClass == ErrorClassFatal {
 				s.publishFatalNotification(u.ID, backoffKey, providerName, err)
+				// Governing: SPEC-0015 REQ "Notification Trigger"
+				if s.notifier != nil {
+					if notifyErr := s.notifier.NotifyIfNeeded(ctx, u, providerName, err); notifyErr != nil {
+						s.logger.Error("failed to send email notification", "error", notifyErr, "provider", providerName)
+					}
+				}
 			}
 			// Log sync failed event
 			s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName, fmt.Sprintf("Failed to fetch playlists from %s: %v", providerName, err), nil)
@@ -396,6 +423,12 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 		// Record success to reset backoff state
 		// Governing: SPEC error-handling REQ-RECOVER-001, REQ-RECOVER-002
 		s.backoff.RecordSuccess(backoffKey)
+		// Governing: SPEC-0015 REQ "Cooldown Reset on Recovery"
+		if s.notifier != nil {
+			if notifyErr := s.notifier.ClearCooldown(ctx, u.ID, providerName); notifyErr != nil {
+				s.logger.Error("failed to clear notification cooldown", "error", notifyErr, "provider", providerName)
+			}
+		}
 		s.logger.Info("fetched playlists", "provider", provider.Type(), "count", len(playlists))
 
 		if len(playlists) > 0 {

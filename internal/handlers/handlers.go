@@ -48,9 +48,11 @@ type Handler struct {
 	PlaylistEnhancer  *vibes.PlaylistEnhancer
 	SimilarArtistsSvc *services.SimilarArtistsService
 	Bus               *events.Bus
+	// Governing: SPEC-0015 REQ "Cooldown Reset on Recovery", ADR-0026
+	Notifier services.SyncNotifier
 }
 
-func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, encryptor *crypto.Encryptor, jwtManager *auth.JWTManager, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, mixtapeGen *vibes.MixtapeGenerator, playlistEnhancer *vibes.PlaylistEnhancer, similarArtistsSvc *services.SimilarArtistsService, bus *events.Bus) *Handler {
+func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, encryptor *crypto.Encryptor, jwtManager *auth.JWTManager, syncer *services.Syncer, metadataSvc *services.MetadataService, playlistSyncSvc *services.PlaylistSyncService, mixtapeGen *vibes.MixtapeGenerator, playlistEnhancer *vibes.PlaylistEnhancer, similarArtistsSvc *services.SimilarArtistsService, bus *events.Bus, notifier services.SyncNotifier) *Handler {
 	return &Handler{
 		Client:            client,
 		Config:            cfg,
@@ -64,6 +66,7 @@ func New(client *ent.Client, cfg *config.Config, logger *slog.Logger, encryptor 
 		PlaylistEnhancer:  playlistEnhancer,
 		SimilarArtistsSvc: similarArtistsSvc,
 		Bus:               bus,
+		Notifier:          notifier,
 	}
 }
 

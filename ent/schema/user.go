@@ -58,5 +58,8 @@ func (User) Edges() []ent.Edge {
 		edge.To("similar_artists", SimilarArtist.Type),
 		// Tag system
 		edge.To("tags", Tag.Type),
+		// Sync failure notification cooldowns
+		// Governing: SPEC-0015 REQ "Cooldown Persistence", ADR-0026
+		edge.To("sync_notifications", SyncNotification.Type),
 	}
 }

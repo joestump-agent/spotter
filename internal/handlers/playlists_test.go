@@ -42,11 +42,11 @@ func setupPlaylistHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events
 	cfg.PlaylistSync.MinMatchConfidence = 0.8
 	cfg.PlaylistSync.DeleteOnUnsync = false
 	bus := events.NewBus()
-	syncer := services.NewSyncer(client, cfg, logger, bus)
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
 	playlistSyncSvc := services.NewPlaylistSyncService(client, cfg, logger, bus)
 	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
 	jwtManager := auth.NewJWTManager(testJWTSecret)
-	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, playlistSyncSvc, nil, nil, nil, bus)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, playlistSyncSvc, nil, nil, nil, bus, nil)
 	return client, h, bus
 }
 

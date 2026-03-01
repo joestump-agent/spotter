@@ -40,11 +40,11 @@ func setupAlbumHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events.Bu
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := &config.Config{}
 	bus := events.NewBus()
-	syncer := services.NewSyncer(client, cfg, logger, bus)
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
 	// Create test encryptor with a dummy key
 	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
 	jwtManager := auth.NewJWTManager(testJWTSecret)
-	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
 	return client, h, bus
 }
 
