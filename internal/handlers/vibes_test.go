@@ -43,7 +43,7 @@ func setupVibesHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events.Bu
 
 	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
 	jwtManager := auth.NewJWTManager(testJWTSecret)
-	h := handlers.New(client, cfg, logger, encryptor, jwtManager, nil, nil, nil, nil, nil, nil, bus)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, nil, nil, nil, nil, nil, nil, bus, nil)
 	return client, h, bus
 }
 

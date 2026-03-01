@@ -227,6 +227,13 @@ func (h *Handler) SpotifyCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Governing: SPEC-0015 REQ "Cooldown Reset on Recovery" — Provider reconnected via OAuth
+	if h.Notifier != nil {
+		if err := h.Notifier.ClearCooldown(r.Context(), u.ID, "spotify"); err != nil {
+			h.Logger.Error("failed to clear spotify notification cooldown", "error", err)
+		}
+	}
+
 	h.Logger.Info("successfully connected Spotify account",
 		"username", u.Username,
 		"spotify_display_name", authResult.DisplayName)

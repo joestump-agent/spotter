@@ -110,6 +110,13 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Governing: SPEC-0015 REQ "Cooldown Reset on Recovery" — NavidromeAuth refreshed on login
+	if h.Notifier != nil {
+		if err := h.Notifier.ClearCooldown(r.Context(), u.ID, "navidrome"); err != nil {
+			h.Logger.Error("failed to clear navidrome notification cooldown", "error", err)
+		}
+	}
+
 	// Trigger initial sync
 	go func(user *ent.User) {
 		if err := h.Syncer.Sync(context.Background(), user); err != nil {

@@ -42,10 +42,10 @@ func TestLogin_Get(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := &config.Config{}
 	bus := events.NewBus()
-	syncer := services.NewSyncer(client, cfg, logger, bus)
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
 	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
 	jwtManager := auth.NewJWTManager(testJWTSecret)
-	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
 
 	req := httptest.NewRequest("GET", "/auth/login", nil)
 	w := httptest.NewRecorder()
@@ -82,10 +82,10 @@ func TestPostLogin_Success(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Navidrome.BaseURL = ts.URL
 	bus := events.NewBus()
-	syncer := services.NewSyncer(client, cfg, logger, bus)
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
 	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
 	jwtManager := auth.NewJWTManager(testJWTSecret)
-	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
 
 	// 3. Request
 	form := url.Values{}
@@ -149,10 +149,10 @@ func TestPostLogin_InvalidCredentials(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Navidrome.BaseURL = ts.URL
 	bus := events.NewBus()
-	syncer := services.NewSyncer(client, cfg, logger, bus)
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
 	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
 	jwtManager := auth.NewJWTManager(testJWTSecret)
-	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
 
 	// 3. Request
 	form := url.Values{}
@@ -197,10 +197,10 @@ func TestPostLogin_Regression_HTMXRedirect(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Navidrome.BaseURL = ts.URL
 	bus := events.NewBus()
-	syncer := services.NewSyncer(client, cfg, logger, bus)
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
 	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
 	jwtManager := auth.NewJWTManager(testJWTSecret)
-	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
 
 	testCases := []struct {
 		name               string
@@ -321,11 +321,11 @@ func TestPostLogin_SecureCookieFlag(t *testing.T) {
 			cfg.Security.SecureCookies = tc.secureCookies
 
 			bus := events.NewBus()
-			syncer := services.NewSyncer(client, cfg, logger, bus)
+			syncer := services.NewSyncer(client, cfg, logger, bus, nil)
 			encryptor, err := crypto.NewEncryptor(make([]byte, 32))
 			require.NoError(t, err)
 			jwtManager := auth.NewJWTManager(testJWTSecret)
-			h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus)
+			h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
 
 			// Create POST request
 			form := url.Values{}
