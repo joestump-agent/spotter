@@ -70,13 +70,13 @@ func (m *SMTPMailer) Send(to, subject, body string) error {
 			if err != nil {
 				return fmt.Errorf("tls dial: %w", err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 
 			c, err := smtp.NewClient(conn, m.cfg.Host)
 			if err != nil {
 				return fmt.Errorf("smtp client: %w", err)
 			}
-			defer c.Close()
+			defer func() { _ = c.Close() }()
 
 			if auth != nil {
 				if err := c.Auth(auth); err != nil {

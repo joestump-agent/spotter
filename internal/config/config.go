@@ -144,7 +144,7 @@ type Config struct {
 	Notifications NotificationsConfig `mapstructure:"notifications"`
 	PlaylistSync  PlaylistSyncConfig  `mapstructure:"playlist_sync"`
 	Vibes         VibesConfig         `mapstructure:"vibes"`
-	Metadata     struct {
+	Metadata      struct {
 		Enabled  bool   `mapstructure:"enabled"`  // Enable/disable metadata enrichment
 		Interval string `mapstructure:"interval"` // Sync interval (e.g., "1h", "30m")
 		Order    string `mapstructure:"order"`    // Comma-separated enricher order (e.g., "musicbrainz,navidrome,spotify,lastfm,fanart,openai")
