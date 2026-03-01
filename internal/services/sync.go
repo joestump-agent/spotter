@@ -24,6 +24,8 @@ import (
 type SyncNotifier interface {
 	NotifyIfNeeded(ctx context.Context, u *ent.User, provider string, syncErr error) error
 	ClearCooldown(ctx context.Context, userID int, provider string) error
+	// Governing: SPEC-0015 REQ "Preferences UI — Email Address and Notification Status"
+	SendTest(ctx context.Context, u *ent.User) error
 }
 
 // Governing: ADR-0020 (exponential backoff and circuit breaker), ADR-0007 (event bus for notifications), SPEC error-handling

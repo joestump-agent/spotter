@@ -19,7 +19,8 @@ func isPreferencesActive(currentPath string) bool {
 	return isPreferencesSection(currentPath) &&
 		!isActive(currentPath, "/preferences/appearance") &&
 		!isActive(currentPath, "/preferences/providers") &&
-		!isActive(currentPath, "/preferences/tasks")
+		!isActive(currentPath, "/preferences/tasks") &&
+		!isActive(currentPath, "/preferences/account")
 }
 
 func isLibrarySection(currentPath string) bool {
@@ -147,6 +148,12 @@ templ Dashboard(title string, cfg *config.Config, currentPath string) {
 										<span>Preferences</span>
 									</summary>
 									<ul>
+										<li>
+											<a href="/preferences/account" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/preferences/account")) }>
+												<span class="icon-[heroicons--user-circle] w-5 h-5"></span>
+												<span>Account</span>
+											</a>
+										</li>
 										<li>
 											<a href="/preferences/appearance" class={ "flex items-center gap-3", templ.KV("active", isActive(currentPath, "/preferences/appearance")) }>
 												<span class="icon-[heroicons--paint-brush] w-5 h-5"></span>

@@ -458,6 +458,9 @@ func main() {
 		r.Post("/generate", h.GeneratePlaylist)
 
 		r.Get("/preferences", h.PreferencesRedirect)
+		r.Get("/preferences/account", h.PreferencesAccount)
+		r.Post("/preferences/account/email", h.PostPreferencesEmail)
+		r.Post("/preferences/notifications/test", h.PostTestNotification)
 		r.Get("/preferences/appearance", h.PreferencesAppearance)
 		r.Post("/preferences/appearance", h.PostPreferencesAppearance)
 		r.Get("/preferences/providers", h.PreferencesProviders)

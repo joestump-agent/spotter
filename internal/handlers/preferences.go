@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"time"
 
@@ -82,6 +83,69 @@ func (h *Handler) PostPreferencesAppearance(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("HX-Trigger", "preferences-saved")
 	w.WriteHeader(http.StatusOK)
+}
+
+// Governing: SPEC-0015 REQ "User Email Address", REQ "Preferences UI — Email Address and Notification Status"
+func (h *Handler) PreferencesAccount(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	smtpConfigured := h.Config.SMTP.Host != ""
+	h.Render(w, r, preferences.Account(u, h.Config, smtpConfigured))
+}
+
+// Governing: SPEC-0015 REQ "User Email Address"
+func (h *Handler) PostPreferencesEmail(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	email := r.FormValue("email")
+
+	if email != "" {
+		if _, err := mail.ParseAddress(email); err != nil {
+			h.Render(w, r, components.Toast("Invalid email", "Please enter a valid email address", "error"))
+			return
+		}
+	}
+
+	err := h.Client.User.UpdateOneID(u.ID).
+		SetEmail(email).
+		Exec(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to update user email", "error", err)
+		h.Render(w, r, components.Toast("Error", "Failed to save email address", "error"))
+		return
+	}
+
+	h.Render(w, r, components.Toast("Saved", "Email address updated", "success"))
+}
+
+// Governing: SPEC-0015 REQ "Preferences UI — Email Address and Notification Status"
+func (h *Handler) PostTestNotification(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	if h.Notifier == nil {
+		h.Render(w, r, components.Toast("Error", "Notification service is not available", "error"))
+		return
+	}
+
+	if err := h.Notifier.SendTest(r.Context(), u); err != nil {
+		h.Logger.Error("failed to send test notification", "error", err)
+		h.Render(w, r, components.Toast("Error", "Failed to send test email: "+err.Error(), "error"))
+		return
+	}
+
+	h.Render(w, r, components.Toast("Sent", "Test notification sent to "+u.Email, "success"))
 }
 
 func (h *Handler) PreferencesProviders(w http.ResponseWriter, r *http.Request) {
