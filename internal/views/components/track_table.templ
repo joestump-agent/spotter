@@ -458,6 +458,10 @@ templ TrackTableRowRender(row TrackTableRow, initialColumns []string, index int)
 							<span class="icon-[heroicons--question-mark-circle] w-4 h-4 text-base-content/30"></span>
 						</div>
 					}
+					// Lidarr Status (links to artist page in Lidarr)
+					if row.LidarrStatus() != "" {
+						@LidarrStatus(row.LidarrStatus(), row.LidarrArtistURL())
+					}
 				</div>
 			</div>
 		</td>
@@ -488,10 +492,6 @@ templ TrackTableRowRender(row TrackTableRow, initialColumns []string, index int)
 						<div class="tooltip" data-tip="Not yet matched">
 							<span class="icon-[heroicons--question-mark-circle] w-4 h-4 text-base-content/30"></span>
 						</div>
-					}
-					// Lidarr Status (album-level, links to Lidarr album page)
-					if row.LidarrStatus() != "" {
-						@LidarrStatus(row.LidarrStatus(), row.LidarrArtistURL())
 					}
 				</div>
 			</div>
