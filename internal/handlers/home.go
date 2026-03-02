@@ -13,8 +13,9 @@ import (
 	"spotter/ent"
 	"spotter/ent/album"
 	"spotter/ent/artist"
-
 	"spotter/ent/listen"
+	"spotter/ent/playlist"
+	"spotter/ent/playlisttrack"
 	"spotter/ent/track"
 	"spotter/ent/user"
 	"spotter/internal/views/home"
@@ -80,6 +81,33 @@ func (h *Handler) getHomeStats(ctx context.Context, u *ent.User) (*home.HomeStat
 		albumSet[l.AlbumName] = true
 		trackSet[l.TrackName+"||"+l.ArtistName] = true
 		artistCounts[l.ArtistName]++
+	}
+
+	// Supplement global stats with playlist track data so users who have
+	// playlists but few listening history records see meaningful numbers.
+	playlistTracks, ptErr := h.Client.PlaylistTrack.Query().
+		Where(
+			playlisttrack.HasPlaylistWith(
+				playlist.HasUserWith(user.ID(u.ID)),
+			),
+		).
+		All(ctx)
+	if ptErr != nil {
+		h.Logger.Warn("failed to get playlist tracks for home stats", "error", ptErr)
+		playlistTracks = nil
+	}
+	for _, pt := range playlistTracks {
+		if pt.ArtistName != "" {
+			artistSet[pt.ArtistName] = true
+			// Only count toward top artists if not already in listens
+			// (listen-based counts remain the sort key)
+		}
+		if pt.AlbumName != "" {
+			albumSet[pt.AlbumName] = true
+		}
+		if pt.TrackName != "" && pt.ArtistName != "" {
+			trackSet[pt.TrackName+"||"+pt.ArtistName] = true
+		}
 	}
 
 	stats.UniqueArtists = len(artistSet)

@@ -106,9 +106,9 @@ templ Index(cfg *config.Config, stats *HomeStats) {
 			<!-- Main Stats HUD -->
 			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
 				@components.StatCardLink("Total Listens", components.FormatNumber(stats.TotalListens), "across all providers", "icon-[heroicons--play-circle]", "text-primary", "/recent")
-				@components.StatCardLink("Unique Artists", components.FormatNumber(stats.UniqueArtists), "you've listened to", "icon-[heroicons--user-group]", "text-secondary", "/library/artists")
-				@components.StatCardLink("Unique Albums", components.FormatNumber(stats.UniqueAlbums), "in your history", "icon-[heroicons--square-3-stack-3d]", "text-accent", "/library/albums")
-				@components.StatCardLink("Unique Tracks", components.FormatNumber(stats.UniqueTracks), "played", "icon-[heroicons--musical-note]", "text-info", "/library/tracks")
+				@components.StatCardLink("Unique Artists", components.FormatNumber(stats.UniqueArtists), "in listens & playlists", "icon-[heroicons--user-group]", "text-secondary", "/library/artists")
+				@components.StatCardLink("Unique Albums", components.FormatNumber(stats.UniqueAlbums), "in listens & playlists", "icon-[heroicons--square-3-stack-3d]", "text-accent", "/library/albums")
+				@components.StatCardLink("Unique Tracks", components.FormatNumber(stats.UniqueTracks), "in listens & playlists", "icon-[heroicons--musical-note]", "text-info", "/library/tracks")
 			</div>
 			<!-- Provider Stats Grid -->
 			<h3 class="text-xl font-bold mb-4 flex items-center gap-2">
