@@ -41,7 +41,8 @@ templ TagInput(cfg TagInputConfig) {
 			x-model="tagsString"
 		/>
 		<!-- Tag display and input area -->
-		<div class="input input-bordered flex flex-wrap items-center gap-1 h-auto min-h-12 py-2 px-3 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary">
+		<!-- Note: intentionally NOT using DaisyUI .input class — it conflicts with .mockup-browser-toolbar .input pseudo-elements -->
+		<div class="border border-base-content/20 rounded-lg bg-base-100 flex flex-wrap items-center gap-1 h-auto min-h-12 py-2 px-3 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary">
 			<!-- Selected tags -->
 			<template x-for="(tag, index) in tags" :key="index">
 				<span class="badge badge-primary gap-1">

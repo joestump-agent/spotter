@@ -8,7 +8,11 @@
     "default_mode": "per-epic",
     "project_ids": {
       "unified-tag-taxonomy": "PVT_kwHNkyPOAUGxRQ",
-      "sync-failure-email-notifications": "PVT_kwHNkyPOAUHavA"
+      "sync-failure-email-notifications": "PVT_kwHNkyPOAUHavA",
+      "dry-handler-consolidation": "PVT_kwHNkyPOAUJMjA",
+      "test-coverage-critical": "PVT_kwHNkyPOAUJM1Q",
+      "architecture-documentation": "PVT_kwHNkyPOAUJM7Q",
+      "dead-code-cleanup": "PVT_kwHNkyPOAUJNBQ"
     },
     "views": [
       "All Work",

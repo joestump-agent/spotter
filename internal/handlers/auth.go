@@ -14,6 +14,7 @@ import (
 
 	"spotter/ent"
 	"spotter/ent/user"
+	"spotter/internal/vibes"
 	"spotter/internal/views/auth"
 )
 
@@ -82,6 +83,12 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 			h.Logger.Error("Failed to create navidrome auth", "error", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
+		}
+
+		// Seed built-in starter DJ personas for the new user
+		if err := vibes.SeedDefaultDJs(r.Context(), h.Client, u); err != nil {
+			// Non-fatal: log and continue; the user can create DJs manually
+			h.Logger.Error("failed to seed default DJs", "user", username, "error", err)
 		}
 	} else {
 		// Update
