@@ -28,7 +28,10 @@ import (
 const testJWTSecret = "test-jwt-secret-at-least-32-chars"
 
 func setupTestDB(t *testing.T) *ent.Client {
-	client, err := ent.Open("sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	// Use a unique DB name per test to prevent cross-test SQLite write-lock races
+	// when background goroutines (e.g. the syncer) outlive a test's cleanup.
+	dbName := strings.NewReplacer("/", "_", " ", "_", "=", "_").Replace(t.Name())
+	client, err := ent.Open("sqlite3", "file:"+dbName+"?mode=memory&cache=shared&_fk=1")
 	require.NoError(t, err)
 	require.NoError(t, client.Schema.Create(context.Background()))
 	t.Cleanup(func() {

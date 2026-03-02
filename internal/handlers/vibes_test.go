@@ -28,7 +28,9 @@ import (
 )
 
 func setupVibesHandler(t *testing.T) (*ent.Client, *handlers.Handler, *events.Bus) {
-	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	// Use a unique DB name per test to prevent cross-test SQLite write-lock races.
+	dbName := strings.NewReplacer("/", "_", " ", "_", "=", "_").Replace(t.Name())
+	client := enttest.Open(t, "sqlite3", "file:"+dbName+"?mode=memory&cache=shared&_fk=1")
 	t.Cleanup(func() { client.Close() })
 
 	cfg := &config.Config{
