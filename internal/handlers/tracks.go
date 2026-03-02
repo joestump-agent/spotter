@@ -27,9 +27,8 @@ var trackSortFields = map[string]string{
 }
 
 func (h *Handler) TrackShow(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -77,9 +76,8 @@ func (h *Handler) TrackShow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) TrackChart(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -234,9 +232,8 @@ func (h *Handler) getTrackStats(ctx context.Context, userID int, t *ent.Track, t
 
 // TrackIndex shows all tracks for the user
 func (h *Handler) TrackIndex(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -322,9 +319,8 @@ func (h *Handler) TrackIndex(w http.ResponseWriter, r *http.Request) {
 
 // TrackRegenerateAI regenerates AI content for a specific track
 func (h *Handler) TrackRegenerateAI(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

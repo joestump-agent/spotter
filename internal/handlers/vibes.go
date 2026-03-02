@@ -27,9 +27,8 @@ func (h *Handler) VibesRedirect(w http.ResponseWriter, r *http.Request) {
 
 // DJsIndex shows the list of DJs
 func (h *Handler) DJsIndex(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -49,9 +48,8 @@ func (h *Handler) DJsIndex(w http.ResponseWriter, r *http.Request) {
 
 // DJShow shows a single DJ
 func (h *Handler) DJShow(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -79,9 +77,8 @@ func (h *Handler) DJShow(w http.ResponseWriter, r *http.Request) {
 
 // CreateDJ creates a new DJ
 func (h *Handler) CreateDJ(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -134,9 +131,8 @@ func (h *Handler) CreateDJ(w http.ResponseWriter, r *http.Request) {
 
 // UpdateDJ updates an existing DJ
 func (h *Handler) UpdateDJ(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -146,9 +142,7 @@ func (h *Handler) UpdateDJ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	d, err := h.Client.DJ.Query().
-		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	d, err := h.GetDJForUser(r.Context(), djID, u.ID)
 	if err != nil {
 		http.Error(w, "DJ not found", http.StatusNotFound)
 		return
@@ -202,9 +196,8 @@ func (h *Handler) UpdateDJ(w http.ResponseWriter, r *http.Request) {
 
 // DeleteDJ deletes a DJ
 func (h *Handler) DeleteDJ(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -214,9 +207,7 @@ func (h *Handler) DeleteDJ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	_, err := h.Client.DJ.Query().
-		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	_, err := h.GetDJForUser(r.Context(), djID, u.ID)
 	if err != nil {
 		http.Error(w, "DJ not found", http.StatusNotFound)
 		return
@@ -234,9 +225,8 @@ func (h *Handler) DeleteDJ(w http.ResponseWriter, r *http.Request) {
 
 // MixtapesIndex shows the list of Mixtapes
 func (h *Handler) MixtapesIndex(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -293,9 +283,8 @@ func (h *Handler) MixtapesIndex(w http.ResponseWriter, r *http.Request) {
 
 // CreateMixtape creates a new Mixtape
 func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -332,9 +321,7 @@ func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify DJ ownership
-	d, err := h.Client.DJ.Query().
-		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	d, err := h.GetDJForUser(r.Context(), djID, u.ID)
 	if err != nil {
 		http.Error(w, "DJ not found", http.StatusNotFound)
 		return
@@ -377,9 +364,8 @@ func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMixtape updates an existing Mixtape
 func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -389,9 +375,7 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	m, err := h.Client.Mixtape.Query().
-		Where(mixtape.ID(mixtapeID), mixtape.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	m, err := h.GetMixtapeForUser(r.Context(), mixtapeID, u.ID)
 	if err != nil {
 		http.Error(w, "Mixtape not found", http.StatusNotFound)
 		return
@@ -430,9 +414,7 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify DJ ownership
-	d, err := h.Client.DJ.Query().
-		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	d, err := h.GetDJForUser(r.Context(), djID, u.ID)
 	if err != nil {
 		http.Error(w, "DJ not found", http.StatusNotFound)
 		return
@@ -474,9 +456,8 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMixtape deletes a Mixtape
 func (h *Handler) DeleteMixtape(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -486,9 +467,7 @@ func (h *Handler) DeleteMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	m, err := h.Client.Mixtape.Query().
-		Where(mixtape.ID(mixtapeID), mixtape.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	m, err := h.GetMixtapeForUser(r.Context(), mixtapeID, u.ID)
 	if err != nil {
 		http.Error(w, "Mixtape not found", http.StatusNotFound)
 		return
@@ -515,9 +494,8 @@ func (h *Handler) DeleteMixtape(w http.ResponseWriter, r *http.Request) {
 
 // ToggleMixtapeSync toggles the sync_to_navidrome flag for a Mixtape
 func (h *Handler) ToggleMixtapeSync(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -527,9 +505,7 @@ func (h *Handler) ToggleMixtapeSync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	m, err := h.Client.Mixtape.Query().
-		Where(mixtape.ID(mixtapeID), mixtape.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	m, err := h.GetMixtapeForUser(r.Context(), mixtapeID, u.ID)
 	if err != nil {
 		http.Error(w, "Mixtape not found", http.StatusNotFound)
 		return
@@ -550,9 +526,8 @@ func (h *Handler) ToggleMixtapeSync(w http.ResponseWriter, r *http.Request) {
 
 // GenerateMixtape generates tracks for a mixtape using the AI-powered vibes engine
 func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -725,9 +700,8 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 
 // MixtapeShow shows a single Mixtape
 func (h *Handler) MixtapeShow(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -809,9 +783,8 @@ func (h *Handler) MixtapeShow(w http.ResponseWriter, r *http.Request) {
 
 // GenreSuggestions returns genre suggestions based on user's library
 func (h *Handler) GenreSuggestions(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -873,9 +846,8 @@ func (h *Handler) GenreSuggestions(w http.ResponseWriter, r *http.Request) {
 
 // ArtistSuggestions returns artist suggestions based on user's library
 func (h *Handler) ArtistSuggestions(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

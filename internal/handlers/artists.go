@@ -35,9 +35,8 @@ const (
 )
 
 func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -122,9 +121,8 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ArtistChart(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -480,9 +478,8 @@ func capitalizeFirst(s string) string {
 
 // ArtistIndex shows all artists for the user
 func (h *Handler) ArtistIndex(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -529,9 +526,8 @@ func (h *Handler) ArtistIndex(w http.ResponseWriter, r *http.Request) {
 
 // ArtistRegenerateAI regenerates AI content for a specific artist
 func (h *Handler) ArtistRegenerateAI(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -644,9 +640,8 @@ func (h *Handler) getAIEnricher(ctx context.Context, u *ent.User) ([]enrichers.E
 // ArtistFindSimilar finds similar artists for the given artist using AI.
 // Governing: SPEC similar-artists-discovery REQ-SIM-070 through REQ-SIM-081 (handler integration, event bus)
 func (h *Handler) ArtistFindSimilar(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -703,9 +698,8 @@ func (h *Handler) ArtistFindSimilar(w http.ResponseWriter, r *http.Request) {
 
 // ArtistCreateMixtape creates a mixtape seeded with the given artist.
 func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -738,9 +732,7 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify DJ ownership
-	d, err := h.Client.DJ.Query().
-		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	d, err := h.GetDJForUser(r.Context(), djID, u.ID)
 	if err != nil {
 		http.Error(w, "DJ not found", http.StatusNotFound)
 		return
@@ -865,9 +857,8 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 
 // ArtistMixtapeModal returns the HTML for the create mixtape modal (for HTMX).
 func (h *Handler) ArtistMixtapeModal(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

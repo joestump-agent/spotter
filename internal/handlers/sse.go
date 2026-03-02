@@ -16,9 +16,8 @@ import (
 // Governing: SPEC event-bus-sse REQ-SSE-003 (http.Flusher check, 500 if unsupported)
 // Governing: SPEC event-bus-sse REQ-SSE-004 (context cancellation for client disconnect)
 func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

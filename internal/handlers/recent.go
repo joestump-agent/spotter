@@ -25,9 +25,8 @@ var listenSortFields = map[string]string{
 }
 
 func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -121,9 +120,8 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) RefreshRecentListens(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 

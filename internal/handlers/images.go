@@ -18,9 +18,8 @@ import (
 
 // ArtistImage serves the primary image for an artist
 func (h *Handler) ArtistImage(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -87,9 +86,8 @@ func (h *Handler) ArtistImage(w http.ResponseWriter, r *http.Request) {
 
 // AlbumImage serves the primary image for an album
 func (h *Handler) AlbumImage(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -148,9 +146,8 @@ func (h *Handler) AlbumImage(w http.ResponseWriter, r *http.Request) {
 
 // PlaylistImage serves the image for a playlist
 func (h *Handler) PlaylistImage(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
