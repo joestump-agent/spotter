@@ -17,8 +17,6 @@ import (
 	"spotter/internal/events"
 	"spotter/internal/views/components"
 	"spotter/internal/views/tracks"
-
-	"github.com/go-chi/chi/v5"
 )
 
 // trackSortFields maps URL sort params to ent field selectors
@@ -34,9 +32,8 @@ func (h *Handler) TrackShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trackID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid track ID", http.StatusBadRequest)
+	trackID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -84,9 +81,8 @@ func (h *Handler) TrackChart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trackID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid track ID", http.StatusBadRequest)
+	trackID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -251,14 +247,6 @@ func (h *Handler) TrackIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get page number from query
-	page := 1
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
 	// Get artist filter from query
 	artistFilter := r.URL.Query().Get("artist")
 
@@ -272,8 +260,7 @@ func (h *Handler) TrackIndex(w http.ResponseWriter, r *http.Request) {
 		sortDir = "asc"
 	}
 
-	pageSize := u.PaginationSize
-	offset := (page - 1) * pageSize
+	pg := h.GetPaginationParams(r, u.PaginationSize)
 
 	// Build query with optional artist filter
 	query := h.Client.Track.Query().
@@ -300,8 +287,8 @@ func (h *Handler) TrackIndex(w http.ResponseWriter, r *http.Request) {
 		WithAlbum(func(q *ent.AlbumQuery) {
 			q.WithImages()
 		}).
-		Limit(pageSize).
-		Offset(offset).
+		Limit(pg.PageSize).
+		Offset(pg.Offset).
 		All(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to query tracks", "error", err)
@@ -325,9 +312,9 @@ func (h *Handler) TrackIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := (total + pageSize - 1) / pageSize
+	pg.WithTotal(total)
 
-	h.Render(w, r, tracks.Index(trackList, page, totalPages, h.Config, artistFilter, sortCol, sortDir))
+	h.Render(w, r, tracks.Index(trackList, pg.Page, pg.TotalPages, h.Config, artistFilter, sortCol, sortDir))
 }
 
 // TrackRegenerateAI regenerates AI content for a specific track
@@ -337,9 +324,8 @@ func (h *Handler) TrackRegenerateAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trackID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid track ID", http.StatusBadRequest)
+	trackID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 

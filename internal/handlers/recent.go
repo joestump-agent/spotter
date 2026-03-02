@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"strconv"
 
 	"spotter/ent"
 	"spotter/ent/listen"
@@ -41,14 +40,6 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get page number from query
-	page := 1
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
 	// Get artist filter from query
 	artistFilter := r.URL.Query().Get("artist")
 
@@ -62,8 +53,7 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 		sortDir = "desc"
 	}
 
-	pageSize := u.PaginationSize
-	offset := (page - 1) * pageSize
+	pg := h.GetPaginationParams(r, u.PaginationSize)
 
 	// Build query with optional artist filter
 	query := h.Client.Listen.Query().
@@ -90,8 +80,8 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 			q.WithImages()
 		}).
 		WithTrack().
-		Limit(pageSize).
-		Offset(offset).
+		Limit(pg.PageSize).
+		Offset(pg.Offset).
 		All(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to fetch recent listens", "error", err)
@@ -115,7 +105,7 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := (total + pageSize - 1) / pageSize
+	pg.WithTotal(total)
 
 	// Convert listens to rows
 	rows := make([]components.TrackTableRow, len(listens))
@@ -126,7 +116,7 @@ func (h *Handler) RecentListens(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.Render(w, r, recent.Index(rows, page, totalPages, h.Config, artistFilter, sortCol, sortDir))
+	h.Render(w, r, recent.Index(rows, pg.Page, pg.TotalPages, h.Config, artistFilter, sortCol, sortDir))
 }
 
 func (h *Handler) RefreshRecentListens(w http.ResponseWriter, r *http.Request) {

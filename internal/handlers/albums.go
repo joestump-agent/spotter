@@ -19,8 +19,6 @@ import (
 	"spotter/internal/vibes"
 	"spotter/internal/views/albums"
 	"spotter/internal/views/components"
-
-	"github.com/go-chi/chi/v5"
 )
 
 const (
@@ -33,9 +31,8 @@ func (h *Handler) AlbumShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	albumID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid album ID", http.StatusBadRequest)
+	albumID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -88,9 +85,8 @@ func (h *Handler) AlbumChart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	albumID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid album ID", http.StatusBadRequest)
+	albumID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -338,19 +334,10 @@ func (h *Handler) AlbumIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get page number from query
-	page := 1
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
 	// Get artist filter from query
 	artistFilter := r.URL.Query().Get("artist")
 
-	pageSize := u.PaginationSize
-	offset := (page - 1) * pageSize
+	pg := h.GetPaginationParams(r, u.PaginationSize)
 
 	// Build query with optional artist filter
 	query := h.Client.Album.Query().
@@ -366,8 +353,8 @@ func (h *Handler) AlbumIndex(w http.ResponseWriter, r *http.Request) {
 		WithImages().
 		Unique(true).
 		Order(ent.Desc(album.FieldUpdatedAt)).
-		Limit(pageSize).
-		Offset(offset).
+		Limit(pg.PageSize).
+		Offset(pg.Offset).
 		All(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to query albums", "error", err)
@@ -391,9 +378,9 @@ func (h *Handler) AlbumIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := (total + pageSize - 1) / pageSize
+	pg.WithTotal(total)
 
-	h.Render(w, r, albums.Index(albumList, page, totalPages, h.Config, artistFilter))
+	h.Render(w, r, albums.Index(albumList, pg.Page, pg.TotalPages, h.Config, artistFilter))
 }
 
 // AlbumRegenerateAI regenerates AI content for a specific album
@@ -403,9 +390,8 @@ func (h *Handler) AlbumRegenerateAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	albumID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid album ID", http.StatusBadRequest)
+	albumID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -490,9 +476,8 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	albumID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid album ID", http.StatusBadRequest)
+	albumID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -650,9 +635,8 @@ func (h *Handler) AlbumMixtapeModal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	albumID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid Album ID", http.StatusBadRequest)
+	albumID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 

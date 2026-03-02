@@ -22,8 +22,6 @@ import (
 	"spotter/internal/vibes"
 	"spotter/internal/views/artists"
 	"spotter/internal/views/components"
-
-	"github.com/go-chi/chi/v5"
 )
 
 const (
@@ -42,9 +40,8 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+	artistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -129,9 +126,8 @@ func (h *Handler) ArtistChart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+	artistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -497,24 +493,15 @@ func (h *Handler) ArtistIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get page number from query
-	page := 1
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := u.PaginationSize
-	offset := (page - 1) * pageSize
+	pg := h.GetPaginationParams(r, u.PaginationSize)
 
 	// Query artists with pagination
 	artistList, err := h.Client.Artist.Query().
 		Where(artist.HasUserWith(user.ID(u.ID))).
 		WithImages().
 		Order(ent.Asc(artist.FieldName)).
-		Limit(pageSize).
-		Offset(offset).
+		Limit(pg.PageSize).
+		Offset(pg.Offset).
 		All(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to query artists", "error", err)
@@ -532,9 +519,9 @@ func (h *Handler) ArtistIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := (total + pageSize - 1) / pageSize
+	pg.WithTotal(total)
 
-	h.Render(w, r, artists.Index(artistList, page, totalPages, h.Config))
+	h.Render(w, r, artists.Index(artistList, pg.Page, pg.TotalPages, h.Config))
 }
 
 // ArtistRegenerateAI regenerates AI content for a specific artist
@@ -544,9 +531,8 @@ func (h *Handler) ArtistRegenerateAI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+	artistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -659,9 +645,8 @@ func (h *Handler) ArtistFindSimilar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+	artistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -718,9 +703,8 @@ func (h *Handler) ArtistCreateMixtape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+	artistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -878,9 +862,8 @@ func (h *Handler) ArtistMixtapeModal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+	artistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
