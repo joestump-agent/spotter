@@ -1,17 +1,24 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+
+	spmixin "spotter/ent/schema/mixin"
 )
 
 // Artist holds the schema definition for the Artist entity.
 type Artist struct {
 	ent.Schema
+}
+
+// Mixin of the Artist.
+func (Artist) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		spmixin.Timestamps{},
+	}
 }
 
 // Fields of the Artist.
@@ -67,12 +74,6 @@ func (Artist) Fields() []ent.Field {
 		field.JSON("genres", []string{}).
 			Optional().
 			Comment("Deprecated: migrated to Tag entity. Genre list from Spotify"),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 		field.Time("last_enriched_at").
 			Optional().
 			Nillable().

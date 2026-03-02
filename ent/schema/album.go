@@ -1,12 +1,12 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+
+	spmixin "spotter/ent/schema/mixin"
 )
 
 // AlbumRecommendation holds metadata about a recommended album.
@@ -22,6 +22,13 @@ type AlbumRecommendation struct {
 // Album holds the schema definition for the Album entity.
 type Album struct {
 	ent.Schema
+}
+
+// Mixin of the Album.
+func (Album) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		spmixin.Timestamps{},
+	}
 }
 
 // Fields of the Album.
@@ -77,12 +84,6 @@ func (Album) Fields() []ent.Field {
 			Optional().
 			MaxLen(255).
 			Comment("Deprecated: migrated to Tag entity. Record label"),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 		field.Time("last_enriched_at").
 			Optional().
 			Comment("When metadata was last enriched"),

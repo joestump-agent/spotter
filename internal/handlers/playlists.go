@@ -22,6 +22,11 @@ import (
 
 const (
 	sourceNavidrome = "navidrome"
+
+	// asyncShortTimeout is used for lightweight background operations.
+	asyncShortTimeout = 2 * time.Minute
+	// asyncDefaultTimeout is the standard timeout for background sync/generation tasks.
+	asyncDefaultTimeout = 5 * time.Minute
 )
 
 func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
@@ -263,7 +268,7 @@ func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 
 			go func() {
 				// Use a new context with timeout since HTTP request context will be cancelled
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				ctx, cancel := context.WithTimeout(context.Background(), asyncDefaultTimeout)
 				defer cancel()
 
 				h.Logger.Debug("starting async playlist sync",
@@ -288,7 +293,7 @@ func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 
 			go func() {
 				// Use a new context with timeout since HTTP request context will be cancelled
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				ctx, cancel := context.WithTimeout(context.Background(), asyncShortTimeout)
 				defer cancel()
 
 				h.Logger.Debug("starting async playlist removal",
@@ -565,7 +570,7 @@ func (h *Handler) ResolveNavidromeConflict(w http.ResponseWriter, r *http.Reques
 
 		if h.PlaylistSyncSvc != nil {
 			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				ctx, cancel := context.WithTimeout(context.Background(), asyncDefaultTimeout)
 				defer cancel()
 				if err := h.PlaylistSyncSvc.PairWithNavidrome(ctx, playlistID, existingID); err != nil {
 					h.Logger.Error("failed to pair playlist with Navidrome",
@@ -598,7 +603,7 @@ func (h *Handler) ResolveNavidromeConflict(w http.ResponseWriter, r *http.Reques
 
 		if h.PlaylistSyncSvc != nil {
 			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				ctx, cancel := context.WithTimeout(context.Background(), asyncDefaultTimeout)
 				defer cancel()
 				if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, playlistID); err != nil {
 					h.Logger.Error("failed to sync playlist after name resolution",
@@ -691,7 +696,7 @@ func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
 	// Trigger sync (async)
 	if h.PlaylistSyncSvc != nil {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), asyncDefaultTimeout)
 			defer cancel()
 
 			h.Logger.Debug("starting async playlist sync",
@@ -786,7 +791,7 @@ func (h *Handler) RebuildPlaylistSync(w http.ResponseWriter, r *http.Request) {
 	// Trigger rebuild (async)
 	if h.PlaylistSyncSvc != nil {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), asyncDefaultTimeout)
 			defer cancel()
 
 			h.Logger.Debug("starting async playlist rebuild",
