@@ -32,9 +32,8 @@ func (h *Handler) PreferencesRedirect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) PreferencesAppearance(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -42,9 +41,8 @@ func (h *Handler) PreferencesAppearance(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) PostPreferencesAppearance(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -87,9 +85,8 @@ func (h *Handler) PostPreferencesAppearance(w http.ResponseWriter, r *http.Reque
 
 // Governing: SPEC-0015 REQ "User Email Address", REQ "Preferences UI — Email Address and Notification Status"
 func (h *Handler) PreferencesAccount(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -99,9 +96,8 @@ func (h *Handler) PreferencesAccount(w http.ResponseWriter, r *http.Request) {
 
 // Governing: SPEC-0015 REQ "User Email Address"
 func (h *Handler) PostPreferencesEmail(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -128,9 +124,8 @@ func (h *Handler) PostPreferencesEmail(w http.ResponseWriter, r *http.Request) {
 
 // Governing: SPEC-0015 REQ "Preferences UI — Email Address and Notification Status"
 func (h *Handler) PostTestNotification(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -149,9 +144,8 @@ func (h *Handler) PostTestNotification(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) PreferencesProviders(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -172,9 +166,8 @@ func (h *Handler) PreferencesProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DisconnectSpotify(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -201,9 +194,8 @@ func (h *Handler) DisconnectSpotify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DisconnectLastFM(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -233,9 +225,8 @@ func (h *Handler) DisconnectLastFM(w http.ResponseWriter, r *http.Request) {
 // Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 // Governing: SPEC listen-playlist-sync REQ-SYNC-050 (on-demand sync via HTTP), REQ-SYNC-051 (returns immediately, sync in background)
 func (h *Handler) SyncNavidrome(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -282,9 +273,8 @@ func (h *Handler) SyncNavidrome(w http.ResponseWriter, r *http.Request) {
 
 // RebuildNavidrome deletes all Navidrome data and re-syncs
 func (h *Handler) RebuildNavidrome(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -370,9 +360,8 @@ func (h *Handler) RebuildNavidrome(w http.ResponseWriter, r *http.Request) {
 // SyncSpotify triggers a sync for Spotify data
 // Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 func (h *Handler) SyncSpotify(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -419,9 +408,8 @@ func (h *Handler) SyncSpotify(w http.ResponseWriter, r *http.Request) {
 
 // RebuildSpotify deletes all Spotify data and re-syncs
 func (h *Handler) RebuildSpotify(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -507,9 +495,8 @@ func (h *Handler) RebuildSpotify(w http.ResponseWriter, r *http.Request) {
 // SyncLastFM triggers a sync for Last.fm data
 // Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 func (h *Handler) SyncLastFM(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -556,9 +543,8 @@ func (h *Handler) SyncLastFM(w http.ResponseWriter, r *http.Request) {
 
 // RebuildLastFM deletes all Last.fm data and re-syncs
 func (h *Handler) RebuildLastFM(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -630,9 +616,8 @@ func (h *Handler) RebuildLastFM(w http.ResponseWriter, r *http.Request) {
 
 // PreferencesTasks shows the tasks management page with event history
 func (h *Handler) PreferencesTasks(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -858,9 +843,8 @@ func (h *Handler) getTasksWithLastRun(ctx context.Context, u *ent.User) []types.
 // Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 // Governing: SPEC listen-playlist-sync REQ-SYNC-050 (on-demand sync via HTTP), REQ-SYNC-051 (returns immediately, sync in background)
 func (h *Handler) TaskSyncListens(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -909,9 +893,8 @@ func (h *Handler) TaskSyncListens(w http.ResponseWriter, r *http.Request) {
 // TaskSyncPlaylists triggers a sync of all playlists
 // Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 func (h *Handler) TaskSyncPlaylists(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -958,9 +941,8 @@ func (h *Handler) TaskSyncPlaylists(w http.ResponseWriter, r *http.Request) {
 
 // TaskEnrichMetadata triggers metadata enrichment
 func (h *Handler) TaskEnrichMetadata(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -1012,9 +994,8 @@ func (h *Handler) TaskEnrichMetadata(w http.ResponseWriter, r *http.Request) {
 
 // TaskSyncArtistImages triggers a sync of all artist images
 func (h *Handler) TaskSyncArtistImages(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -1059,9 +1040,8 @@ func (h *Handler) TaskSyncArtistImages(w http.ResponseWriter, r *http.Request) {
 
 // TaskSyncAlbumImages triggers a sync of all album images
 func (h *Handler) TaskSyncAlbumImages(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -1106,9 +1086,8 @@ func (h *Handler) TaskSyncAlbumImages(w http.ResponseWriter, r *http.Request) {
 
 // TaskResetData deletes all user data and re-syncs
 func (h *Handler) TaskResetData(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -1254,9 +1233,8 @@ func (h *Handler) TaskResetData(w http.ResponseWriter, r *http.Request) {
 
 // TaskCleanup runs cleanup tasks (delete old events, etc.)
 func (h *Handler) TaskCleanup(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 

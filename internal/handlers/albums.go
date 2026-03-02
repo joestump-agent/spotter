@@ -28,9 +28,8 @@ const (
 )
 
 func (h *Handler) AlbumShow(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -84,9 +83,8 @@ func (h *Handler) AlbumShow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AlbumChart(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -325,9 +323,8 @@ func (h *Handler) getAlbumTracksWithListens(ctx context.Context, userID int, a *
 
 // AlbumIndex shows all albums for the user
 func (h *Handler) AlbumIndex(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -401,9 +398,8 @@ func (h *Handler) AlbumIndex(w http.ResponseWriter, r *http.Request) {
 
 // AlbumRegenerateAI regenerates AI content for a specific album
 func (h *Handler) AlbumRegenerateAI(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -489,9 +485,8 @@ func (h *Handler) AlbumRegenerateAI(w http.ResponseWriter, r *http.Request) {
 
 // AlbumCreateMixtape handles the creation of a mixtape from an album.
 func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -525,9 +520,7 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify DJ ownership
-	d, err := h.Client.DJ.Query().
-		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	d, err := h.GetDJForUser(r.Context(), djID, u.ID)
 	if err != nil {
 		http.Error(w, "DJ not found", http.StatusNotFound)
 		return
@@ -652,9 +645,8 @@ func (h *Handler) AlbumCreateMixtape(w http.ResponseWriter, r *http.Request) {
 
 // AlbumMixtapeModal returns the content for the create mixtape modal.
 func (h *Handler) AlbumMixtapeModal(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

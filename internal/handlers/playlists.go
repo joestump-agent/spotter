@@ -28,9 +28,8 @@ const (
 )
 
 func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -113,9 +112,8 @@ func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) PlaylistShow(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUserRedirect(w, r)
 	if u == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
 
@@ -126,12 +124,7 @@ func (h *Handler) PlaylistShow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the playlist
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		h.Logger.Error("failed to get playlist", "error", err, "id", playlistID)
 		http.Error(w, "Playlist not found", http.StatusNotFound)
@@ -200,9 +193,8 @@ func (h *Handler) playlistTracksToRows(tracks []*ent.PlaylistTrack) []components
 
 // TogglePlaylistSync toggles the Navidrome sync status of a playlist
 func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -218,12 +210,7 @@ func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 		"username", u.Username)
 
 	// Verify ownership and get current state
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		h.Logger.Error("failed to get playlist for toggle sync",
 			"playlist_id", playlistID,
@@ -345,9 +332,8 @@ func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 // DebugPlaylistSync performs a synchronous playlist sync and returns detailed results as JSON
 // This is useful for debugging sync issues without relying on async/UI feedback
 func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -363,12 +349,7 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 		"username", u.Username)
 
 	// Verify ownership
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		h.Logger.Error("failed to get playlist for debug sync",
 			"playlist_id", playlistID,
@@ -447,9 +428,8 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 // GetPlaylistSyncProgress returns the sync progress bar component for HTMX polling.
 // GET /playlists/{id}/sync-progress
 func (h *Handler) GetPlaylistSyncProgress(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -460,12 +440,7 @@ func (h *Handler) GetPlaylistSyncProgress(w http.ResponseWriter, r *http.Request
 	}
 
 	// Verify ownership and get current state
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		http.Error(w, "Playlist not found", http.StatusNotFound)
 		return
@@ -492,9 +467,8 @@ func (h *Handler) GetPlaylistSyncProgress(w http.ResponseWriter, r *http.Request
 
 // GetPlaylistSyncStatus returns the current sync status for a playlist as JSON
 func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -505,12 +479,7 @@ func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Verify ownership and get current state
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Playlist not found"})
 		return
@@ -562,9 +531,8 @@ func (h *Handler) findNavidromeConflict(ctx context.Context, pl *ent.Playlist, u
 // POST /playlists/{id}/resolve-navidrome-conflict
 // Governing: SPEC-0015 REQ playlist-pairing
 func (h *Handler) ResolveNavidromeConflict(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -582,12 +550,7 @@ func (h *Handler) ResolveNavidromeConflict(w http.ResponseWriter, r *http.Reques
 	action := r.FormValue("action")
 
 	// Verify ownership
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		h.Logger.Error("failed to get playlist for conflict resolution",
 			"playlist_id", playlistID,
@@ -694,9 +657,8 @@ func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -712,12 +674,7 @@ func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
 		"username", u.Username)
 
 	// Verify ownership and get current state
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		h.Logger.Error("failed to get playlist for sync",
 			"playlist_id", playlistID,
@@ -813,9 +770,8 @@ func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) RebuildPlaylistSync(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -831,12 +787,7 @@ func (h *Handler) RebuildPlaylistSync(w http.ResponseWriter, r *http.Request) {
 		"username", u.Username)
 
 	// Verify ownership and get current state
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		h.Logger.Error("failed to get playlist for rebuild",
 			"playlist_id", playlistID,
@@ -927,9 +878,8 @@ func (h *Handler) renderPlaylistSyncDropdown(w http.ResponseWriter, r *http.Requ
 
 // PlaylistGenerateMetadata generates AI title and description for a playlist
 func (h *Handler) PlaylistGenerateMetadata(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -940,12 +890,7 @@ func (h *Handler) PlaylistGenerateMetadata(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Verify ownership
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		http.Error(w, "Playlist not found", http.StatusNotFound)
 		return
@@ -965,9 +910,8 @@ func (h *Handler) PlaylistGenerateMetadata(w http.ResponseWriter, r *http.Reques
 
 // PlaylistGenerateArtwork generates AI album art for a playlist
 func (h *Handler) PlaylistGenerateArtwork(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -978,12 +922,7 @@ func (h *Handler) PlaylistGenerateArtwork(w http.ResponseWriter, r *http.Request
 	}
 
 	// Verify ownership
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		http.Error(w, "Playlist not found", http.StatusNotFound)
 		return
@@ -1003,9 +942,8 @@ func (h *Handler) PlaylistGenerateArtwork(w http.ResponseWriter, r *http.Request
 
 // EnhanceVibesModal returns the modal content for enhancing a playlist with DJ vibes.
 func (h *Handler) EnhanceVibesModal(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -1016,12 +954,7 @@ func (h *Handler) EnhanceVibesModal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership and get playlist
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		http.Error(w, "Playlist not found", http.StatusNotFound)
 		return
@@ -1049,9 +982,8 @@ func (h *Handler) EnhanceVibesModal(w http.ResponseWriter, r *http.Request) {
 
 // EnhanceVibes enhances a playlist using a DJ persona.
 func (h *Handler) EnhanceVibes(w http.ResponseWriter, r *http.Request) {
-	u := h.GetUser(r.Context())
+	u := h.RequireUser(w, r)
 	if u == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -1062,12 +994,7 @@ func (h *Handler) EnhanceVibes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership
-	pl, err := h.Client.Playlist.Query().
-		Where(
-			playlist.ID(playlistID),
-			playlist.HasUserWith(user.ID(u.ID)),
-		).
-		Only(r.Context())
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
 	if err != nil {
 		http.Error(w, "Playlist not found", http.StatusNotFound)
 		return
@@ -1085,9 +1012,7 @@ func (h *Handler) EnhanceVibes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify DJ ownership
-	d, err := h.Client.DJ.Query().
-		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
-		Only(r.Context())
+	d, err := h.GetDJForUser(r.Context(), djID, u.ID)
 	if err != nil {
 		http.Error(w, "DJ not found", http.StatusNotFound)
 		return
