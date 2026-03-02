@@ -91,6 +91,9 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 			h.Logger.Error("failed to seed default DJs", "user", username, "error", err)
 		}
 	} else {
+		// Store the existing NavidromeAuth before updating user (edges are lost after Save)
+		existingNavidromeAuth := u.Edges.NavidromeAuth
+
 		// Update
 		u, err = u.Update().
 			SetLastLoginAt(time.Now()).
@@ -100,9 +103,6 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-
-		// Store the existing NavidromeAuth before updating user (edges are lost after Save)
-		existingNavidromeAuth := u.Edges.NavidromeAuth
 
 		// Update Navidrome Auth
 		if existingNavidromeAuth != nil {
