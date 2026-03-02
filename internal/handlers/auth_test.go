@@ -277,6 +277,71 @@ func TestPostLogin_Regression_HTMXRedirect(t *testing.T) {
 	}
 }
 
+// TestPostLogin_Regression_PasswordUpdatedOnRelogin verifies that when an existing
+// user logs in (e.g. after a password reset), the stored NavidromeAuth password is
+// updated to the new value.
+//
+// Regression: the original code captured u.Edges.NavidromeAuth after u.Update().Save(),
+// which returns a fresh entity with no edges loaded. This caused existingNavidromeAuth
+// to always be nil, silently skipping the password update. Users who reset their
+// Navidrome password could still log in (auth calls Navidrome directly) but all
+// subsequent syncs would fail because the stale encrypted credential was used.
+func TestPostLogin_Regression_PasswordUpdatedOnRelogin(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"subsonic-response": map[string]interface{}{"status": "ok"},
+		})
+	}))
+	defer ts.Close()
+
+	client := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	jwtManager := auth.NewJWTManager(testJWTSecret)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
+
+	ctx := context.Background()
+
+	// Pre-create the user with the old password, simulating a prior login.
+	existingUser, err := client.User.Create().
+		SetUsername("testuser").
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.NavidromeAuth.Create().
+		SetUser(existingUser).
+		SetPassword("oldpassword").
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Log in with the new password (e.g. after a Navidrome password reset).
+	form := url.Values{}
+	form.Set("username", "testuser")
+	form.Set("password", "newpassword")
+	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+
+	h.PostLogin(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+
+	// The stored credential must reflect the new password so that sync works.
+	u, err := client.User.Query().
+		Where(user.Username("testuser")).
+		WithNavidromeAuth().
+		Only(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, u.Edges.NavidromeAuth, "NavidromeAuth edge must be present")
+	assert.Equal(t, "newpassword", u.Edges.NavidromeAuth.Password,
+		"stored password must be updated on login; stale credential breaks sync after a password reset")
+}
+
 func TestPostLogin_SecureCookieFlag(t *testing.T) {
 	// Test that Secure flag is set based on config
 
