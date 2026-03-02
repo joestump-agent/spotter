@@ -154,26 +154,9 @@ func (h *Handler) ArtistChart(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getArtistStats(ctx context.Context, userID int, artistName string, timeframe string) *artists.ArtistStats {
 	stats := &artists.ArtistStats{
-		ListensByHour:      make([]components.ChartDataPoint, 24),
-		ListensByDayOfWeek: make([]components.ChartDataPoint, 7),
-		ListensByMonth:     make([]components.ChartDataPoint, 12),
-	}
-
-	// Initialize hour labels
-	for i := 0; i < 24; i++ {
-		stats.ListensByHour[i] = components.ChartDataPoint{Label: strconv.Itoa(i), Value: 0}
-	}
-
-	// Initialize day labels
-	days := []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
-	for i, day := range days {
-		stats.ListensByDayOfWeek[i] = components.ChartDataPoint{Label: day, Value: 0}
-	}
-
-	// Initialize month labels
-	months := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
-	for i, month := range months {
-		stats.ListensByMonth[i] = components.ChartDataPoint{Label: month, Value: 0}
+		ListensByHour:      components.InitializeHourlyStats(),
+		ListensByDayOfWeek: components.InitializeDailyStats(),
+		ListensByMonth:     components.InitializeMonthlyStats(),
 	}
 
 	// Get all listens for this artist
