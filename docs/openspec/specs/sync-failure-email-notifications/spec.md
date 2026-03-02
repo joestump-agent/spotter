@@ -1,5 +1,10 @@
 # SPEC-0015: Sync Failure Email Notifications
 
+**Status:** accepted
+**Version:** 0.1.0
+**Last Updated:** 2026-03-02
+**Governing ADRs:** ADR-0026 (sync failure email notifications with 7-day cooldown)
+
 ## Overview
 
 When a provider sync fails fatally (invalid credentials, revoked OAuth token, unreachable
@@ -214,3 +219,15 @@ The Account Preferences page MUST provide:
 
 - **WHEN** the user clicks "Test notification" and SMTP send fails
 - **THEN** an error toast is shown with the failure reason (sanitised), and the error is logged
+
+---
+
+## Implementation Notes
+
+| Requirement | Implementing File(s) | Notes |
+|---|---|---|
+| Notification Trigger, Cooldown Persistence | `internal/services/notification.go` | NotificationService, cooldown management |
+| Cooldown Persistence, Notification Trigger | `internal/services/backoff_manager.go` | BackoffManager, tier transitions |
+| Cooldown Reset on Recovery | `internal/handlers/auth.go` | ClearCooldown call on login (Navidrome provider) |
+| SMTP Configuration, Email Content | `internal/mailer/` | Email templates and SMTP sending |
+| User Email Address, Preferences UI | `internal/views/`, `internal/handlers/` | Preferences page email input and SMTP status |
