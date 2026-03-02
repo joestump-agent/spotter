@@ -165,13 +165,13 @@ templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *confi
 						{Label: "Sync Status", Value: formatSyncStatusField(playlist)},
 						{Label: "Navidrome Playlist ID", Value: showGetOrDefault(playlist.NavidromePlaylistID, "N/A")},
 						{Label: "External URL", Value: showGetOrDefault(playlist.ExternalURL, "N/A"), Link: playlist.ExternalURL},
-					// Governing: SPEC-0015 REQ playlist-pairing — Navidrome deep link when paired
-					{Label: "Navidrome Link", Value: func() string {
-						if playlist.NavidromePlaylistID != "" {
-							return "Open in Navidrome"
-						}
-						return "N/A"
-					}(), Link: navidromeDeepLink(cfg.Navidrome.BaseURL, playlist.NavidromePlaylistID)},
+						// Governing: SPEC-0015 REQ playlist-pairing — Navidrome deep link when paired
+						{Label: "Navidrome Link", Value: func() string {
+							if playlist.NavidromePlaylistID != "" {
+								return "Open in Navidrome"
+							}
+							return "N/A"
+						}(), Link: navidromeDeepLink(cfg.Navidrome.BaseURL, playlist.NavidromePlaylistID)},
 						{Label: "Created", Value: showFormatDate(playlist.CreatedAt)},
 						{Label: "Updated", Value: showFormatDate(playlist.UpdatedAt)},
 					})
