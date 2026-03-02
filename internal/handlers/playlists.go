@@ -358,14 +358,14 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to get playlist for debug sync",
 			"playlist_id", playlistID,
 			"error", err)
-		h.RespondJSON(w,http.StatusNotFound, map[string]string{"error": "Playlist not found"})
+		h.RespondJSON(w, http.StatusNotFound, map[string]string{"error": "Playlist not found"})
 		return
 	}
 
 	// Check if sync service is available
 	if h.PlaylistSyncSvc == nil {
 		h.Logger.Error("PlaylistSyncSvc is nil")
-		h.RespondJSON(w,http.StatusInternalServerError, map[string]string{"error": "Playlist sync service not configured"})
+		h.RespondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Playlist sync service not configured"})
 		return
 	}
 
@@ -424,7 +424,7 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 			"duration", duration)
 	}
 
-	h.RespondJSON(w,http.StatusOK, response)
+	h.RespondJSON(w, http.StatusOK, response)
 }
 
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-050 (sync-progress endpoint)
@@ -495,7 +495,7 @@ func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) 
 		).
 		Only(r.Context())
 	if err != nil {
-		h.RespondJSON(w,http.StatusNotFound, map[string]string{"error": "Playlist not found"})
+		h.RespondJSON(w, http.StatusNotFound, map[string]string{"error": "Playlist not found"})
 		return
 	}
 
@@ -515,7 +515,7 @@ func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) 
 		response["match_percentage"] = float64(pl.MatchedTrackCount) / float64(pl.TrackCount) * 100
 	}
 
-	h.RespondJSON(w,http.StatusOK, response)
+	h.RespondJSON(w, http.StatusOK, response)
 }
 
 // findNavidromeConflict returns the Navidrome-source playlist with the same name
