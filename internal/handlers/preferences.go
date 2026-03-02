@@ -81,8 +81,7 @@ func (h *Handler) PostPreferencesAppearance(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	w.Header().Set("HX-Trigger", "preferences-saved")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "preferences-saved", http.StatusOK)
 }
 
 // Governing: SPEC-0015 REQ "User Email Address", REQ "Preferences UI — Email Address and Notification Status"
