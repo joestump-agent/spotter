@@ -323,4 +323,3 @@ func (h *Handler) checkNavidromeOnline(username, password string) bool {
 
 	return resp.StatusCode == http.StatusOK
 }
-
