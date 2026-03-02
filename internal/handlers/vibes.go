@@ -18,8 +18,6 @@ import (
 	"spotter/ent/user"
 	"spotter/internal/vibes"
 	vibesViews "spotter/internal/views/vibes"
-
-	"github.com/go-chi/chi/v5"
 )
 
 // VibesRedirect redirects to the DJs page
@@ -57,9 +55,8 @@ func (h *Handler) DJShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	djID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid DJ ID", http.StatusBadRequest)
+	djID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -132,8 +129,7 @@ func (h *Handler) CreateDJ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("HX-Trigger", "dj-created")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "dj-created", http.StatusOK)
 }
 
 // UpdateDJ updates an existing DJ
@@ -144,9 +140,8 @@ func (h *Handler) UpdateDJ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	djID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid DJ ID", http.StatusBadRequest)
+	djID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -202,8 +197,7 @@ func (h *Handler) UpdateDJ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("HX-Trigger", "dj-updated")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "dj-updated", http.StatusOK)
 }
 
 // DeleteDJ deletes a DJ
@@ -214,14 +208,13 @@ func (h *Handler) DeleteDJ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	djID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid DJ ID", http.StatusBadRequest)
+	djID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
 	// Verify ownership
-	_, err = h.Client.DJ.Query().
+	_, err := h.Client.DJ.Query().
 		Where(dj.ID(djID), dj.HasUserWith(user.ID(u.ID))).
 		Only(r.Context())
 	if err != nil {
@@ -236,8 +229,7 @@ func (h *Handler) DeleteDJ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("HX-Trigger", "dj-deleted")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "dj-deleted", http.StatusOK)
 }
 
 // MixtapesIndex shows the list of Mixtapes
@@ -258,24 +250,15 @@ func (h *Handler) MixtapesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get page number from query
-	page := 1
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := u.PaginationSize
-	offset := (page - 1) * pageSize
+	pg := h.GetPaginationParams(r, u.PaginationSize)
 
 	// Query mixtapes with pagination
 	mixtapes, err := h.Client.Mixtape.Query().
 		Where(mixtape.HasUserWith(user.ID(u.ID))).
 		WithDj().
 		Order(ent.Desc(mixtape.FieldUpdatedAt)).
-		Limit(pageSize).
-		Offset(offset).
+		Limit(pg.PageSize).
+		Offset(pg.Offset).
 		All(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to query mixtapes", "error", err)
@@ -293,7 +276,7 @@ func (h *Handler) MixtapesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := (total + pageSize - 1) / pageSize
+	pg.WithTotal(total)
 
 	// Get all DJs for the create modal
 	djs, err := h.Client.DJ.Query().
@@ -305,7 +288,7 @@ func (h *Handler) MixtapesIndex(w http.ResponseWriter, r *http.Request) {
 		djs = []*ent.DJ{}
 	}
 
-	h.Render(w, r, vibesViews.MixtapesIndex(mixtapes, djs, page, totalPages, h.Config))
+	h.Render(w, r, vibesViews.MixtapesIndex(mixtapes, djs, pg.Page, pg.TotalPages, h.Config))
 }
 
 // CreateMixtape creates a new Mixtape
@@ -389,8 +372,7 @@ func (h *Handler) CreateMixtape(w http.ResponseWriter, r *http.Request) {
 		h.Bus.PublishMixtapeCreated(u.ID, m.ID, m.Name, d.Name)
 	}
 
-	w.Header().Set("HX-Trigger", "mixtape-created")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "mixtape-created", http.StatusOK)
 }
 
 // UpdateMixtape updates an existing Mixtape
@@ -401,9 +383,8 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mixtapeID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid Mixtape ID", http.StatusBadRequest)
+	mixtapeID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -488,8 +469,7 @@ func (h *Handler) UpdateMixtape(w http.ResponseWriter, r *http.Request) {
 		h.Bus.PublishMixtapeUpdated(u.ID, updated.ID, updated.Name)
 	}
 
-	w.Header().Set("HX-Trigger", "mixtape-updated")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "mixtape-updated", http.StatusOK)
 }
 
 // DeleteMixtape deletes a Mixtape
@@ -500,9 +480,8 @@ func (h *Handler) DeleteMixtape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mixtapeID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid Mixtape ID", http.StatusBadRequest)
+	mixtapeID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -531,8 +510,7 @@ func (h *Handler) DeleteMixtape(w http.ResponseWriter, r *http.Request) {
 		h.Bus.PublishMixtapeDeleted(u.ID, mixtapeID, mixtapeName)
 	}
 
-	w.Header().Set("HX-Trigger", "mixtape-deleted")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "mixtape-deleted", http.StatusOK)
 }
 
 // ToggleMixtapeSync toggles the sync_to_navidrome flag for a Mixtape
@@ -543,9 +521,8 @@ func (h *Handler) ToggleMixtapeSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mixtapeID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid Mixtape ID", http.StatusBadRequest)
+	mixtapeID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -568,8 +545,7 @@ func (h *Handler) ToggleMixtapeSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("HX-Trigger", "mixtape-updated")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "mixtape-updated", http.StatusOK)
 }
 
 // GenerateMixtape generates tracks for a mixtape using the AI-powered vibes engine
@@ -580,9 +556,8 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mixtapeID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid Mixtape ID", http.StatusBadRequest)
+	mixtapeID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -745,8 +720,7 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Return immediately with a "generating" status
-	w.Header().Set("HX-Trigger", "mixtape-generating")
-	w.WriteHeader(http.StatusAccepted)
+	h.HTMXEvent(w, "mixtape-generating", http.StatusAccepted)
 }
 
 // MixtapeShow shows a single Mixtape
@@ -757,9 +731,8 @@ func (h *Handler) MixtapeShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mixtapeID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid Mixtape ID", http.StatusBadRequest)
+	mixtapeID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
