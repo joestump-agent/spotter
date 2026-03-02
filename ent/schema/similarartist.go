@@ -1,18 +1,25 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+
+	spmixin "spotter/ent/schema/mixin"
 )
 
 // SimilarArtist holds the schema definition for the SimilarArtist entity.
 // It represents a similarity relationship between two artists.
 type SimilarArtist struct {
 	ent.Schema
+}
+
+// Mixin of the SimilarArtist.
+func (SimilarArtist) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		spmixin.Timestamps{},
+	}
 }
 
 // Fields of the SimilarArtist.
@@ -36,12 +43,6 @@ func (SimilarArtist) Fields() []ent.Field {
 		field.Text("reason").
 			Optional().
 			Comment("AI-generated explanation for why these artists are similar"),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 	}
 }
 

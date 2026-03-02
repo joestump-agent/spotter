@@ -1,17 +1,24 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+
+	spmixin "spotter/ent/schema/mixin"
 )
 
 // DJ holds the schema definition for the DJ entity.
 type DJ struct {
 	ent.Schema
+}
+
+// Mixin of the DJ.
+func (DJ) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		spmixin.Timestamps{},
+	}
 }
 
 // Fields of the DJ.
@@ -40,12 +47,6 @@ func (DJ) Fields() []ent.Field {
 		field.Strings("artists_exclude").
 			Optional().
 			Comment("Artists to exclude from recommendations"),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 	}
 }
 

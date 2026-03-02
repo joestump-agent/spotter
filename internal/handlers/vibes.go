@@ -22,6 +22,26 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// djFilterFields holds the parsed tag/filter fields from a DJ create/update form.
+type djFilterFields struct {
+	GenresInclude  []string
+	GenresExclude  []string
+	Vibes          []string
+	ArtistsInclude []string
+	ArtistsExclude []string
+}
+
+// parseDJFilterFields extracts the comma-separated DJ filter fields from a request form.
+func parseDJFilterFields(r *http.Request) djFilterFields {
+	return djFilterFields{
+		GenresInclude:  parseCommaSeparated(r.FormValue("genres_include")),
+		GenresExclude:  parseCommaSeparated(r.FormValue("genres_exclude")),
+		Vibes:          parseCommaSeparated(r.FormValue("vibes")),
+		ArtistsInclude: parseCommaSeparated(r.FormValue("artists_include")),
+		ArtistsExclude: parseCommaSeparated(r.FormValue("artists_exclude")),
+	}
+}
+
 // VibesRedirect redirects to the DJs page
 func (h *Handler) VibesRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/vibes/djs", http.StatusSeeOther)
@@ -109,20 +129,16 @@ func (h *Handler) CreateDJ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	genresInclude := parseCommaSeparated(r.FormValue("genres_include"))
-	genresExclude := parseCommaSeparated(r.FormValue("genres_exclude"))
-	vibesTags := parseCommaSeparated(r.FormValue("vibes"))
-	artistsInclude := parseCommaSeparated(r.FormValue("artists_include"))
-	artistsExclude := parseCommaSeparated(r.FormValue("artists_exclude"))
+	f := parseDJFilterFields(r)
 
 	_, err := h.Client.DJ.Create().
 		SetName(name).
 		SetSystemPrompt(systemPrompt).
-		SetGenresInclude(genresInclude).
-		SetGenresExclude(genresExclude).
-		SetVibes(vibesTags).
-		SetArtistsInclude(artistsInclude).
-		SetArtistsExclude(artistsExclude).
+		SetGenresInclude(f.GenresInclude).
+		SetGenresExclude(f.GenresExclude).
+		SetVibes(f.Vibes).
+		SetArtistsInclude(f.ArtistsInclude).
+		SetArtistsExclude(f.ArtistsExclude).
 		SetUser(u).
 		Save(r.Context())
 
@@ -180,20 +196,16 @@ func (h *Handler) UpdateDJ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	genresInclude := parseCommaSeparated(r.FormValue("genres_include"))
-	genresExclude := parseCommaSeparated(r.FormValue("genres_exclude"))
-	vibesTags := parseCommaSeparated(r.FormValue("vibes"))
-	artistsInclude := parseCommaSeparated(r.FormValue("artists_include"))
-	artistsExclude := parseCommaSeparated(r.FormValue("artists_exclude"))
+	f := parseDJFilterFields(r)
 
 	_, err = h.Client.DJ.UpdateOne(d).
 		SetName(name).
 		SetSystemPrompt(systemPrompt).
-		SetGenresInclude(genresInclude).
-		SetGenresExclude(genresExclude).
-		SetVibes(vibesTags).
-		SetArtistsInclude(artistsInclude).
-		SetArtistsExclude(artistsExclude).
+		SetGenresInclude(f.GenresInclude).
+		SetGenresExclude(f.GenresExclude).
+		SetVibes(f.Vibes).
+		SetArtistsInclude(f.ArtistsInclude).
+		SetArtistsExclude(f.ArtistsExclude).
 		Save(r.Context())
 
 	if err != nil {
