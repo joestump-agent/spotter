@@ -853,62 +853,12 @@ func (h *Handler) renderPlaylistSyncDropdown(w http.ResponseWriter, r *http.Requ
 
 // PlaylistGenerateMetadata generates AI title and description for a playlist
 func (h *Handler) PlaylistGenerateMetadata(w http.ResponseWriter, r *http.Request) {
-	u := h.RequireUser(w, r)
-	if u == nil {
-		return
-	}
-
-	playlistID, ok := h.ParseIntParam(w, r, "id")
-	if !ok {
-		return
-	}
-
-	// Verify ownership
-	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
-	if err != nil {
-		http.Error(w, "Playlist not found", http.StatusNotFound)
-		return
-	}
-
-	h.Logger.Info("generating AI metadata for playlist",
-		"playlist_id", playlistID,
-		"playlist_name", pl.Name,
-	)
-
-	// TODO: Implement actual AI metadata generation
-	// This will use the MetadataService to generate title/description based on tracks
-
-	h.HTMXEvent(w, "playlist-metadata-generated", http.StatusOK)
+	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
 // PlaylistGenerateArtwork generates AI album art for a playlist
 func (h *Handler) PlaylistGenerateArtwork(w http.ResponseWriter, r *http.Request) {
-	u := h.RequireUser(w, r)
-	if u == nil {
-		return
-	}
-
-	playlistID, ok := h.ParseIntParam(w, r, "id")
-	if !ok {
-		return
-	}
-
-	// Verify ownership
-	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
-	if err != nil {
-		http.Error(w, "Playlist not found", http.StatusNotFound)
-		return
-	}
-
-	h.Logger.Info("generating AI artwork for playlist",
-		"playlist_id", playlistID,
-		"playlist_name", pl.Name,
-	)
-
-	// TODO: Implement actual AI artwork generation
-	// This will use an image generation service to create cover art based on playlist themes
-
-	h.HTMXEvent(w, "playlist-artwork-generated", http.StatusOK)
+	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
 // EnhanceVibesModal returns the modal content for enhancing a playlist with DJ vibes.
