@@ -981,3 +981,31 @@ func TestEnhanceVibes_ServiceUnavailable(t *testing.T) {
 	resp := w.Result()
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
+
+func TestPlaylistGenerateMetadata_ReturnsNotImplemented(t *testing.T) {
+	_, h, _ := setupPlaylistHandler(t)
+
+	req := httptest.NewRequest("POST", "/playlists/1/ai/generate-metadata", nil)
+	w := httptest.NewRecorder()
+
+	h.PlaylistGenerateMetadata(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "not implemented")
+}
+
+func TestPlaylistGenerateArtwork_ReturnsNotImplemented(t *testing.T) {
+	_, h, _ := setupPlaylistHandler(t)
+
+	req := httptest.NewRequest("POST", "/playlists/1/ai/generate-artwork", nil)
+	w := httptest.NewRecorder()
+
+	h.PlaylistGenerateArtwork(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "not implemented")
+}

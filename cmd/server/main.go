@@ -455,8 +455,6 @@ func main() {
 		r.Get("/", h.Home)
 
 		r.Get("/events", h.Events)
-		r.Post("/generate", h.GeneratePlaylist)
-
 		r.Get("/preferences", h.PreferencesRedirect)
 		r.Get("/preferences/account", h.PreferencesAccount)
 		r.Post("/preferences/account/email", h.PostPreferencesEmail)
