@@ -1,0 +1,62 @@
+// Governing: SPEC-0015 REQ playlist-pairing
+package playlists
+
+import (
+	"fmt"
+	"spotter/ent"
+)
+
+// NavidromeConflict renders an inline conflict resolution component when a Navidrome
+// playlist with the same name already exists in Spotter's DB.
+// Governing: SPEC-0015 REQ playlist-pairing
+templ NavidromeConflict(pl *ent.Playlist, conflict *ent.Playlist) {
+	<div id="playlist-conflict" class="alert alert-warning shadow-lg mt-4">
+		<div class="flex flex-col gap-4 w-full">
+			<div class="flex items-start gap-3">
+				<span class="icon-[heroicons--exclamation-triangle] w-6 h-6 shrink-0 mt-0.5"></span>
+				<div>
+					<p class="font-semibold">Navidrome conflict detected</p>
+					<p class="text-sm">
+						A Navidrome playlist named <strong>"{ conflict.Name }"</strong> already exists.
+						Choose how to proceed:
+					</p>
+				</div>
+			</div>
+			<!-- Option 1: Pair with existing -->
+			<form
+				hx-post={ fmt.Sprintf("/playlists/%d/resolve-navidrome-conflict", pl.ID) }
+				hx-target="#playlist-conflict"
+				hx-swap="outerHTML"
+				class="flex items-center gap-3"
+			>
+				<input type="hidden" name="action" value="pair"/>
+				<input type="hidden" name="existing_id" value={ conflict.RemoteID }/>
+				<button type="submit" class="btn btn-sm btn-primary">
+					<span class="icon-[heroicons--link] w-4 h-4"></span>
+					Pair with existing
+				</button>
+				<span class="text-sm text-base-content/60">Links your playlist to the existing Navidrome one — no duplicate created</span>
+			</form>
+			<!-- Option 2: Use a different name -->
+			<form
+				hx-post={ fmt.Sprintf("/playlists/%d/resolve-navidrome-conflict", pl.ID) }
+				hx-target="#playlist-conflict"
+				hx-swap="outerHTML"
+				class="flex flex-wrap items-center gap-3"
+			>
+				<input type="hidden" name="action" value="new-name"/>
+				<input
+					type="text"
+					name="name"
+					placeholder="Enter Navidrome playlist name..."
+					class="input input-sm input-bordered flex-1 min-w-48"
+					required
+				/>
+				<button type="submit" class="btn btn-sm btn-secondary">
+					<span class="icon-[heroicons--plus] w-4 h-4"></span>
+					Create with this name
+				</button>
+			</form>
+		</div>
+	</div>
+}

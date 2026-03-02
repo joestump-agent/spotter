@@ -29,6 +29,15 @@ func isNavidromeOwned(playlist *ent.Playlist) bool {
 	return playlist.Source == "navidrome"
 }
 
+// navidromeDeepLink constructs a direct link to a playlist in the Navidrome web UI.
+// Governing: SPEC-0015 REQ playlist-pairing
+func navidromeDeepLink(baseURL, playlistID string) string {
+	if baseURL == "" || playlistID == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/app/#/playlist/%s", baseURL, playlistID)
+}
+
 templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *config.Config) {
 	@layouts.Dashboard(fmt.Sprintf("%s | Playlists | Spotter", playlist.Name), cfg, "/playlists") {
 		<!-- Hero Section -->
@@ -156,6 +165,13 @@ templ Show(playlist *ent.Playlist, tracks []components.TrackTableRow, cfg *confi
 						{Label: "Sync Status", Value: formatSyncStatusField(playlist)},
 						{Label: "Navidrome Playlist ID", Value: showGetOrDefault(playlist.NavidromePlaylistID, "N/A")},
 						{Label: "External URL", Value: showGetOrDefault(playlist.ExternalURL, "N/A"), Link: playlist.ExternalURL},
+					// Governing: SPEC-0015 REQ playlist-pairing — Navidrome deep link when paired
+					{Label: "Navidrome Link", Value: func() string {
+						if playlist.NavidromePlaylistID != "" {
+							return "Open in Navidrome"
+						}
+						return "N/A"
+					}(), Link: navidromeDeepLink(cfg.Navidrome.BaseURL, playlist.NavidromePlaylistID)},
 						{Label: "Created", Value: showFormatDate(playlist.CreatedAt)},
 						{Label: "Updated", Value: showFormatDate(playlist.UpdatedAt)},
 					})

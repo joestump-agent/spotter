@@ -499,6 +499,7 @@ func main() {
 		r.Get("/playlists/{id}/sync-status", h.GetPlaylistSyncStatus)
 		r.Get("/playlists/{id}/sync-progress", h.GetPlaylistSyncProgress)
 		r.Post("/playlists/{id}/debug-sync", h.DebugPlaylistSync)
+		r.Post("/playlists/{id}/resolve-navidrome-conflict", h.ResolveNavidromeConflict)
 		r.Post("/playlists/{id}/ai/generate-metadata", h.PlaylistGenerateMetadata)
 		r.Post("/playlists/{id}/ai/generate-artwork", h.PlaylistGenerateArtwork)
 		r.Get("/playlists/{id}/enhance-vibes-modal", h.EnhanceVibesModal)

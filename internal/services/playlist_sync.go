@@ -241,13 +241,19 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 			"track_count", len(matchedTracks))
 	} else {
 		// Create new playlist
+		// Governing: SPEC-0015 REQ playlist-pairing — use navidrome_playlist_name if set
+		nameToUse := pl.Name
+		if pl.NavidromePlaylistName != "" {
+			nameToUse = pl.NavidromePlaylistName
+		}
+
 		s.logger.Debug("creating new Navidrome playlist",
 			"playlist_id", playlistID,
-			"playlist_name", pl.Name,
+			"playlist_name", nameToUse,
 			"track_count", len(matchedTracks))
 
 		navidromePlaylistID, err = syncer.SyncPlaylist(ctx, providers.SyncPlaylistRequest{
-			Name:        pl.Name,
+			Name:        nameToUse,
 			Description: pl.Description,
 			ImageURL:    pl.ImageURL,
 			Tracks:      matchedTracks,
@@ -321,6 +327,61 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 		"duration", duration)
 
 	return nil
+}
+
+// PairWithNavidrome links an existing Navidrome playlist to a Spotter playlist and
+// deletes the Navidrome-source duplicate from Spotter's DB.
+// Governing: SPEC-0015 REQ playlist-pairing
+func (s *PlaylistSyncService) PairWithNavidrome(ctx context.Context, playlistID int, navidromeRemoteID string) error {
+	s.logger.Info("pairing playlist with existing Navidrome playlist",
+		"playlist_id", playlistID,
+		"navidrome_remote_id", navidromeRemoteID)
+
+	// 1. Update the Spotter playlist: set navidrome_playlist_id
+	pl, err := s.client.Playlist.Query().
+		Where(playlist.ID(playlistID)).
+		WithUser().
+		Only(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load playlist: %w", err)
+	}
+
+	u := pl.Edges.User
+	if u == nil {
+		return fmt.Errorf("playlist has no associated user")
+	}
+
+	_, err = s.client.Playlist.UpdateOne(pl).
+		SetNavidromePlaylistID(navidromeRemoteID).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to set navidrome_playlist_id: %w", err)
+	}
+
+	// 2. Find the Navidrome-source playlist in Spotter's DB whose remote_id == navidromeRemoteID
+	navidromeDuplicate, err := s.client.Playlist.Query().
+		Where(
+			playlist.HasUserWith(user.ID(u.ID)),
+			playlist.Source(string(providers.TypeNavidrome)),
+			playlist.RemoteID(navidromeRemoteID),
+		).
+		First(ctx)
+	if err == nil && navidromeDuplicate != nil {
+		// 3. Delete the Navidrome-source duplicate from Spotter's DB
+		if delErr := s.client.Playlist.DeleteOne(navidromeDuplicate).Exec(ctx); delErr != nil {
+			s.logger.Warn("failed to delete Navidrome-source duplicate playlist",
+				"duplicate_id", navidromeDuplicate.ID,
+				"error", delErr)
+			// Non-fatal: continue with sync
+		} else {
+			s.logger.Info("deleted Navidrome-source duplicate playlist",
+				"duplicate_id", navidromeDuplicate.ID,
+				"duplicate_name", navidromeDuplicate.Name)
+		}
+	}
+
+	// 4. Trigger sync (will UPDATE the existing Navidrome playlist)
+	return s.SyncPlaylistToNavidrome(ctx, playlistID)
 }
 
 // SyncAllEnabledPlaylists syncs all playlists with sync_to_navidrome=true for a user.

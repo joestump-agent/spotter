@@ -14,6 +14,7 @@ import (
 	"spotter/ent/playlist"
 	"spotter/ent/playlisttrack"
 	"spotter/ent/user"
+	"spotter/internal/providers"
 	"spotter/internal/vibes"
 	"spotter/internal/views/components"
 	"spotter/internal/views/playlists"
@@ -54,9 +55,39 @@ func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
 	pageSize := u.PaginationSize
 	offset := (page - 1) * pageSize
 
+	// Governing: SPEC-0015 REQ playlist-pairing — hide Navidrome-source playlists that are
+	// managed by a paired non-Navidrome playlist (i.e. their remote_id appears as navidrome_playlist_id
+	// on another playlist for the same user).
+	managedNavidromeIDs, _ := h.Client.Playlist.Query().
+		Where(
+			playlist.HasUserWith(user.ID(u.ID)),
+			playlist.NavidromePlaylistIDNEQ(""),
+		).
+		Select(playlist.FieldNavidromePlaylistID).
+		Strings(r.Context())
+
+	visibilityFilter := playlist.HasUserWith(user.ID(u.ID))
+	var baseFilter func(*ent.PlaylistQuery) *ent.PlaylistQuery
+	if len(managedNavidromeIDs) > 0 {
+		baseFilter = func(q *ent.PlaylistQuery) *ent.PlaylistQuery {
+			return q.Where(
+				playlist.HasUserWith(user.ID(u.ID)),
+				playlist.Not(
+					playlist.And(
+						playlist.Source(string(providers.TypeNavidrome)),
+						playlist.RemoteIDIn(managedNavidromeIDs...),
+					),
+				),
+			)
+		}
+	} else {
+		baseFilter = func(q *ent.PlaylistQuery) *ent.PlaylistQuery {
+			return q.Where(visibilityFilter)
+		}
+	}
+
 	// Query playlists with pagination
-	pls, err := h.Client.Playlist.Query().
-		Where(playlist.HasUserWith(user.ID(u.ID))).
+	pls, err := baseFilter(h.Client.Playlist.Query()).
 		Order(ent.Desc(playlist.FieldUpdatedAt)).
 		Limit(pageSize).
 		Offset(offset).
@@ -68,8 +99,7 @@ func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get total count for pagination
-	total, err := h.Client.Playlist.Query().
-		Where(playlist.HasUserWith(user.ID(u.ID))).
+	total, err := baseFilter(h.Client.Playlist.Query()).
 		Count(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to count playlists", "error", err)
@@ -236,6 +266,23 @@ func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 	// CRITICAL: Use a detached context with timeout since r.Context() is cancelled when response completes
 	if h.PlaylistSyncSvc != nil {
 		if newSyncState {
+			// Governing: SPEC-0015 REQ playlist-pairing — check for Navidrome conflict before sync
+			if updatedPlaylist.NavidromePlaylistID == "" {
+				conflict, conflictErr := h.findNavidromeConflict(r.Context(), updatedPlaylist, u.ID)
+				if conflictErr != nil {
+					h.Logger.Warn("failed to check for Navidrome conflict",
+						"playlist_id", playlistID,
+						"error", conflictErr)
+				} else if conflict != nil {
+					h.Logger.Info("Navidrome conflict detected, showing conflict UI",
+						"playlist_id", playlistID,
+						"conflict_id", conflict.ID,
+						"conflict_name", conflict.Name)
+					h.Render(w, r, playlists.NavidromeConflict(updatedPlaylist, conflict))
+					return
+				}
+			}
+
 			// Sync enabled - trigger immediate sync to Navidrome (async)
 			h.Logger.Debug("dispatching async sync to Navidrome",
 				"playlist_id", playlistID,
@@ -488,6 +535,147 @@ func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) 
 	respondJSON(w, http.StatusOK, response)
 }
 
+// findNavidromeConflict returns the Navidrome-source playlist with the same name
+// as the given playlist, for the same user, if one exists and the playlist has no navidrome_playlist_id yet.
+// Governing: SPEC-0015 REQ playlist-pairing
+func (h *Handler) findNavidromeConflict(ctx context.Context, pl *ent.Playlist, userID int) (*ent.Playlist, error) {
+	if pl.NavidromePlaylistID != "" {
+		return nil, nil
+	}
+	conflict, err := h.Client.Playlist.Query().
+		Where(
+			playlist.HasUserWith(user.ID(userID)),
+			playlist.Source(string(providers.TypeNavidrome)),
+			playlist.Name(pl.Name),
+		).
+		First(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return conflict, nil
+}
+
+// ResolveNavidromeConflict handles the user's choice when a Navidrome conflict is detected.
+// POST /playlists/{id}/resolve-navidrome-conflict
+// Governing: SPEC-0015 REQ playlist-pairing
+func (h *Handler) ResolveNavidromeConflict(w http.ResponseWriter, r *http.Request) {
+	u := h.GetUser(r.Context())
+	if u == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	action := r.FormValue("action")
+
+	// Verify ownership
+	pl, err := h.Client.Playlist.Query().
+		Where(
+			playlist.ID(playlistID),
+			playlist.HasUserWith(user.ID(u.ID)),
+		).
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to get playlist for conflict resolution",
+			"playlist_id", playlistID,
+			"error", err)
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	switch action {
+	case "pair":
+		existingID := r.FormValue("existing_id")
+		if existingID == "" {
+			http.Error(w, "existing_id is required", http.StatusBadRequest)
+			return
+		}
+
+		// Enable sync first so SyncPlaylistToNavidrome proceeds
+		if !pl.SyncToNavidrome {
+			pl, err = h.Client.Playlist.UpdateOne(pl).
+				SetSyncToNavidrome(true).
+				Save(r.Context())
+			if err != nil {
+				h.Logger.Error("failed to enable sync before pairing",
+					"playlist_id", playlistID,
+					"error", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if h.PlaylistSyncSvc != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+				if err := h.PlaylistSyncSvc.PairWithNavidrome(ctx, playlistID, existingID); err != nil {
+					h.Logger.Error("failed to pair playlist with Navidrome",
+						"playlist_id", playlistID,
+						"existing_id", existingID,
+						"error", err)
+				}
+			}()
+		}
+
+	case "new-name":
+		name := r.FormValue("name")
+		if name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+
+		// Save custom name and enable sync
+		pl, err = h.Client.Playlist.UpdateOne(pl).
+			SetNavidromePlaylistName(name).
+			SetSyncToNavidrome(true).
+			Save(r.Context())
+		if err != nil {
+			h.Logger.Error("failed to save navidrome_playlist_name",
+				"playlist_id", playlistID,
+				"error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		if h.PlaylistSyncSvc != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+				if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, playlistID); err != nil {
+					h.Logger.Error("failed to sync playlist after name resolution",
+						"playlist_id", playlistID,
+						"error", err)
+				}
+			}()
+		}
+
+	default:
+		http.Error(w, "Invalid action", http.StatusBadRequest)
+		return
+	}
+
+	// Reload and return the sync dropdown
+	updatedPlaylist, err := h.Client.Playlist.Get(r.Context(), playlistID)
+	if err != nil {
+		updatedPlaylist = pl
+	}
+	h.renderPlaylistSyncDropdown(w, r, updatedPlaylist)
+}
+
 // respondJSON sends a JSON response with the given status code
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -553,6 +741,23 @@ func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
 			"playlist_name", pl.Name)
 		http.Error(w, "Sync is not enabled for this playlist", http.StatusBadRequest)
 		return
+	}
+
+	// Governing: SPEC-0015 REQ playlist-pairing — check for Navidrome conflict before sync
+	if pl.NavidromePlaylistID == "" {
+		conflict, conflictErr := h.findNavidromeConflict(r.Context(), pl, u.ID)
+		if conflictErr != nil {
+			h.Logger.Warn("failed to check for Navidrome conflict",
+				"playlist_id", playlistID,
+				"error", conflictErr)
+		} else if conflict != nil {
+			h.Logger.Info("Navidrome conflict detected, showing conflict UI",
+				"playlist_id", playlistID,
+				"conflict_id", conflict.ID,
+				"conflict_name", conflict.Name)
+			h.Render(w, r, playlists.NavidromeConflict(pl, conflict))
+			return
+		}
 	}
 
 	// Trigger sync (async)

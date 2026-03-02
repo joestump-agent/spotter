@@ -52,6 +52,11 @@ func (Playlist) Fields() []ent.Field {
 			Optional().
 			MaxLen(255).
 			Comment("The remote playlist ID in Navidrome if synced from another source"),
+		// Governing: SPEC-0015 REQ playlist-pairing
+		field.String("navidrome_playlist_name").
+			Optional().
+			MaxLen(255).
+			Comment("Custom name to use for the Navidrome playlist (overrides source name). Governing: SPEC-0015 playlist-pairing"),
 		field.Time("last_synced_at").
 			Optional().
 			Nillable().
