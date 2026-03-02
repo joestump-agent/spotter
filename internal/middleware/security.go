@@ -2,7 +2,8 @@ package middleware
 
 import "net/http"
 
-// Governing: SPEC-0014 REQ "HTTP Server Timeouts", SPEC user-authentication REQ "Security Headers"
+// Governing: ADR-0028 (CSRF defense-in-depth: X-Frame-Options, CSP prevent clickjacking-based CSRF),
+// SPEC-0014 REQ "HTTP Server Timeouts", SPEC user-authentication REQ "Security Headers"
 // SecurityHeaders sets standard security headers on every response to mitigate
 // clickjacking, MIME-sniffing, XSS, and other common web vulnerabilities.
 func SecurityHeaders(next http.Handler) http.Handler {

@@ -140,6 +140,7 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set JWT cookie
+	// Governing: ADR-0028 (CSRF protection: SameSite=Lax), ADR-0022 T3 (session cookie theft)
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    token,
@@ -147,7 +148,8 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.Config.Security.SecureCookies,
 		Expires:  time.Now().Add(24 * time.Hour),
-		// Governing: issue #161 — Lax (not Strict) allows session cookie to be sent in
+		// Governing: ADR-0028 (SameSite=Lax is CSRF protection for POST requests),
+		// issue #161 — Lax (not Strict) allows session cookie to be sent in
 		// OAuth cross-site redirect chains (Spotify/LastFM → our callback → authenticated route)
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -163,7 +165,7 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	// Governing: SPEC user-authentication REQ "SESSION-002", REQ "SESSION-003"
+	// Governing: SPEC user-authentication REQ "SESSION-002", REQ "SESSION-003", ADR-0028 (CSRF protection: SameSite=Lax)
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    "",
@@ -171,7 +173,8 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.Config.Security.SecureCookies,
 		Expires:  time.Now().Add(-1 * time.Hour),
-		// Governing: issue #161 — Lax (not Strict) allows session cookie to be sent in
+		// Governing: ADR-0028 (SameSite=Lax is CSRF protection for POST requests),
+		// issue #161 — Lax (not Strict) allows session cookie to be sent in
 		// OAuth cross-site redirect chains (Spotify/LastFM → our callback → authenticated route)
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
