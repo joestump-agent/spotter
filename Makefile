@@ -51,7 +51,7 @@ ci-deps: ## Install CI dependencies (minimal, no dev tools)
 	@echo "Installing Go dependencies..."
 	go mod download
 	@echo "Installing templ..."
-	go install github.com/a-h/templ/cmd/templ@latest
+	go install github.com/a-h/templ/cmd/templ@$(shell go list -m -f '{{.Version}}' github.com/a-h/templ)
 	@echo "Installing golangci-lint..."
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 	@echo "✓ CI dependencies installed"
