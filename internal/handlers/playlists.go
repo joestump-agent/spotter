@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,7 +18,6 @@ import (
 	"spotter/internal/views/playlists"
 
 	"github.com/a-h/templ"
-	"github.com/go-chi/chi/v5"
 )
 
 const (
@@ -44,16 +41,7 @@ func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get page number from query
-	page := 1
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := u.PaginationSize
-	offset := (page - 1) * pageSize
+	pg := h.GetPaginationParams(r, u.PaginationSize)
 
 	// Governing: SPEC-0015 REQ playlist-pairing — hide Navidrome-source playlists that are
 	// managed by a paired non-Navidrome playlist (i.e. their remote_id appears as navidrome_playlist_id
@@ -89,8 +77,8 @@ func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
 	// Query playlists with pagination
 	pls, err := baseFilter(h.Client.Playlist.Query()).
 		Order(ent.Desc(playlist.FieldUpdatedAt)).
-		Limit(pageSize).
-		Offset(offset).
+		Limit(pg.PageSize).
+		Offset(pg.Offset).
 		All(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to query playlists", "error", err)
@@ -107,9 +95,9 @@ func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := (total + pageSize - 1) / pageSize
+	pg.WithTotal(total)
 
-	h.Render(w, r, playlists.Index(pls, page, totalPages, h.Config))
+	h.Render(w, r, playlists.Index(pls, pg.Page, pg.TotalPages, h.Config))
 }
 
 func (h *Handler) PlaylistShow(w http.ResponseWriter, r *http.Request) {
@@ -119,9 +107,8 @@ func (h *Handler) PlaylistShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -206,9 +193,8 @@ func (h *Handler) TogglePlaylistSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -351,9 +337,8 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -373,14 +358,14 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("failed to get playlist for debug sync",
 			"playlist_id", playlistID,
 			"error", err)
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Playlist not found"})
+		h.RespondJSON(w,http.StatusNotFound, map[string]string{"error": "Playlist not found"})
 		return
 	}
 
 	// Check if sync service is available
 	if h.PlaylistSyncSvc == nil {
 		h.Logger.Error("PlaylistSyncSvc is nil")
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Playlist sync service not configured"})
+		h.RespondJSON(w,http.StatusInternalServerError, map[string]string{"error": "Playlist sync service not configured"})
 		return
 	}
 
@@ -439,7 +424,7 @@ func (h *Handler) DebugPlaylistSync(w http.ResponseWriter, r *http.Request) {
 			"duration", duration)
 	}
 
-	respondJSON(w, http.StatusOK, response)
+	h.RespondJSON(w,http.StatusOK, response)
 }
 
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-050 (sync-progress endpoint)
@@ -453,9 +438,8 @@ func (h *Handler) GetPlaylistSyncProgress(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -498,9 +482,8 @@ func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -512,7 +495,7 @@ func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) 
 		).
 		Only(r.Context())
 	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Playlist not found"})
+		h.RespondJSON(w,http.StatusNotFound, map[string]string{"error": "Playlist not found"})
 		return
 	}
 
@@ -532,7 +515,7 @@ func (h *Handler) GetPlaylistSyncStatus(w http.ResponseWriter, r *http.Request) 
 		response["match_percentage"] = float64(pl.MatchedTrackCount) / float64(pl.TrackCount) * 100
 	}
 
-	respondJSON(w, http.StatusOK, response)
+	h.RespondJSON(w,http.StatusOK, response)
 }
 
 // findNavidromeConflict returns the Navidrome-source playlist with the same name
@@ -568,9 +551,8 @@ func (h *Handler) ResolveNavidromeConflict(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -676,16 +658,6 @@ func (h *Handler) ResolveNavidromeConflict(w http.ResponseWriter, r *http.Reques
 	h.renderPlaylistSyncDropdown(w, r, updatedPlaylist)
 }
 
-// respondJSON sends a JSON response with the given status code
-func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		// Already wrote status, can't return error, just log
-		log.Printf("error encoding JSON response: %v", err)
-	}
-}
-
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-050 (sync endpoint),
 // REQ-PLSYNC-051 (async sync in background goroutine)
 
@@ -700,9 +672,8 @@ func (h *Handler) SyncPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -819,9 +790,8 @@ func (h *Handler) RebuildPlaylistSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -933,9 +903,8 @@ func (h *Handler) PlaylistGenerateMetadata(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -959,8 +928,7 @@ func (h *Handler) PlaylistGenerateMetadata(w http.ResponseWriter, r *http.Reques
 	// TODO: Implement actual AI metadata generation
 	// This will use the MetadataService to generate title/description based on tracks
 
-	w.Header().Set("HX-Trigger", "playlist-metadata-generated")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "playlist-metadata-generated", http.StatusOK)
 }
 
 // PlaylistGenerateArtwork generates AI album art for a playlist
@@ -971,9 +939,8 @@ func (h *Handler) PlaylistGenerateArtwork(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -997,8 +964,7 @@ func (h *Handler) PlaylistGenerateArtwork(w http.ResponseWriter, r *http.Request
 	// TODO: Implement actual AI artwork generation
 	// This will use an image generation service to create cover art based on playlist themes
 
-	w.Header().Set("HX-Trigger", "playlist-artwork-generated")
-	w.WriteHeader(http.StatusOK)
+	h.HTMXEvent(w, "playlist-artwork-generated", http.StatusOK)
 }
 
 // EnhanceVibesModal returns the modal content for enhancing a playlist with DJ vibes.
@@ -1009,9 +975,8 @@ func (h *Handler) EnhanceVibesModal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -1055,9 +1020,8 @@ func (h *Handler) EnhanceVibes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	playlistID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -1168,8 +1132,7 @@ func (h *Handler) EnhanceVibes(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Return immediately with "enhancing" status
-	w.Header().Set("HX-Trigger", "playlist-enhancing")
-	w.WriteHeader(http.StatusAccepted)
+	h.HTMXEvent(w, "playlist-enhancing", http.StatusAccepted)
 }
 
 // convertPlaylistToMixtape converts a playlist into a DJ-managed Mixtape.
