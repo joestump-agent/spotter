@@ -3,7 +3,7 @@
 **Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-02-21
-**Governing ADRs:** ADR-0009 (ordered sequential enricher pipeline)
+**Governing ADRs:** ADR-0015 (pluggable enricher registry pattern)
 
 ## Overview
 
@@ -237,4 +237,4 @@ And the local path is stored in the database
 - Image download/resize: `internal/enrichers/images.go`
 - MetadataService: `internal/services/metadata.go`
 - TrackMatcher (shared with playlist sync): `internal/services/track_matcher.go`
-- Governing comment for implementations: `// Governing: ADR-0009 (ordered enricher pipeline), SPEC metadata-enrichment-pipeline`
+- Governing comment for implementations: `// Governing: ADR-0015 (type-keyed enricher registry), SPEC metadata-enrichment-pipeline`

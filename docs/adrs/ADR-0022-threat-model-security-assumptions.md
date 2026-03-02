@@ -104,7 +104,7 @@ These threats are within Spotter's threat model and have active mitigations:
 
 ### T3: Session Cookie Theft
 
-**Threat**: An attacker intercepts or steals the `spotter_user` session cookie to impersonate the user.
+**Threat**: An attacker intercepts or steals the `spotter_token` JWT cookie to impersonate the user.
 
 **Mitigation**: The session cookie is set with `HttpOnly` (prevents JavaScript access), `Secure` (requires HTTPS, configurable via `security.secure_cookies`), and `SameSite=Lax` (prevents cross-origin request attachment). Cookie expires after 24 hours (ADR-0005, `internal/handlers/auth.go:119-127`).
 
@@ -186,13 +186,13 @@ AES-256-GCM nonces are generated using `crypto/rand.Reader`, not timestamps. How
 
 **Future mitigation**: None needed.
 
-### G4: Session Cookie Contains Username in Plaintext
+### G4: JWT Secret Exposure
 
-The `spotter_user` cookie contains the username as a plaintext string. While `HttpOnly` and `Secure` flags prevent JavaScript access and plaintext transmission, the username itself is not signed or encrypted. An attacker who can set cookies in the user's browser (e.g., via a subdomain) could impersonate any user whose username they know.
+The `spotter_token` cookie contains a signed JWT. If the JWT signing secret (stored in an environment variable) is leaked, an attacker could forge valid tokens and impersonate any user. The `HttpOnly` and `Secure` flags prevent JavaScript access and plaintext transmission of the token itself, but the signing secret is the root of trust.
 
-**Impact**: Low in single-user deployment — there is typically only one username. Higher risk if Spotter were ever used with multiple users.
+**Impact**: Low — the JWT secret is stored as an environment variable, not in code or the database. Tokens are short-lived (24h expiry), limiting the window of exploitation if a secret is compromised.
 
-**Future mitigation**: Consider HMAC-signed session tokens if multi-user support is added.
+**Future mitigation**: Consider automatic JWT secret rotation if the deployment environment supports secret management (e.g., Vault, Docker secrets).
 
 ---
 

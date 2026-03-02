@@ -4,10 +4,12 @@ package mailer
 import (
 	"crypto/tls"
 	"fmt"
+	"html"
 	"log/slog"
 	"net"
 	"net/smtp"
 	"strconv"
+	"strings"
 )
 
 // Config holds SMTP configuration for the mailer.
@@ -45,12 +47,38 @@ func New(cfg Config, logger *slog.Logger) Mailer {
 	return &NoopMailer{logger: logger}
 }
 
+// Governing: SPEC-0015 REQ "Email Body", ADR-0026
+// buildMessage constructs a multipart/alternative MIME message with text/plain and text/html parts.
+func buildMessage(from, to, subject, body string) string {
+	const boundary = "==SpotterBoundary=="
+	htmlBody := "<html><body><pre>" + html.EscapeString(body) + "</pre></body></html>"
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "From: %s\r\n", from)
+	fmt.Fprintf(&b, "To: %s\r\n", to)
+	fmt.Fprintf(&b, "Subject: %s\r\n", subject)
+	b.WriteString("MIME-Version: 1.0\r\n")
+	fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=%q\r\n", boundary)
+	b.WriteString("\r\n")
+	fmt.Fprintf(&b, "--%s\r\n", boundary)
+	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+	b.WriteString("\r\n")
+	b.WriteString(body)
+	b.WriteString("\r\n")
+	fmt.Fprintf(&b, "--%s\r\n", boundary)
+	b.WriteString("Content-Type: text/html; charset=utf-8\r\n")
+	b.WriteString("\r\n")
+	b.WriteString(htmlBody)
+	b.WriteString("\r\n")
+	fmt.Fprintf(&b, "--%s--\r\n", boundary)
+	return b.String()
+}
+
 // Send delivers an email via SMTP with STARTTLS or implicit TLS support.
 func (m *SMTPMailer) Send(to, subject, body string) error {
 	addr := net.JoinHostPort(m.cfg.Host, strconv.Itoa(m.cfg.Port))
 
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s",
-		m.cfg.From, to, subject, body)
+	msg := buildMessage(m.cfg.From, to, subject, body)
 
 	var auth smtp.Auth
 	if m.cfg.Username != "" {

@@ -15,8 +15,8 @@ Spotter is a companion application for Navidrome, a self-hosted music server. Us
 * Every Spotter user already has a Navidrome account — creating a separate credential store would require users to manage two sets of credentials
 * Spotter has no business owning passwords or managing password reset flows for a personal-use tool
 * The Navidrome Subsonic API can validate username/password credentials — this can serve as an authentication proxy
-* A session cookie persisting the username is sufficient for a personal, single-user deployment
-* Cookie expiry (24h) provides a reasonable re-authentication prompt without complex token refresh logic
+* A JWT token cookie persisting the authenticated session is sufficient for a personal, single-user deployment
+* Token expiry (24h) provides a reasonable re-authentication prompt without complex token refresh logic
 
 ## Considered Options
 
@@ -26,7 +26,7 @@ Spotter is a companion application for Navidrome, a self-hosted music server. Us
 
 ## Decision Outcome
 
-Chosen option: **Navidrome passthrough authentication**, because Spotter is explicitly designed as a Navidrome companion. Users already trust Navidrome with their credentials, Navidrome's Subsonic API validates them synchronously, and eliminating a second credential store removes both complexity and security risk. The session cookie approach (HttpOnly, Secure, SameSite=Lax, 24h expiry) is appropriate for a personal LAN-accessible application.
+Chosen option: **Navidrome passthrough authentication**, because Spotter is explicitly designed as a Navidrome companion. Users already trust Navidrome with their credentials, Navidrome's Subsonic API validates them synchronously, and eliminating a second credential store removes both complexity and security risk. The JWT token cookie approach (HttpOnly, Secure, SameSite=Lax, 24h expiry) is appropriate for a personal LAN-accessible application.
 
 ### Consequences
 
@@ -36,7 +36,7 @@ Chosen option: **Navidrome passthrough authentication**, because Spotter is expl
 * Good, because authentication failure behavior (wrong password) is delegated to Navidrome's response
 * Bad, because Spotter cannot authenticate if Navidrome is unreachable — auth is coupled to Navidrome availability
 * Bad, because session cookies do not expire on Navidrome password change — a user changing their Navidrome password must also log out of Spotter
-* Bad, because the session validation (AuthMiddleware) only checks that the username exists in the local database, not that the Navidrome credentials are still valid
+* Bad, because the session validation (AuthMiddleware) only checks that the JWT token is valid and the user exists in the local database, not that the Navidrome credentials are still valid
 
 ### Confirmation
 
@@ -46,12 +46,12 @@ Compliance is confirmed by the login flow in `internal/handlers/auth.go` calling
 
 ### Navidrome Passthrough Authentication
 
-On login: validate credentials against Navidrome Subsonic API → create/update local `User` and `NavidromeAuth` records → set `spotter_user` cookie. On each request: `AuthMiddleware` reads cookie, looks up user in local DB, injects user into context.
+On login: validate credentials against Navidrome Subsonic API → create/update local `User` and `NavidromeAuth` records → set `spotter_token` JWT cookie. On each request: `AuthMiddleware` reads and validates the JWT token cookie, looks up user in local DB, injects user into context.
 
 * Good, because zero credential management — no hashing, salting, reset flows, or email required
 * Good, because Navidrome already validates the credentials and manages the password store
 * Good, because the encrypted `NavidromeAuth.Password` stored locally enables background API calls (sync, metadata) without requiring the user to be online
-* Neutral, because session cookie validation is local (username lookup in SQLite) — Navidrome is not called on every request
+* Neutral, because JWT token validation is local (signature verification + user lookup in database) — Navidrome is not called on every request
 * Bad, because Navidrome downtime blocks new logins (existing sessions continue to work)
 * Bad, because session not invalidated on Navidrome password change
 
@@ -90,13 +90,13 @@ sequenceDiagram
 
     alt Auth success
         SpotterHandler->>SQLite: Upsert User + NavidromeAuth (encrypted password)
-        SpotterHandler-->>Browser: Set-Cookie: spotter_user=username (HttpOnly, Secure, 24h)
+        SpotterHandler-->>Browser: Set-Cookie: spotter_token=<JWT> (HttpOnly, Secure, 24h)
     else Auth failure
         SpotterHandler-->>Browser: 401 Unauthorized
     end
 
     Note over Browser,SQLite: Subsequent requests
-    Browser->>SpotterHandler: GET / (Cookie: spotter_user=username)
+    Browser->>SpotterHandler: GET / (Cookie: spotter_token=<JWT>)
     SpotterHandler->>SQLite: SELECT user WHERE username=?
     SQLite-->>SpotterHandler: User record
     SpotterHandler->>SpotterHandler: Inject user into request context
