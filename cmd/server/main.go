@@ -406,6 +406,22 @@ func main() {
 		}
 	}()
 
+	// Governing: SPEC-0017 REQ "Background Submitter Goroutine", ADR-0029, ADR-0013
+	// Background Lidarr Queue Submitter (only if Lidarr is configured)
+	if cfg.Lidarr.BaseURL != "" && cfg.Lidarr.APIKey != "" {
+		lidarrSubmitter := services.NewLidarrSubmitter(client, cfg, logger)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			lidarrSubmitter.Run(ctx)
+		}()
+		logger.Info("lidarr queue submitter enabled",
+			"submit_interval", cfg.Lidarr.SubmitInterval,
+			"queue_max", cfg.Lidarr.QueueMax)
+	} else {
+		logger.Info("lidarr queue submitter disabled (lidarr not configured)")
+	}
+
 	// Router setup
 	r := chi.NewRouter()
 

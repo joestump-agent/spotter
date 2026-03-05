@@ -46,6 +46,8 @@ func (SyncEvent) Fields() []ent.Field {
 				"lidarr_album_matched",
 				"lidarr_track_matched",
 				"lidarr_album_submitted",
+				"lidarr_artist_submitted",
+				"lidarr_queue_drained",
 				// Cleanup/maintenance events
 				"cleanup_started",
 				"cleanup_completed",
