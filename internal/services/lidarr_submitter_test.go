@@ -8,10 +8,10 @@ import (
 
 func TestComputeBackoff(t *testing.T) {
 	tests := []struct {
-		name        string
-		attempts    int
-		minDelay    time.Duration
-		maxDelay    time.Duration
+		name     string
+		attempts int
+		minDelay time.Duration
+		maxDelay time.Duration
 	}{
 		{
 			name:     "first attempt: ~1m base + up to 1m jitter",
