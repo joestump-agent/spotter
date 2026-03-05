@@ -35,6 +35,7 @@ type ArtistData struct {
 	LastFMURL     string
 	NavidromeID   string
 	LidarrID      string
+	LidarrStatus  string
 	SortName      string
 	Bio           string
 	Tags          []string
@@ -66,6 +67,7 @@ type AlbumData struct {
 	MusicBrainzID string
 	SpotifyID     string
 	LidarrID      string
+	LidarrStatus  string
 	ReleaseDate   string
 	Year          int
 	Genre         string

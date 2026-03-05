@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"spotter/ent"
+	"spotter/ent/lidarrqueue"
 	"spotter/ent/syncevent"
+	"spotter/ent/user"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
 	"spotter/internal/tags"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -96,7 +97,10 @@ type lidarrAlbum struct {
 	Statistics     lidarrAlbumStatistics `json:"statistics"`
 }
 
-// EnrichArtist
+// EnrichArtist looks up the artist in Lidarr. If found, it returns enrichment
+// data with the Lidarr ID. If not found and the artist has a MusicBrainz ID,
+// it inserts a LidarrQueue row instead of calling addArtist() directly.
+// Governing: SPEC-0017 REQ "Enricher Decoupling", ADR-0029
 func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enrichers.ArtistData, error) {
 	lArtist, err := e.findArtist(ctx, artist)
 	if err != nil {
@@ -109,21 +113,24 @@ func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enric
 			mbid = lArtist.ForeignArtistID
 		}
 
-		if mbid != "" {
-			added, err := e.addArtist(ctx, mbid)
-			if err != nil {
-				e.logger.Error("failed to add artist to lidarr", "error", err, "artist", artist.Name)
-				return nil, nil
-			}
-			lArtist = added
-			e.logEvent(ctx, "lidarr_artist_matched", fmt.Sprintf("Added artist to Lidarr: %s", lArtist.ArtistName), map[string]interface{}{
-				"artist_name": lArtist.ArtistName,
-				"lidarr_id":   lArtist.ID,
-			})
-		} else {
+		if mbid == "" {
+			// Governing: SPEC-0017 REQ "Enricher Decoupling" — artists without musicbrainz_id return nil, nil
 			return nil, nil
 		}
-	} else if artist.LidarrID == "" {
+
+		// Governing: SPEC-0017 REQ "Enricher Decoupling" — enqueue instead of addArtist()
+		if err := e.enqueueEntity(ctx, lidarrqueue.EntityTypeArtist, artist.ID, mbid); err != nil {
+			e.logger.Error("failed to enqueue artist for lidarr submission", "error", err, "artist", artist.Name)
+			return nil, nil
+		}
+
+		return &enrichers.ArtistData{
+			MusicBrainzID: mbid,
+			LidarrStatus:  "queued",
+		}, nil
+	}
+
+	if artist.LidarrID == "" {
 		// Found existing artist in Lidarr, first time match locally
 		e.logEvent(ctx, "lidarr_artist_matched", fmt.Sprintf("Matched artist in Lidarr: %s", lArtist.ArtistName), map[string]interface{}{
 			"artist_name": lArtist.ArtistName,
@@ -169,7 +176,10 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	return images, nil
 }
 
-// EnrichAlbum
+// EnrichAlbum looks up the album in Lidarr. If found, it returns enrichment
+// data with the Lidarr ID. If not found and the album has a MusicBrainz ID,
+// it inserts a LidarrQueue row instead of calling addAlbum() directly.
+// Governing: SPEC-0017 REQ "Enricher Decoupling", ADR-0029
 func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enrichers.AlbumData, error) {
 	lAlbum, err := e.findAlbum(ctx, album)
 	if err != nil {
@@ -177,50 +187,28 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 	}
 
 	if lAlbum == nil {
-		// Try to add album if missing. Need artist MBID first.
+		// Governing: SPEC-0017 REQ "Enricher Decoupling" — enqueue instead of addAlbum()
 		if album.Edges.Artist != nil && album.Edges.Artist.MusicbrainzID != "" && album.MusicbrainzID != "" {
-			// Ensure artist exists
-			arData, err := e.EnrichArtist(ctx, album.Edges.Artist)
+			// Ensure artist is also enqueued (or already in Lidarr)
+			_, err := e.EnrichArtist(ctx, album.Edges.Artist)
 			if err != nil {
 				e.logger.Warn("could not ensure artist exists in lidarr", "error", err)
 			}
 
-			var artistID int
-			if arData != nil && arData.LidarrID != "" {
-				parsedID, err := strconv.Atoi(arData.LidarrID)
-				if err == nil {
-					artistID = parsedID
-				}
-			}
-
-			if artistID == 0 {
-				// Fallback check
-				lArt, err := e.findArtist(ctx, album.Edges.Artist)
-				if err == nil && lArt != nil {
-					artistID = lArt.ID
-				}
-			}
-
-			if artistID == 0 {
-				e.logger.Warn("cannot add album to lidarr: artist not found", "album", album.Name)
+			if err := e.enqueueEntity(ctx, lidarrqueue.EntityTypeAlbum, album.ID, album.MusicbrainzID); err != nil {
+				e.logger.Error("failed to enqueue album for lidarr submission", "error", err, "album", album.Name)
 				return nil, nil
 			}
 
-			// Add album
-			added, err := e.addAlbum(ctx, album.MusicbrainzID, artistID)
-			if err != nil {
-				e.logger.Error("failed to add album to lidarr", "error", err, "album", album.Name)
-				return nil, nil
-			}
-			lAlbum = added
-			e.logEvent(ctx, "lidarr_album_submitted", fmt.Sprintf("Submitted album to Lidarr: %s", lAlbum.Title), map[string]interface{}{
-				"album_name": lAlbum.Title,
-				"lidarr_id":  lAlbum.ID,
-			})
-		} else {
-			return nil, nil
+			return &enrichers.AlbumData{
+				MusicBrainzID: album.MusicbrainzID,
+				LidarrStatus:  "queued",
+			}, nil
 		}
-	} else if album.LidarrID == "" {
+		return nil, nil
+	}
+
+	if album.LidarrID == "" {
 		// Found existing album in Lidarr, first time match locally
 		e.logEvent(ctx, "lidarr_album_matched", fmt.Sprintf("Matched album in Lidarr: %s", lAlbum.Title), map[string]interface{}{
 			"album_name": lAlbum.Title,
@@ -277,10 +265,29 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 // EnrichTrack derives Lidarr status from the album, not the individual track.
 // Lidarr only allows requesting at the album/artist level, so per-track status
 // must be album-level: "available" if the album is fully downloaded, "monitored"
-// if it is tracked but incomplete, or "pending" if it is not yet in Lidarr.
+// if it is tracked but incomplete, "queued" if a queue entry exists for the
+// album, or "pending" if it is not yet in Lidarr.
+// Governing: SPEC-0017 REQ "Enricher Decoupling", ADR-0029
 func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enrichers.TrackData, error) {
 	if track.Edges.Album == nil {
 		return &enrichers.TrackData{LidarrStatus: "pending"}, nil
+	}
+
+	// Governing: SPEC-0017 REQ "Enricher Decoupling" — if the parent album has a
+	// pending queue entry, propagate "queued" to the track and skip the Lidarr
+	// album statistics lookup. Check via the LidarrQueue table.
+	if e.db != nil && e.user != nil && track.Edges.Album.ID != 0 {
+		queued, err := e.db.LidarrQueue.Query().
+			Where(
+				lidarrqueue.EntityTypeEQ(lidarrqueue.EntityTypeAlbum),
+				lidarrqueue.EntityIDEQ(track.Edges.Album.ID),
+				lidarrqueue.StatusEQ(lidarrqueue.StatusQueued),
+				lidarrqueue.HasUserWith(user.ID(e.user.ID)),
+			).
+			Exist(ctx)
+		if err == nil && queued {
+			return &enrichers.TrackData{LidarrStatus: "queued"}, nil
+		}
 	}
 
 	lAlbum, err := e.findAlbum(ctx, track.Edges.Album)
@@ -289,11 +296,15 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 	}
 
 	if lAlbum == nil {
-		// Album not in Lidarr — submit it if we have an MBID.
+		// Album not in Lidarr — enqueue it if we have an MBID.
 		if track.Edges.Album.MusicbrainzID != "" {
-			_, err := e.EnrichAlbum(ctx, track.Edges.Album)
+			albumData, err := e.EnrichAlbum(ctx, track.Edges.Album)
 			if err != nil {
-				e.logger.Error("failed to submit album for missing track", "error", err, "track", track.Name)
+				e.logger.Error("failed to enqueue album for missing track", "error", err, "track", track.Name)
+			}
+			// If the album was enqueued, report "queued" instead of "pending"
+			if albumData != nil && albumData.LidarrStatus == "queued" {
+				return &enrichers.TrackData{LidarrStatus: "queued"}, nil
 			}
 		}
 		return &enrichers.TrackData{LidarrStatus: "pending"}, nil
@@ -311,6 +322,43 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 }
 
 // Helper methods
+
+// enqueueEntity inserts a LidarrQueue row for deferred submission to Lidarr.
+// If a row already exists for the same entity_type+entity_id+user combination,
+// the insert is silently skipped (idempotent).
+// Governing: SPEC-0017 REQ "Enricher Decoupling", ADR-0029
+func (e *Enricher) enqueueEntity(ctx context.Context, entityType lidarrqueue.EntityType, entityID int, mbid string) error {
+	if e.db == nil || e.user == nil {
+		return nil
+	}
+
+	// Check if a queue row already exists for this entity+user (unique index)
+	exists, err := e.db.LidarrQueue.Query().
+		Where(
+			lidarrqueue.EntityTypeEQ(entityType),
+			lidarrqueue.EntityIDEQ(entityID),
+			lidarrqueue.HasUserWith(user.ID(e.user.ID)),
+		).
+		Exist(ctx)
+	if err == nil && exists {
+		return nil
+	}
+
+	_, err = e.db.LidarrQueue.Create().
+		SetEntityType(entityType).
+		SetEntityID(entityID).
+		SetMusicbrainzID(mbid).
+		SetStatus(lidarrqueue.StatusQueued).
+		SetUser(e.user).
+		Save(ctx)
+
+	// Unique constraint violation means the row already exists — idempotent
+	if err != nil && strings.Contains(err.Error(), "unique") {
+		return nil
+	}
+
+	return err
+}
 
 func (e *Enricher) logEvent(ctx context.Context, eventType string, message string, meta map[string]interface{}) {
 	if e.db == nil || e.user == nil {

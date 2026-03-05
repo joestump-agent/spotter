@@ -62,7 +62,6 @@ func (User) Edges() []ent.Edge {
 		// Governing: SPEC-0015 REQ "Cooldown Persistence", ADR-0026
 		edge.To("sync_notifications", SyncNotification.Type),
 		// Lidarr submission queue
-		// Governing: SPEC-0017 REQ "Queue Entity Schema", ADR-0029
-		edge.To("lidarr_queue", LidarrQueue.Type),
+tt// Governing: SPEC-0017 REQ "Queue Entity Schema", ADR-0029		edge.To("lidarr_queue", LidarrQueue.Type),
 	}
 }
