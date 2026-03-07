@@ -88,7 +88,11 @@ func TestEnrichArtist_Found(t *testing.T) {
 	assert.Contains(t, data.Genres, "Rock")
 }
 
-func TestEnrichArtist_NotFound_Add(t *testing.T) {
+// TestEnrichArtist_NotFound_Enqueued verifies that when an artist is not found
+// in Lidarr but has a MusicBrainz ID, the enricher returns "queued" status
+// instead of calling addArtist() directly.
+// Governing: SPEC-0017 REQ "Enricher Decoupling", ADR-0029
+func TestEnrichArtist_NotFound_Enqueued(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 1. Initial Search by MBID (returns empty)
 		if r.URL.Path == "/api/v1/artist" && r.Method == "GET" {
@@ -96,56 +100,16 @@ func TestEnrichArtist_NotFound_Add(t *testing.T) {
 			return
 		}
 
-		// 2. Search by Name (returns empty)
-		if r.URL.Path == "/api/v1/artist/lookup" && r.Method == "GET" && r.URL.Query().Get("term") == "Test Artist" {
+		// 2. Search by MBID lookup (returns result with ID=0, not in Lidarr)
+		if r.URL.Path == "/api/v1/artist/lookup" && r.Method == "GET" {
 			json.NewEncoder(w).Encode([]lidarrArtist{})
 			return
 		}
 
-		// 2b. Search by MBID lookup (for adding)
-		if r.URL.Path == "/api/v1/artist/lookup" && r.Method == "GET" && r.URL.Query().Get("term") == "lidarr:mbid-123" {
-			artists := []lidarrArtist{
-				{
-					ArtistName:      "Test Artist",
-					ForeignArtistID: "mbid-123",
-				},
-			}
-			json.NewEncoder(w).Encode(artists)
-			return
-		}
-
-		// 3. Get Root Folders
-		if r.URL.Path == "/api/v1/rootfolder" {
-			folders := []struct {
-				Path string `json:"path"`
-			}{{Path: "/music"}}
-			json.NewEncoder(w).Encode(folders)
-			return
-		}
-
-		// 4. Get Quality Profiles (optional, but code does it)
-		if r.URL.Path == "/api/v1/qualityprofile" {
-			json.NewEncoder(w).Encode([]interface{}{}) // Return empty or mock
-			return
-		}
-		// 5. Get Metadata Profiles (optional)
-		if r.URL.Path == "/api/v1/metadataprofile" {
-			json.NewEncoder(w).Encode([]interface{}{})
-			return
-		}
-
-		// 6. Add Artist (POST)
-		if r.URL.Path == "/api/v1/artist" && r.Method == "POST" {
-			var payload map[string]interface{}
-			json.NewDecoder(r.Body).Decode(&payload)
-			assert.Equal(t, "Test Artist", payload["artistName"])
-
-			resp := lidarrArtist{
-				ID:              456,
-				ArtistName:      "Test Artist",
-				ForeignArtistID: "mbid-123",
-			}
-			json.NewEncoder(w).Encode(resp)
+		// No POST to /api/v1/artist should happen — addArtist() must NOT be called
+		if r.Method == "POST" {
+			t.Errorf("unexpected POST request: %s %s — addArtist() must not be called", r.Method, r.URL.Path)
+			http.Error(w, "should not be called", http.StatusInternalServerError)
 			return
 		}
 
@@ -157,14 +121,14 @@ func TestEnrichArtist_NotFound_Add(t *testing.T) {
 	cfg.Lidarr.BaseURL = server.URL
 	cfg.Lidarr.APIKey = "test-api-key"
 
-	factory := New(nil, cfg, nil)
+	// db=nil, user=nil: enqueueEntity gracefully returns nil when db/user are nil
+	factory := New(discardLogger(), cfg, nil)
 	enricher, err := factory(context.Background(), nil)
 	require.NoError(t, err)
 
-	mbid := "mbid-123"
 	artist := &ent.Artist{
 		Name:          "Test Artist",
-		MusicbrainzID: mbid,
+		MusicbrainzID: "mbid-123",
 	}
 
 	artistEnricher := enricher.(enrichers.ArtistEnricher)
@@ -172,7 +136,41 @@ func TestEnrichArtist_NotFound_Add(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
-	assert.Equal(t, "456", data.LidarrID)
+	// Governing: SPEC-0017 REQ "Enricher Decoupling" — LidarrID must be empty
+	// (not assigned yet), LidarrStatus must be "queued", MusicBrainzID preserved.
+	assert.Equal(t, "", data.LidarrID, "LidarrID should be empty for queued entities")
+	assert.Equal(t, "queued", data.LidarrStatus, "status should be 'queued' when entity is enqueued")
+	assert.Equal(t, "mbid-123", data.MusicBrainzID)
+}
+
+// TestEnrichArtist_NoMBID_ReturnsNil verifies that artists without a
+// musicbrainz_id return nil, nil (no queue row inserted).
+// Governing: SPEC-0017 REQ "Enricher Decoupling"
+func TestEnrichArtist_NoMBID_ReturnsNil(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Name-based lookup returns nothing
+		if r.URL.Path == "/api/v1/artist/lookup" {
+			json.NewEncoder(w).Encode([]lidarrArtist{})
+			return
+		}
+		http.Error(w, fmt.Sprintf("unexpected: %s %s", r.Method, r.URL.Path), http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{}
+	cfg.Lidarr.BaseURL = server.URL
+	cfg.Lidarr.APIKey = "test-api-key"
+
+	factory := New(discardLogger(), cfg, nil)
+	enricher, err := factory(context.Background(), nil)
+	require.NoError(t, err)
+
+	artist := &ent.Artist{Name: "No MBID Artist"}
+
+	artistEnricher := enricher.(enrichers.ArtistEnricher)
+	data, err := artistEnricher.EnrichArtist(context.Background(), artist)
+	assert.NoError(t, err)
+	assert.Nil(t, data, "artists without musicbrainz_id should return nil, nil")
 }
 
 func TestEnrichAlbum_Found(t *testing.T) {
@@ -240,6 +238,66 @@ func TestEnrichAlbum_Found(t *testing.T) {
 	assert.Equal(t, "20", data.LidarrID)
 	assert.Equal(t, "mbid-album", data.MusicBrainzID)
 	assert.Equal(t, 2023, data.Year)
+}
+
+// TestEnrichAlbum_NotFound_Enqueued verifies that when an album is not found
+// in Lidarr but has a MusicBrainz ID, the enricher returns "queued" status
+// instead of calling addAlbum() directly.
+// Governing: SPEC-0017 REQ "Enricher Decoupling", ADR-0029
+func TestEnrichAlbum_NotFound_Enqueued(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Artist exists in Lidarr
+		if r.URL.Path == "/api/v1/artist" && r.Method == "GET" {
+			json.NewEncoder(w).Encode([]lidarrArtist{
+				{ID: 10, ArtistName: "Test Artist", ForeignArtistID: "mbid-artist"},
+			})
+			return
+		}
+
+		// Album not found
+		if r.URL.Path == "/api/v1/album" && r.Method == "GET" {
+			json.NewEncoder(w).Encode([]lidarrAlbum{})
+			return
+		}
+
+		// No POST should happen — addAlbum() must NOT be called
+		if r.Method == "POST" {
+			t.Errorf("unexpected POST request: %s %s — addAlbum() must not be called", r.Method, r.URL.Path)
+			http.Error(w, "should not be called", http.StatusInternalServerError)
+			return
+		}
+
+		http.Error(w, fmt.Sprintf("Unexpected request: %s %s", r.Method, r.URL.String()), http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{}
+	cfg.Lidarr.BaseURL = server.URL
+	cfg.Lidarr.APIKey = "test-api-key"
+
+	factory := New(discardLogger(), cfg, nil)
+	enricher, err := factory(context.Background(), nil)
+	require.NoError(t, err)
+
+	album := &ent.Album{
+		Name:          "Test Album",
+		MusicbrainzID: "mbid-album",
+		Edges: ent.AlbumEdges{
+			Artist: &ent.Artist{
+				Name:          "Test Artist",
+				MusicbrainzID: "mbid-artist",
+			},
+		},
+	}
+
+	albumEnricher := enricher.(enrichers.AlbumEnricher)
+	data, err := albumEnricher.EnrichAlbum(context.Background(), album)
+	require.NoError(t, err)
+	require.NotNil(t, data)
+
+	assert.Equal(t, "", data.LidarrID, "LidarrID should be empty for queued entities")
+	assert.Equal(t, "queued", data.LidarrStatus, "status should be 'queued' when entity is enqueued")
+	assert.Equal(t, "mbid-album", data.MusicBrainzID)
 }
 
 // TestEnrichTrack_AlbumFullyDownloaded verifies that when the album is in
@@ -418,7 +476,7 @@ func TestEnrichArtist_NoMBID_FoundByName(t *testing.T) {
 
 // TestEnrichAlbum_ArtistWithoutMBID verifies that album matching works even
 // when the artist has no MusicbrainzID (name-based artist lookup).
-// This is the common real-world path: Lidarr → Navidrome → Spotter, where
+// This is the common real-world path: Lidarr -> Navidrome -> Spotter, where
 // the artist/album may not have MBIDs populated yet.
 func TestEnrichAlbum_ArtistWithoutMBID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -544,9 +602,11 @@ func TestEnrichTrack_NeverCallsTrackEndpoint(t *testing.T) {
 	}
 }
 
-// TestEnrichTrack_AlbumNotInLidarr verifies that when the album is genuinely
-// absent from Lidarr, the status remains "pending" (the pre-existing behavior).
-func TestEnrichTrack_AlbumNotInLidarr(t *testing.T) {
+// TestEnrichTrack_AlbumNotInLidarr_Enqueued verifies that when the album is
+// absent from Lidarr but has a MusicBrainz ID, the track status is "queued"
+// (the album is enqueued for deferred submission).
+// Governing: SPEC-0017 REQ "Enricher Decoupling", ADR-0029
+func TestEnrichTrack_AlbumNotInLidarr_Enqueued(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/artist" {
 			json.NewEncoder(w).Encode([]lidarrArtist{
@@ -559,10 +619,10 @@ func TestEnrichTrack_AlbumNotInLidarr(t *testing.T) {
 			json.NewEncoder(w).Encode([]lidarrAlbum{})
 			return
 		}
-		// EnrichAlbum will try album/lookup before adding — return empty so it
-		// errors gracefully (requires a non-nil logger, see discardLogger below).
-		if r.URL.Path == "/api/v1/album/lookup" {
-			json.NewEncoder(w).Encode([]lidarrAlbum{})
+		// No POST should happen
+		if r.Method == "POST" {
+			t.Errorf("unexpected POST: %s %s — must not call addAlbum()", r.Method, r.URL.Path)
+			http.Error(w, "should not be called", http.StatusInternalServerError)
 			return
 		}
 		http.Error(w, fmt.Sprintf("unexpected: %s %s", r.Method, r.URL.Path), http.StatusNotFound)
@@ -598,9 +658,59 @@ func TestEnrichTrack_AlbumNotInLidarr(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
-	// Album not in Lidarr — "pending" is correct.
+	// Governing: SPEC-0017 REQ "Enricher Decoupling" — album enqueued, track is "queued"
+	assert.Equal(t, "queued", data.LidarrStatus,
+		"track should report 'queued' when album is enqueued for Lidarr submission")
+}
+
+// TestEnrichTrack_AlbumNotInLidarr_NoMBID verifies that when the album has no
+// MusicBrainz ID and is absent from Lidarr, the track status remains "pending".
+func TestEnrichTrack_AlbumNotInLidarr_NoMBID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/artist" {
+			json.NewEncoder(w).Encode([]lidarrArtist{
+				{ID: 10, ArtistName: "New Artist", ForeignArtistID: "mbid-artist"},
+			})
+			return
+		}
+		if r.URL.Path == "/api/v1/album" && r.Method == "GET" {
+			json.NewEncoder(w).Encode([]lidarrAlbum{})
+			return
+		}
+		http.Error(w, fmt.Sprintf("unexpected: %s %s", r.Method, r.URL.Path), http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{}
+	cfg.Lidarr.BaseURL = server.URL
+	cfg.Lidarr.APIKey = "test-api-key"
+
+	factory := New(discardLogger(), cfg, nil)
+	enricher, err := factory(context.Background(), nil)
+	require.NoError(t, err)
+
+	tn := 1
+	track := &ent.Track{
+		Name:        "New Track",
+		TrackNumber: &tn,
+		Edges: ent.TrackEdges{
+			Album: &ent.Album{
+				Name: "No MBID Album",
+				// No MusicbrainzID — cannot be enqueued
+				Edges: ent.AlbumEdges{
+					Artist: &ent.Artist{Name: "New Artist", MusicbrainzID: "mbid-artist"},
+				},
+			},
+		},
+	}
+
+	trackEnricher := enricher.(enrichers.TrackEnricher)
+	data, err := trackEnricher.EnrichTrack(context.Background(), track)
+	require.NoError(t, err)
+	require.NotNil(t, data)
+
 	assert.Equal(t, "pending", data.LidarrStatus,
-		"track should report 'pending' when album is genuinely absent from Lidarr")
+		"track should report 'pending' when album has no MusicBrainz ID")
 }
 
 // TestEnrichAlbum_NoArtistEdge verifies that findAlbum returns nil (not an
