@@ -248,7 +248,7 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 
 		// Success
 		// Governing: SPEC-0017 REQ "Observability" — metric.lidarr.submitted
-		submittedAt := time.Now()
+
 		s.logger.Info("metric.lidarr.submitted",
 			"entity_type", item.EntityType,
 			"entity_id", item.EntityID,
@@ -256,11 +256,9 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 			"duration_ms", duration.Milliseconds(),
 		)
 
-		// Update queue row: status=submitted, set lidarr_id and submitted_at
+		// Update queue row: status=submitted
 		if err := s.db.LidarrQueue.UpdateOneID(item.ID).
 			SetStatus(lidarrqueue.StatusSubmitted).
-			SetLidarrID(lidarrID).
-			SetSubmittedAt(submittedAt).
 			Exec(ctx); err != nil {
 			s.logger.Error("failed to update queue item after success", "error", err, "item_id", item.ID)
 		}
@@ -565,7 +563,7 @@ func (s *LidarrSubmitter) cleanup(ctx context.Context) {
 	deleted, err := s.db.LidarrQueue.Delete().
 		Where(
 			lidarrqueue.StatusEQ(lidarrqueue.StatusSubmitted),
-			lidarrqueue.SubmittedAtLTE(cutoff),
+			lidarrqueue.UpdatedAtLTE(cutoff),
 		).
 		Exec(ctx)
 	if err != nil {
