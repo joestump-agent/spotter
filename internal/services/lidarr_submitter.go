@@ -18,6 +18,7 @@ import (
 
 	"spotter/ent"
 	"spotter/ent/lidarrqueue"
+	"spotter/ent/syncevent"
 	"spotter/internal/config"
 
 	"entgo.io/ent/dialect/sql"
@@ -153,9 +154,10 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 					),
 				),
 			).
-			// Artists before albums, then by created_at
+			// Artists before albums ("artist" > "album" lexicographically, so descending puts artists first)
+			// Governing: SPEC-0017 REQ "Background Submitter Goroutine"
 			Order(
-				lidarrqueue.ByEntityType(sql.OrderAsc()),
+				lidarrqueue.ByEntityType(sql.OrderDesc()),
 				lidarrqueue.ByCreatedAt(sql.OrderAsc()),
 			).
 			Limit(1).
@@ -182,7 +184,7 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 
 		queueMax := s.config.Lidarr.QueueMax
 		if queueMax <= 0 {
-			queueMax = 25
+			queueMax = 20
 		}
 
 		// Count remaining eligible items for metrics
@@ -263,8 +265,13 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 			s.logger.Error("failed to update queue item after success", "error", err, "item_id", item.ID)
 		}
 
-		// Update the entity's lidarr_id
+		// Update the entity's lidarr_id and lidarr_status
+		// Governing: SPEC-0017 REQ "Background Submitter Goroutine"
 		s.updateEntityLidarrID(ctx, item, lidarrID)
+
+		// Log SyncEvent for successful submission
+		// Governing: SPEC-0017 REQ "Observability"
+		s.logSubmissionEvent(ctx, item, lidarrID)
 
 		submittedCount++
 	}
@@ -466,22 +473,89 @@ func (s *LidarrSubmitter) fetchAlbumByMBID(ctx context.Context, mbid string, art
 	return nil, fmt.Errorf("album with mbid %s not found in lidarr despite existing", mbid)
 }
 
-// updateEntityLidarrID updates the lidarr_id field on the corresponding artist or album entity.
+// updateEntityLidarrID updates the lidarr_id and lidarr_status fields on the corresponding artist or album entity.
+// Governing: SPEC-0017 REQ "Background Submitter Goroutine"
 func (s *LidarrSubmitter) updateEntityLidarrID(ctx context.Context, item *ent.LidarrQueue, lidarrID int) {
 	lidarrIDStr := fmt.Sprintf("%d", lidarrID)
 	switch item.EntityType {
 	case lidarrqueue.EntityTypeArtist:
 		if err := s.db.Artist.UpdateOneID(item.EntityID).
 			SetLidarrID(lidarrIDStr).
+			SetLidarrStatus("monitored").
 			Exec(ctx); err != nil {
 			s.logger.Error("failed to update artist lidarr_id", "error", err, "entity_id", item.EntityID)
 		}
 	case lidarrqueue.EntityTypeAlbum:
 		if err := s.db.Album.UpdateOneID(item.EntityID).
 			SetLidarrID(lidarrIDStr).
+			SetLidarrStatus("monitored").
 			Exec(ctx); err != nil {
 			s.logger.Error("failed to update album lidarr_id", "error", err, "entity_id", item.EntityID)
 		}
+	}
+}
+
+// logSubmissionEvent creates a SyncEvent record for a successful Lidarr submission.
+// Governing: SPEC-0017 REQ "Observability"
+func (s *LidarrSubmitter) logSubmissionEvent(ctx context.Context, item *ent.LidarrQueue, lidarrID int) {
+	// Determine the event type and get the user from the entity
+	var eventType syncevent.EventType
+	var userID int
+	var message string
+
+	switch item.EntityType {
+	case lidarrqueue.EntityTypeArtist:
+		eventType = syncevent.EventTypeLidarrArtistSubmitted
+		artist, err := s.db.Artist.Get(ctx, item.EntityID)
+		if err != nil {
+			s.logger.Error("failed to load artist for sync event", "error", err, "entity_id", item.EntityID)
+			return
+		}
+		user, err := artist.QueryUser().Only(ctx)
+		if err != nil {
+			s.logger.Error("failed to load user for sync event", "error", err, "entity_id", item.EntityID)
+			return
+		}
+		userID = user.ID
+		message = fmt.Sprintf("Submitted artist to Lidarr: %s", artist.Name)
+	case lidarrqueue.EntityTypeAlbum:
+		eventType = syncevent.EventTypeLidarrAlbumSubmitted
+		album, err := s.db.Album.Get(ctx, item.EntityID)
+		if err != nil {
+			s.logger.Error("failed to load album for sync event", "error", err, "entity_id", item.EntityID)
+			return
+		}
+		user, err := album.QueryUser().Only(ctx)
+		if err != nil {
+			s.logger.Error("failed to load user for sync event", "error", err, "entity_id", item.EntityID)
+			return
+		}
+		userID = user.ID
+		message = fmt.Sprintf("Submitted album to Lidarr: %s", album.Name)
+	default:
+		return
+	}
+
+	meta := map[string]interface{}{
+		"entity_id":      item.EntityID,
+		"musicbrainz_id": item.MusicbrainzID,
+		"lidarr_id":      lidarrID,
+	}
+
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		s.logger.Error("failed to marshal sync event metadata", "error", err)
+		return
+	}
+
+	if err := s.db.SyncEvent.Create().
+		SetUserID(userID).
+		SetEventType(eventType).
+		SetProvider("lidarr").
+		SetMessage(message).
+		SetMetadata(string(metaJSON)).
+		Exec(ctx); err != nil {
+		s.logger.Error("failed to create sync event", "error", err)
 	}
 }
 
