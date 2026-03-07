@@ -122,8 +122,8 @@ type Config struct {
 	Lidarr struct {
 		BaseURL        string `mapstructure:"base_url"`
 		APIKey         string `mapstructure:"api_key"`
-		QueueMax       int    `mapstructure:"queue_max"`       // Maximum number of items in the submission queue (default: 20)
-		SubmitInterval string `mapstructure:"submit_interval"` // Interval between queue submission attempts (default: "30s")
+		QueueMax       int    `mapstructure:"queue_max"`       // Maximum Lidarr queue depth before backpressure (default: 20)
+		SubmitInterval string `mapstructure:"submit_interval"` // How often to wake the submitter (default: "30s")
 	} `mapstructure:"lidarr"`
 	Sync struct {
 		Interval string `mapstructure:"interval"`

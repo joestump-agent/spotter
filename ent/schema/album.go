@@ -53,6 +53,11 @@ func (Album) Fields() []ent.Field {
 			Optional().
 			MaxLen(255).
 			Comment("Lidarr album ID"),
+		// Governing: SPEC-0017 REQ "Background Submitter Goroutine"
+		field.String("lidarr_status").
+			Optional().
+			Nillable().
+			Comment("Status in Lidarr: monitored, unmonitored, etc."),
 		field.String("release_date").
 			Optional().
 			MaxLen(10).

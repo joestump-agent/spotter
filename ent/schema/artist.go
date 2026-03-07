@@ -54,6 +54,11 @@ func (Artist) Fields() []ent.Field {
 			Optional().
 			MaxLen(255).
 			Comment("Lidarr artist ID"),
+		// Governing: SPEC-0017 REQ "Background Submitter Goroutine"
+		field.String("lidarr_status").
+			Optional().
+			Nillable().
+			Comment("Status in Lidarr: monitored, unmonitored, etc."),
 		field.Text("bio").
 			Optional().
 			MaxLen(50000). // Bios can be long
