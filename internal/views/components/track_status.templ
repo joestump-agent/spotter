@@ -1,9 +1,14 @@
 package components
 
+// Governing: SPEC-0017 REQ "UI Queued Status", ADR-0029
 templ LidarrStatus(status string, lidarrURL string) {
 	<div class="inline-flex items-center ml-1" title="Lidarr Status">
 		if status != "" {
 			switch status {
+				case "queued":
+					<div class="tooltip" data-tip="Queued for Lidarr">
+						<span class="icon-[heroicons--queue-list] w-4 h-4 badge-warning"></span>
+					</div>
 				case "available":
 					<div class="tooltip" data-tip="Available in Lidarr">
 						if lidarrURL != "" {
