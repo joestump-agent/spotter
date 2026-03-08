@@ -17,7 +17,15 @@ import (
 	"spotter/internal/enrichers"
 	"spotter/internal/tags"
 	"strings"
+	"sync"
 	"time"
+)
+
+// Governing: ADR-0020 (error handling and resilience)
+const (
+	rateLimitDelay   = 200 * time.Millisecond // Lidarr is local, lighter throttle than MusicBrainz
+	maxRetries       = 3
+	retryBaseBackoff = 500 * time.Millisecond
 )
 
 type Enricher struct {
@@ -26,6 +34,16 @@ type Enricher struct {
 	client *http.Client
 	db     *ent.Client
 	user   *ent.User
+
+	// Governing: ADR-0020 (error handling and resilience) — rate limiting
+	mu          sync.Mutex
+	lastRequest time.Time
+
+	// Governing: ADR-0020 (error handling and resilience) — result caching to avoid redundant API calls
+	artistCache   map[int]*lidarrArtist
+	artistChecked map[int]bool
+	albumCache    map[int]*lidarrAlbum
+	albumChecked  map[int]bool
 }
 
 func New(logger *slog.Logger, cfg *config.Config, db *ent.Client) enrichers.Factory {
@@ -36,8 +54,12 @@ func New(logger *slog.Logger, cfg *config.Config, db *ent.Client) enrichers.Fact
 			client: &http.Client{
 				Timeout: 30 * time.Second,
 			},
-			db:   db,
-			user: user,
+			db:            db,
+			user:          user,
+			artistCache:   make(map[int]*lidarrArtist),
+			artistChecked: make(map[int]bool),
+			albumCache:    make(map[int]*lidarrAlbum),
+			albumChecked:  make(map[int]bool),
 		}, nil
 	}
 }
@@ -375,7 +397,23 @@ func (e *Enricher) logEvent(ctx context.Context, eventType string, message strin
 	}
 }
 
+// rateLimit ensures we don't overwhelm the local Lidarr instance.
+// Governing: ADR-0020 (error handling and resilience)
+func (e *Enricher) rateLimit() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	elapsed := time.Since(e.lastRequest)
+	if elapsed < rateLimitDelay {
+		time.Sleep(rateLimitDelay - elapsed)
+	}
+	e.lastRequest = time.Now()
+}
+
+// Governing: ADR-0020 (error handling and resilience) — retry on 500 with exponential backoff
 func (e *Enricher) doRequest(ctx context.Context, method, endpoint string, body interface{}, result interface{}) error {
+	e.rateLimit()
+
 	u, err := url.Parse(e.config.Lidarr.BaseURL)
 	if err != nil {
 		return err
@@ -394,47 +432,92 @@ func (e *Enricher) doRequest(ctx context.Context, method, endpoint string, body 
 	u.Path = pathJoin
 	u.RawQuery = query
 
-	var bodyReader io.Reader
+	var bodyBytes []byte
 	if body != nil {
-		jsonBody, err := json.Marshal(body)
+		bodyBytes, err = json.Marshal(body)
 		if err != nil {
 			return err
 		}
-		bodyReader = bytes.NewBuffer(jsonBody)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), bodyReader)
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("X-Api-Key", e.config.Lidarr.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := e.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			e.logger.Warn("failed to close response body", "error", err)
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(1<<(attempt-1)) * retryBaseBackoff // 500ms, 1s, 2s
+			e.logger.Debug("retrying lidarr request after server error",
+				"attempt", attempt,
+				"backoff", backoff,
+				"endpoint", endpoint,
+			)
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			e.rateLimit()
 		}
-	}()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("lidarr api error: %d - %s", resp.StatusCode, string(b))
-	}
+		var bodyReader io.Reader
+		if bodyBytes != nil {
+			bodyReader = bytes.NewReader(bodyBytes)
+		}
 
-	if result != nil {
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		req, err := http.NewRequestWithContext(ctx, method, u.String(), bodyReader)
+		if err != nil {
 			return err
 		}
+
+		req.Header.Set("X-Api-Key", e.config.Lidarr.APIKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := e.client.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode == http.StatusInternalServerError {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("lidarr api error: %d - %s", resp.StatusCode, string(b))
+			continue
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return fmt.Errorf("lidarr api error: %d - %s", resp.StatusCode, string(b))
+		}
+
+		if result != nil {
+			if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+				resp.Body.Close()
+				return err
+			}
+		}
+		resp.Body.Close()
+		return nil
 	}
-	return nil
+
+	return lastErr
 }
 
+// Governing: ADR-0020 (error handling and resilience) — cache findArtist results to avoid redundant API calls
 func (e *Enricher) findArtist(ctx context.Context, artist *ent.Artist) (*lidarrArtist, error) {
+	if e.artistChecked[artist.ID] {
+		return e.artistCache[artist.ID], nil
+	}
+
+	result, err := e.findArtistUncached(ctx, artist)
+	if err != nil {
+		return nil, err
+	}
+
+	e.artistChecked[artist.ID] = true
+	e.artistCache[artist.ID] = result
+	return result, nil
+}
+
+func (e *Enricher) findArtistUncached(ctx context.Context, artist *ent.Artist) (*lidarrArtist, error) {
 	// Try MBID search
 	if artist.MusicbrainzID != "" {
 		var artists []lidarrArtist
@@ -477,7 +560,23 @@ func (e *Enricher) findArtist(ctx context.Context, artist *ent.Artist) (*lidarrA
 	return nil, nil
 }
 
+// Governing: ADR-0020 (error handling and resilience) — cache findAlbum results to avoid redundant API calls
 func (e *Enricher) findAlbum(ctx context.Context, album *ent.Album) (*lidarrAlbum, error) {
+	if e.albumChecked[album.ID] {
+		return e.albumCache[album.ID], nil
+	}
+
+	result, err := e.findAlbumUncached(ctx, album)
+	if err != nil {
+		return nil, err
+	}
+
+	e.albumChecked[album.ID] = true
+	e.albumCache[album.ID] = result
+	return result, nil
+}
+
+func (e *Enricher) findAlbumUncached(ctx context.Context, album *ent.Album) (*lidarrAlbum, error) {
 	// Artist edge is required for album lookup (we need an artist to query albums).
 	// Note: artist MBID is NOT required — findArtist handles name-based lookup too.
 	if album.Edges.Artist == nil {

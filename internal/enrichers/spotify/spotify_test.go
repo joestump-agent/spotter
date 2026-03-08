@@ -886,8 +886,10 @@ func TestDoRequest_404NotFound(t *testing.T) {
 }
 
 func TestDoRequest_429RateLimited(t *testing.T) {
+	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Retry-After", "60")
+		attempts++
+		w.Header().Set("Retry-After", "1")
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte(`{"error": {"status": 429, "message": "Rate limit exceeded"}}`))
 	}))
@@ -899,6 +901,51 @@ func TestDoRequest_429RateLimited(t *testing.T) {
 	_, err := e.doRequest(context.Background(), "artists/test")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "rate limited")
+	// Should have made 1 initial + 3 retries = 4 total attempts
+	assert.Equal(t, 4, attempts)
+}
+
+func TestDoRequest_429RetriesWithContextCancel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error": {"status": 429, "message": "Rate limit exceeded"}}`))
+	}))
+	defer server.Close()
+
+	enricher := createTestEnricher(t, server.URL)
+	e := enricher.(*Enricher)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, err := e.doRequest(ctx, "artists/test")
+	assert.Error(t, err)
+}
+
+func TestDoRequest_429RecoverOnRetry(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts <= 2 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error": {"status": 429, "message": "Rate limit exceeded"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id": "123", "name": "Test"}`))
+	}))
+	defer server.Close()
+
+	enricher := createTestEnricher(t, server.URL)
+	e := enricher.(*Enricher)
+
+	data, err := e.doRequest(context.Background(), "artists/test")
+	assert.NoError(t, err)
+	assert.NotNil(t, data)
+	assert.Equal(t, 3, attempts)
 }
 
 func TestDoRequest_500ServerError(t *testing.T) {

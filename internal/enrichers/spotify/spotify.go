@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"spotter/ent"
@@ -19,6 +22,14 @@ import (
 	spotifyOAuth "golang.org/x/oauth2/spotify"
 )
 
+const (
+	// Governing: ADR-0020 (error handling and resilience)
+	rateLimitDelay    = 500 * time.Millisecond // Spotify rate limit throttle
+	maxRetries        = 3
+	defaultRetryAfter = 5 * time.Second
+	maxRetryAfter     = 60 * time.Second
+)
+
 // Enricher implements the Spotify metadata enricher.
 type Enricher struct {
 	logger     *slog.Logger
@@ -27,6 +38,10 @@ type Enricher struct {
 	auth       *ent.SpotifyAuth
 	oauth      *oauth2.Config
 	httpClient *http.Client
+
+	// Rate limiting — Governing: ADR-0020 (error handling and resilience)
+	mu          sync.Mutex
+	lastRequest time.Time
 }
 
 // Ensure Enricher implements interfaces
@@ -115,57 +130,99 @@ func (e *Enricher) getValidToken(ctx context.Context) (string, error) {
 	return newToken.AccessToken, nil
 }
 
+// rateLimit ensures we don't exceed Spotify API rate limits.
+// Governing: ADR-0020 (error handling and resilience)
+func (e *Enricher) rateLimit() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	elapsed := time.Since(e.lastRequest)
+	if elapsed < rateLimitDelay {
+		time.Sleep(rateLimitDelay - elapsed)
+	}
+	e.lastRequest = time.Now()
+}
+
 // doRequest performs an authenticated request to the Spotify API.
+// Governing: ADR-0020 (error handling and resilience)
 func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, error) {
-	token, err := e.getValidToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	reqURL := fmt.Sprintf("https://api.spotify.com/v1/%s", endpoint)
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			e.logger.Warn("failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("Spotify API rate limited")
-	}
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("Spotify API unauthorized - token may be invalid")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Spotify API returned status %d", resp.StatusCode)
-	}
-
-	var result []byte
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			result = append(result, buf[:n]...)
-		}
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Fetch token inside the loop so it's refreshed on each retry attempt
+		// (handles token expiry during long 429 waits).
+		token, err := e.getValidToken(ctx)
 		if err != nil {
-			break
+			return nil, err
 		}
+
+		e.rateLimit()
+
+		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+
+			if attempt == maxRetries {
+				return nil, fmt.Errorf("Spotify API rate limited after %d retries", maxRetries)
+			}
+
+			retryAfter := defaultRetryAfter
+			if raHeader := resp.Header.Get("Retry-After"); raHeader != "" {
+				if seconds, err := strconv.Atoi(raHeader); err == nil {
+					retryAfter = time.Duration(seconds) * time.Second
+					if retryAfter > maxRetryAfter {
+						retryAfter = maxRetryAfter
+					}
+				}
+			}
+			// Guard against zero or negative Retry-After values
+			if retryAfter <= 0 {
+				retryAfter = defaultRetryAfter
+			}
+
+			e.logger.Warn("Spotify API rate limited, retrying",
+				"attempt", attempt+1,
+				"retry_after", retryAfter,
+				"endpoint", endpoint)
+
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(retryAfter):
+				continue
+			}
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", readErr)
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("Spotify API unauthorized - token may be invalid")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("Spotify API returned status %d", resp.StatusCode)
+		}
+
+		return body, nil
 	}
 
-	return result, nil
+	return nil, fmt.Errorf("Spotify API rate limited after %d retries", maxRetries)
 }
 
 // Spotify API response types
