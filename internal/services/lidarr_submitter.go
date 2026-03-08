@@ -40,9 +40,6 @@ const (
 	// maxJitter is the maximum random jitter added to backoff.
 	// Governing: SPEC-0017 REQ "Backoff Strategy"
 	maxJitter = 1 * time.Minute
-
-	// cleanupAge is the duration after which submitted items are deleted.
-	cleanupAge = 7 * 24 * time.Hour
 )
 
 // LidarrSubmitter drains the LidarrQueue table at a controlled rate,
@@ -126,8 +123,11 @@ func (s *LidarrSubmitter) Run(ctx context.Context) {
 
 // tick performs one wake cycle of the submitter.
 func (s *LidarrSubmitter) tick(ctx context.Context) {
-	// Clean up old submitted entries first
-	s.cleanup(ctx)
+	// Governing: SPEC-0017 REQ "Queue Cleanup", ADR-0029
+	// Use consolidated CleanupLidarrQueue which handles both submitted and permanently-failed entries.
+	if err := CleanupLidarrQueue(ctx, s.db); err != nil {
+		s.logger.Error("failed to cleanup lidarr queue", "error", err)
+	}
 
 	submittedCount := 0
 	skippedCount := 0
@@ -554,24 +554,6 @@ func (s *LidarrSubmitter) logSubmissionEvent(ctx context.Context, item *ent.Lida
 		SetMetadata(string(metaJSON)).
 		Exec(ctx); err != nil {
 		s.logger.Error("failed to create sync event", "error", err)
-	}
-}
-
-// cleanup removes submitted entries older than cleanupAge.
-func (s *LidarrSubmitter) cleanup(ctx context.Context) {
-	cutoff := time.Now().Add(-cleanupAge)
-	deleted, err := s.db.LidarrQueue.Delete().
-		Where(
-			lidarrqueue.StatusEQ(lidarrqueue.StatusSubmitted),
-			lidarrqueue.UpdatedAtLTE(cutoff),
-		).
-		Exec(ctx)
-	if err != nil {
-		s.logger.Error("failed to cleanup old submitted queue items", "error", err)
-		return
-	}
-	if deleted > 0 {
-		s.logger.Info("cleaned up old submitted queue items", "deleted", deleted)
 	}
 }
 
