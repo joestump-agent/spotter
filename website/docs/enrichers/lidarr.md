@@ -55,12 +55,27 @@ When Lidarr is configured:
 3. **Monitoring Status**: See what's being tracked
 4. **Quality Info**: Understand audio quality settings
 
+## Submission Queue
+
+When Spotter discovers artists and albums that aren't yet in Lidarr, it queues them for submission
+rather than sending them all at once. This prevents flooding Lidarr's download queue when users
+with large Spotify libraries connect.
+
+The background submitter checks Lidarr's actual queue depth before submitting — fast instances
+get more submissions, while slow ones automatically get fewer (adaptive backpressure).
+
+- Items waiting to be submitted show a **"Queued for Lidarr"** status in the UI
+- Failed submissions retry with exponential backoff (up to 10 attempts)
+- Successfully submitted entries are cleaned up after 7 days
+
 ## Configuration
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `SPOTTER_LIDARR_BASE_URL` | Lidarr instance URL | *Required* |
 | `SPOTTER_LIDARR_API_KEY` | Lidarr API key | *Required* |
+| `SPOTTER_LIDARR_QUEUE_MAX` | Max Lidarr queue depth before pausing submissions | `20` |
+| `SPOTTER_LIDARR_SUBMIT_INTERVAL` | How often the submitter checks and drains the queue | `30s` |
 
 ## Network Configuration
 
