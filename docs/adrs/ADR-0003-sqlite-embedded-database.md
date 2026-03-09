@@ -113,5 +113,5 @@ flowchart LR
 * Connection string: `sqlite3://file:spotter.db?cache=shared&_fk=1` (default in `.env.example`)
 * Database initialization: `internal/database/db.go` — opens connection, registers encryption hooks, runs `Schema.Create()`
 * Entity schema: `ent/schema/` — 16 `.go` files defining the full data model
-* CGO requirement addressed by multi-stage Docker build: `golang:1.24` builder image includes C toolchain (see ADR-0003 and `Dockerfile`)
-* Ent ORM choice is documented in ADR-0004
+* CGO requirement addressed by multi-stage Docker build: `golang:1.24` builder image includes C toolchain (see [ADR-0003](./ADR-0003-sqlite-embedded-database.md) and `Dockerfile`)
+* Ent ORM choice is documented in [ADR-0004](./ADR-0004-ent-orm-code-generation.md)

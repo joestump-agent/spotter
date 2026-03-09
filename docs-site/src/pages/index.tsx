@@ -2,7 +2,6 @@ import React from 'react';
 import Layout from '@theme/Layout';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import clsx from 'clsx';
 
 const features = [
   {
@@ -124,7 +123,7 @@ export default function Home(): React.ReactElement {
           </h1>
           <p className="hero__subtitle--spotter">
             AI-powered music discovery and playlist sync for{' '}
-            <strong style={{ color: '#fff' }}>Navidrome</strong>.
+            <strong>Navidrome</strong>.
             Aggregate listening history, generate mixtapes with AI DJs, and enrich your music library.
           </p>
           <div className="hero__cta">
@@ -148,25 +147,17 @@ export default function Home(): React.ReactElement {
       </header>
 
       {/* AI Disclosure */}
-      <div
-        style={{
-          background: 'linear-gradient(90deg, #1a1a2e 0%, #16213e 100%)',
-          borderTop: '1px solid #282828',
-          borderBottom: '1px solid #282828',
-          padding: '0.75rem 0',
-          textAlign: 'center',
-        }}
-      >
+      <div className="ai-disclosure">
         <div className="container">
-          <span style={{ color: '#B3B3B3', fontSize: '0.85rem' }}>
+          <span className="ai-disclosure__text">
             🤖{' '}
-            <strong style={{ color: '#fff' }}>Built by AI.</strong>{' '}
+            <strong>Built by AI.</strong>{' '}
             Spotter was written almost entirely by{' '}
             <a
               href="https://claude.ai/claude-code"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: '#1DB954', textDecoration: 'none', fontWeight: 600 }}
+              className="ai-disclosure__link"
             >
               Claude Code
             </a>
@@ -175,7 +166,7 @@ export default function Home(): React.ReactElement {
               href="https://github.com/joestump/spotter#ai-disclosure"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: '#B3B3B3', textDecoration: 'underline' }}
+              className="ai-disclosure__learn-more"
             >
               Learn more
             </a>
@@ -223,18 +214,9 @@ export default function Home(): React.ReactElement {
             <p className="section-subtitle">Up and running in under a minute with Docker</p>
             <div className="row" style={{ justifyContent: 'center' }}>
               <div className="col col--8">
-                <div
-                  style={{
-                    background: '#282828',
-                    borderRadius: '8px',
-                    padding: '1.5rem',
-                    border: '1px solid #3E3E3E',
-                    fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', monospace",
-                    overflow: 'auto',
-                  }}
-                >
-                  <pre style={{ margin: 0, background: 'none', border: 'none' }}>
-                    <code style={{ color: '#ccc', fontSize: '0.875rem', lineHeight: 1.6 }}>
+                <div className="quickstart-code">
+                  <pre>
+                    <code>
 {`# Download the compose file
 curl -o docker-compose.yml \\
   https://raw.githubusercontent.com/joestump/spotter/main/docker-compose.postgres.yml
@@ -248,7 +230,7 @@ docker compose up -d`}
                   </pre>
                 </div>
                 <p style={{ textAlign: 'center', marginTop: '1.5rem' }}>
-                  <Link to="/docs/getting-started/docker" style={{ color: '#1DB954' }}>
+                  <Link to="/docs/getting-started/docker" style={{ color: '#1DB954', fontWeight: 600 }}>
                     View full installation guide →
                   </Link>
                 </p>
@@ -307,18 +289,10 @@ docker compose up -d`}
                 { icon: '🤖', label: 'LiteLLM', sub: 'AI Backend' },
               ].map(({ icon, label, sub }) => (
                 <div key={label} className="col col--2" style={{ marginBottom: '1rem' }}>
-                  <div
-                    style={{
-                      background: '#282828',
-                      borderRadius: '12px',
-                      padding: '1.25rem 1rem',
-                      textAlign: 'center',
-                      border: '1px solid #3E3E3E',
-                    }}
-                  >
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{icon}</div>
-                    <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.9rem' }}>{label}</div>
-                    <div style={{ color: '#B3B3B3', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{sub}</div>
+                  <div className="tech-card">
+                    <span className="tech-card__icon">{icon}</span>
+                    <div className="tech-card__label">{label}</div>
+                    <div className="tech-card__sub">{sub}</div>
                   </div>
                 </div>
               ))}

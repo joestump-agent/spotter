@@ -126,5 +126,5 @@ flowchart TD
 * HTMX SSE integration: `internal/views/layouts/base.templ:23` — loads `htmx.org/dist/ext/sse.js`
 * Bus initialization: `cmd/server/main.go` — `events.NewBus()` passed to handler and all services
 * Event types: 14 typed constants covering mixtape lifecycle, playlist enhancement, similar artists, notifications
-* HTMX + Templ UI decision: see ADR-0001
-* Single-instance constraint: see ADR-0003 (SQLite)
+* HTMX + Templ UI decision: see [ADR-0001](./ADR-0001-htmx-templ-server-driven-ui.md)
+* Single-instance constraint: see [ADR-0003](./ADR-0003-sqlite-embedded-database.md) (SQLite)

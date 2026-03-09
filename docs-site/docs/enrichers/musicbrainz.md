@@ -32,7 +32,7 @@ According to [MusicBrainz requirements](https://musicbrainz.org/doc/MusicBrainz_
 - Version
 - Contact URL or email
 
-```
+```text
 ApplicationName/Version (ContactURL)
 ```
 
@@ -113,7 +113,7 @@ If MusicBrainz can't find matches:
 If metadata is incorrect:
 1. The automatic matching may have failed
 2. Check the MusicBrainz website for the correct entry
-3. Future: Manual MBID override feature planned
+3. A manual MBID override is planned for a future release.
 
 ## Contributing to MusicBrainz
 
@@ -121,6 +121,6 @@ MusicBrainz is community-maintained. If your music is missing or incorrect:
 
 1. Create a MusicBrainz account
 2. Add or edit entries
-3. Your contributions help everyone!
+3. Your contributions help everyone.
 
 Visit [musicbrainz.org](https://musicbrainz.org/) to contribute.

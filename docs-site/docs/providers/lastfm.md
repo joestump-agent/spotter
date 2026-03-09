@@ -11,7 +11,7 @@ The Last.fm provider enables syncing your complete scrobble history with Spotter
 - **Unlimited historical data**: Access your full scrobbling history
 - **No expiration**: API keys don't expire
 - **Community metadata**: Access to tags, biographies, and more
-- **MD5 authentication**: Simple, secure authentication flow
+- **MD5 signature-based authentication**: Straightforward authentication flow
 
 ## Why Last.fm?
 

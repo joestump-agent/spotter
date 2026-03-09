@@ -8,7 +8,7 @@ decision-makers: joestump
 
 ## Context and Problem Statement
 
-Spotter's build has two non-trivial requirements: the Go binary requires CGO for the `go-sqlite3` driver (ADR-0003), and the UI requires Node.js to compile Tailwind CSS with DaisyUI (ADR-0011). Additionally, Templ templates must be code-generated before Go compilation. How should Docker packaging handle these heterogeneous build dependencies while keeping the final runtime image small and self-contained?
+Spotter's build has two non-trivial requirements: the Go binary requires CGO for the `go-sqlite3` driver ([ADR-0003](./ADR-0003-sqlite-embedded-database.md)), and the UI requires Node.js to compile Tailwind CSS with DaisyUI ([ADR-0011](./ADR-0011-tailwind-daisyui-ui-styling.md)). Additionally, Templ templates must be code-generated before Go compilation. How should Docker packaging handle these heterogeneous build dependencies while keeping the final runtime image small and self-contained?
 
 ## Decision Drivers
 
@@ -76,7 +76,7 @@ Replace `mattn/go-sqlite3` (CGO) with a pure-Go SQLite implementation like `mode
 * Good, because `CGO_ENABLED=0` enables fully static binaries — could use `scratch` or `alpine` as the runtime base
 * Good, because eliminates the need for a C compiler in the builder stage
 * Good, because cross-compilation becomes trivial without CGO
-* Bad, because would require replacing the SQLite driver across the entire codebase — contradicts ADR-0003 which chose `go-sqlite3`
+* Bad, because would require replacing the SQLite driver across the entire codebase — contradicts [ADR-0003](./ADR-0003-sqlite-embedded-database.md) which chose `go-sqlite3`
 * Bad, because `modernc.org/sqlite` has different performance characteristics and compatibility guarantees than the canonical C SQLite via `go-sqlite3`
 * Bad, because the Ent ORM integration is tested with `go-sqlite3` — switching drivers introduces migration risk
 
@@ -102,5 +102,5 @@ Pre-compile Tailwind CSS in a CI step before Docker build, then copy the pre-bui
 * Build binary target: `Makefile:68-71` — `CGO_ENABLED=1 go build -o $(BINARY_NAME) $(MAIN_PATH)`
 * CSS build target: `Makefile:58-61` — `npx tailwindcss -i ./static/css/input.css -o ./static/css/output.css --minify`
 * Code generation target: `Makefile:51-56` — `go generate ./ent` and `templ generate`
-* CGO requirement: see ADR-0003 (SQLite with go-sqlite3)
-* Tailwind + DaisyUI: see ADR-0011
+* CGO requirement: see [ADR-0003](./ADR-0003-sqlite-embedded-database.md) (SQLite with go-sqlite3)
+* Tailwind + DaisyUI: see [ADR-0011](./ADR-0011-tailwind-daisyui-ui-styling.md)

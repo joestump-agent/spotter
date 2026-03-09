@@ -46,7 +46,7 @@ Spotter supports OpenAI-compatible APIs like LiteLLM:
 
 ```bash
 SPOTTER_OPENAI_BASE_URL=https://your-litellm-instance.com/v1
-SPOTTER_OPENAI_MODEL=claude-3-opus  # Or any supported model
+SPOTTER_OPENAI_MODEL=claude-3-opus  # Requires LiteLLM proxy for non-OpenAI models
 ```
 
 ## Generated Content
@@ -133,6 +133,8 @@ AI enrichment uses tokens:
 | :--- | :--- | :--- |
 | gpt-4o | $5/1M tokens | $15/1M tokens |
 | gpt-4o-mini | $0.15/1M tokens | $0.60/1M tokens |
+
+Pricing as of early 2025. Check [OpenAI's pricing page](https://openai.com/pricing) for current rates.
 
 For large libraries, consider:
 - Using gpt-4o-mini for initial enrichment

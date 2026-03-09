@@ -5,7 +5,7 @@ slug: /
 
 # Introduction
 
-**Spotter** is an AI-powered playlist generator for [Navidrome](https://www.navidrome.org/). It aggregates your listening history from various sources (Navidrome, Spotify, Last.fm) and uses that data to generate personalized playlists. AI-powered metadata enrichment generates intelligent summaries, biographies, and tags for your music library.
+**Spotter** is an AI-powered playlist generator for [Navidrome](https://www.navidrome.org/). It aggregates your listening history from Navidrome, Spotify, and Last.fm, then uses that data to generate personalized playlists. Its metadata enrichment pipeline produces intelligent summaries, biographies, and tags for your music library.
 
 ## Key Features
 
@@ -24,7 +24,7 @@ slug: /
 Spotter is built with:
 
 - **Backend**: Go with `chi` router and Server-Sent Events (SSE) for real-time updates
-- **Database**: SQLite (via `ent` ORM) with automatic migrations
+- **Database**: PostgreSQL (recommended), SQLite for development (via `ent` ORM) with automatic migrations
 - **Frontend**: Server-side rendering with `templ` + `HTMX` for interactivity and real-time updates
 - **Styling**: `DaisyUI` + `Tailwind CSS` with custom retro themes and `@iconify/tailwind` for icons
 - **Background Jobs**: Configurable periodic sync for all connected providers
@@ -36,4 +36,4 @@ Spotter is built with:
 - [Installation Guide](/docs/getting-started/installation)
 - [Configuration Reference](/docs/getting-started/configuration)
 - [Vibes Engine Documentation](/docs/features/vibes-engine)
-- [API Reference](/docs/api/endpoints)
+- [API Reference](/api/spotter)

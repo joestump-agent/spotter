@@ -121,7 +121,7 @@ sequenceDiagram
 
 ### Scenario 1: Incremental history sync
 
-```
+```gherkin
 Given a user's last listen was 2 hours ago
 When the 5-minute sync tick fires
 Then the Syncer queries the most recent Listen.PlayedAt for this user
@@ -134,7 +134,7 @@ And a notification event is published
 
 ### Scenario 2: New user first sync
 
-```
+```gherkin
 Given a user logs in for the first time
 When PostLogin triggers an immediate go Sync(ctx, user)
 Then since is set to now - 30 days (no existing listens)
@@ -143,7 +143,7 @@ And the full 30-day history is imported for all configured providers
 
 ### Scenario 3: Provider returns error mid-sync
 
-```
+```gherkin
 Given the Last.fm API returns a 503 error during history fetch
 When GetRecentListens returns an error
 Then the Syncer logs the error with structured fields (user, provider, error)

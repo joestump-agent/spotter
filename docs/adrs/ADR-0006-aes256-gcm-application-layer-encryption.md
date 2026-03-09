@@ -118,5 +118,5 @@ flowchart LR
 * Encrypted entities: `NavidromeAuth.Password`, `SpotifyAuth.AccessToken`, `SpotifyAuth.RefreshToken`, `LastFMAuth.SessionKey`
 * Key configuration: `SPOTTER_SECURITY_ENCRYPTION_KEY` — 64 hex characters (32 bytes) in `.env` / environment
 * Encryptor initialization: `cmd/server/main.go:50-60`
-* Authentication decision (session cookies): see ADR-0005
-* Database choice: see ADR-0003
+* Authentication decision (session cookies): see [ADR-0005](./ADR-0005-navidrome-primary-identity-provider.md)
+* Database choice: see [ADR-0003](./ADR-0003-sqlite-embedded-database.md)

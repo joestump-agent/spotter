@@ -12,7 +12,7 @@ Spotter is a self-hosted, single-user companion application for Navidrome that i
 
 ## Decision Drivers
 
-* Security decisions are distributed across multiple ADRs (ADR-0005, ADR-0006, ADR-0020, ADR-0021) — a unified threat model provides a single reference point
+* Security decisions are distributed across multiple ADRs ([ADR-0005](./ADR-0005-navidrome-primary-identity-provider.md), [ADR-0006](./ADR-0006-aes256-gcm-application-layer-encryption.md), [ADR-0020](./ADR-0020-error-handling-resilience.md), [ADR-0021](./ADR-0021-encryption-key-rotation.md)) — a unified threat model provides a single reference point
 * Self-hosted personal software has a different threat profile than multi-tenant SaaS — assumptions about the trust boundary and deployment environment must be explicit
 * Contributors and future sessions need to understand what is defended, what is not, and why — prevents over-engineering defenses for out-of-scope threats and under-engineering for in-scope ones
 * The operator is both the administrator and the sole user — multi-tenant isolation is not applicable
@@ -154,7 +154,7 @@ Spotter does not implement rate limiting, request throttling, or connection limi
 
 Spotter has no concept of tenant isolation, per-user data segregation (beyond the single user), or role-based access control. All data belongs to one user.
 
-**Rationale**: Single-user by design (ADR-0003, ADR-0005). Adding multi-tenancy would fundamentally change the architecture.
+**Rationale**: Single-user by design ([ADR-0003](./ADR-0003-sqlite-embedded-database.md), [ADR-0005](./ADR-0005-navidrome-primary-identity-provider.md)). Adding multi-tenancy would fundamentally change the architecture.
 
 ---
 
@@ -164,7 +164,7 @@ These are known security gaps that are documented but not currently mitigated:
 
 ### G1: Prompt Injection via DJ Personas
 
-DJ personas (ADR-0008) allow users to define custom AI prompts that are sent to the OpenAI API. A malicious or confused prompt could instruct the AI to produce unexpected output, exfiltrate context from the system prompt, or generate content outside the music domain. Since the DJ persona text is user-authored and directly interpolated into the AI prompt, there is no sanitization boundary.
+DJ personas ([ADR-0008](./ADR-0008-openai-api-litellm-compatible-llm-backend.md)) allow users to define custom AI prompts that are sent to the OpenAI API. A malicious or confused prompt could instruct the AI to produce unexpected output, exfiltrate context from the system prompt, or generate content outside the music domain. Since the DJ persona text is user-authored and directly interpolated into the AI prompt, there is no sanitization boundary.
 
 **Impact**: Low — the user is both the author and consumer of DJ personas. Prompt injection is primarily a concern in multi-user or third-party-prompt scenarios.
 
@@ -218,15 +218,15 @@ The following assumptions underpin Spotter's security posture. If any assumption
 
 | ADR | Security Relevance |
 |-----|-------------------|
-| ADR-0003 | SQLite as single-instance embedded database — single-file attack surface |
-| ADR-0005 | Navidrome passthrough authentication — no native password store |
-| ADR-0006 | AES-256-GCM encryption at rest — protects credentials in database file |
-| ADR-0007 | In-memory event bus — events are ephemeral, not persisted (no data leak risk) |
-| ADR-0008 | OpenAI/LiteLLM backend — prompt injection risk via DJ personas |
-| ADR-0013 | Background scheduling — goroutines run with full credential access |
-| ADR-0016 | Provider factory — each provider authenticates independently |
-| ADR-0020 | Error handling resilience — fatal errors surface credential failures to user |
-| ADR-0021 | Key rotation — provides recovery path for compromised encryption key |
+| [ADR-0003](./ADR-0003-sqlite-embedded-database.md) | SQLite as single-instance embedded database — single-file attack surface |
+| [ADR-0005](./ADR-0005-navidrome-primary-identity-provider.md) | Navidrome passthrough authentication — no native password store |
+| [ADR-0006](./ADR-0006-aes256-gcm-application-layer-encryption.md) | AES-256-GCM encryption at rest — protects credentials in database file |
+| [ADR-0007](./ADR-0007-in-memory-event-bus.md) | In-memory event bus — events are ephemeral, not persisted (no data leak risk) |
+| [ADR-0008](./ADR-0008-openai-api-litellm-compatible-llm-backend.md) | OpenAI/LiteLLM backend — prompt injection risk via DJ personas |
+| [ADR-0013](./ADR-0013-goroutine-ticker-background-scheduling.md) | Background scheduling — goroutines run with full credential access |
+| [ADR-0016](./ADR-0016-pluggable-provider-factory-pattern.md) | Provider factory — each provider authenticates independently |
+| [ADR-0020](./ADR-0020-error-handling-resilience.md) | Error handling resilience — fatal errors surface credential failures to user |
+| [ADR-0021](./ADR-0021-encryption-key-rotation.md) | Key rotation — provides recovery path for compromised encryption key |
 
 ## More Information
 

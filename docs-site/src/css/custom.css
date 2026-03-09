@@ -1,52 +1,679 @@
 /**
- * Design Plugin - Docusaurus Custom Styles
+ * Spotter Docs — Spotify-Inspired Theme
  *
- * Styles for ADR and OpenSpec documentation components.
- * Includes badge components, RFC 2119 keyword highlighting,
- * and dark mode support.
+ * Dark-first design with proper light mode support.
+ * Preserves all design plugin badge/RFC/requirement-box styles.
  */
 
+/* ============================================
+   CSS Custom Properties — Dark Mode (default)
+   ============================================ */
 :root {
-  --ifm-color-primary: #D4764E;
-  --ifm-color-primary-dark: #C06840;
-  --ifm-color-primary-darker: #B5623C;
-  --ifm-color-primary-darkest: #954F31;
-  --ifm-color-primary-light: #DA8A66;
-  --ifm-color-primary-lighter: #DD9270;
-  --ifm-color-primary-lightest: #E4A98E;
-  --ifm-background-color: #FAF9F6;
-  --ifm-font-color-base: #2E2E2E;
-  --ifm-font-color-secondary: #555555;
+  --ifm-color-primary: #1DB954;
+  --ifm-color-primary-dark: #1AA64B;
+  --ifm-color-primary-darker: #189D47;
+  --ifm-color-primary-darkest: #14823A;
+  --ifm-color-primary-light: #22CC5D;
+  --ifm-color-primary-lighter: #2ED065;
+  --ifm-color-primary-lightest: #4ADB7A;
+
+  --ifm-background-color: #121212;
+  --ifm-background-surface-color: #1e1e1e;
+  --ifm-font-color-base: #E0E0E0;
+  --ifm-font-color-secondary: #B3B3B3;
+  --ifm-heading-color: #FFFFFF;
+
   --ifm-code-font-size: 95%;
-  --ifm-heading-font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-heading-font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ifm-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  --ifm-link-color: #1DB954;
+  --ifm-link-hover-color: #22CC5D;
+
+  --ifm-navbar-background-color: #121212;
+  --ifm-navbar-link-color: #E0E0E0;
+  --ifm-navbar-link-hover-color: #FFFFFF;
+
+  --ifm-footer-background-color: #0a0a0a;
+  --ifm-footer-color: #B3B3B3;
+  --ifm-footer-link-color: #B3B3B3;
+  --ifm-footer-link-hover-color: #1DB954;
+
+  --ifm-menu-color: #B3B3B3;
+  --ifm-menu-color-active: #1DB954;
+  --ifm-menu-color-background-active: rgba(29, 185, 84, 0.1);
+  --ifm-menu-color-background-hover: rgba(255, 255, 255, 0.05);
+
+  --ifm-table-background: #1e1e1e;
+  --ifm-table-head-background: #282828;
+  --ifm-table-head-color: #FFFFFF;
+  --ifm-table-border-color: rgba(255, 255, 255, 0.08);
+  --ifm-table-stripe-background: rgba(255, 255, 255, 0.03);
+
+  --ifm-code-background: #282828;
+  --ifm-pre-background: #282828;
+
+  --ifm-hr-border-color: rgba(255, 255, 255, 0.08);
+  --ifm-toc-border-color: rgba(255, 255, 255, 0.08);
+
+  --docusaurus-highlighted-code-line-bg: rgba(29, 185, 84, 0.15);
+
+  /* Custom properties for homepage */
+  --spotter-surface: #1e1e1e;
+  --spotter-surface-hover: #282828;
+  --spotter-surface-border: rgba(255, 255, 255, 0.08);
+  --spotter-surface-border-hover: rgba(29, 185, 84, 0.3);
+  --spotter-text-primary: #FFFFFF;
+  --spotter-text-secondary: #B3B3B3;
+  --spotter-text-body: #E0E0E0;
+  --spotter-code-bg: #282828;
+  --spotter-code-border: #3E3E3E;
+  --spotter-code-text: #ccc;
+  --spotter-stats-bg: #0a0a0a;
+  --spotter-alt-section-bg: rgba(255, 255, 255, 0.02);
+  --spotter-disclosure-bg: linear-gradient(90deg, #1a1a2e 0%, #16213e 100%);
+  --spotter-disclosure-border: #282828;
+  --spotter-disclosure-text: #B3B3B3;
+  --spotter-disclosure-strong: #FFFFFF;
 }
 
-[data-theme='dark'] {
-  --ifm-color-primary: #E89B78;
-  --ifm-color-primary-dark: #E28558;
-  --ifm-color-primary-darker: #DF7A48;
-  --ifm-color-primary-darkest: #D05E24;
-  --ifm-color-primary-light: #EEB198;
-  --ifm-color-primary-lighter: #F1BCA8;
-  --ifm-color-primary-lightest: #F7D3C4;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
-  --ifm-background-color: #1b1b1d;
-  --ifm-font-color-base: #e3e3e3;
-  --ifm-font-color-secondary: #b0b0b0;
-  --ifm-navbar-background-color: #242526;
-  --ifm-navbar-link-color: #e3e3e3;
-  --ifm-menu-color: #d4d4d4;
-  --ifm-menu-color-active: #E89B78;
-  --ifm-menu-color-background-active: rgba(232, 155, 120, 0.1);
+/* ============================================
+   Light Mode Overrides
+   ============================================ */
+[data-theme='light'] {
+  --ifm-color-primary: #1DB954;
+  --ifm-color-primary-dark: #1AA64B;
+  --ifm-color-primary-darker: #189D47;
+  --ifm-color-primary-darkest: #14823A;
+  --ifm-color-primary-light: #22CC5D;
+  --ifm-color-primary-lighter: #2ED065;
+  --ifm-color-primary-lightest: #4ADB7A;
+
+  --ifm-background-color: #FAFAFA;
+  --ifm-background-surface-color: #FFFFFF;
+  --ifm-font-color-base: #333333;
+  --ifm-font-color-secondary: #666666;
+  --ifm-heading-color: #191414;
+
+  --ifm-link-color: #1DB954;
+  --ifm-link-hover-color: #14823A;
+
+  --ifm-navbar-background-color: #FFFFFF;
+  --ifm-navbar-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --ifm-navbar-link-color: #333333;
+  --ifm-navbar-link-hover-color: #191414;
+
+  --ifm-footer-background-color: #191414;
+  --ifm-footer-color: #B3B3B3;
+  --ifm-footer-link-color: #B3B3B3;
+  --ifm-footer-link-hover-color: #1DB954;
+
+  --ifm-menu-color: #555555;
+  --ifm-menu-color-active: #1DB954;
+  --ifm-menu-color-background-active: rgba(29, 185, 84, 0.08);
+  --ifm-menu-color-background-hover: rgba(0, 0, 0, 0.04);
+
+  --ifm-table-background: #FFFFFF;
+  --ifm-table-head-background: #F5F5F5;
+  --ifm-table-head-color: #191414;
+  --ifm-table-border-color: #E0E0E0;
+  --ifm-table-stripe-background: #FAFAFA;
+
+  --ifm-code-background: #F5F5F5;
+  --ifm-pre-background: #F5F5F5;
+
+  --ifm-hr-border-color: #E0E0E0;
+  --ifm-toc-border-color: #E0E0E0;
+
+  --docusaurus-highlighted-code-line-bg: rgba(29, 185, 84, 0.1);
+
+  --spotter-surface: #FFFFFF;
+  --spotter-surface-hover: #F5F5F5;
+  --spotter-surface-border: #E0E0E0;
+  --spotter-surface-border-hover: rgba(29, 185, 84, 0.4);
+  --spotter-text-primary: #191414;
+  --spotter-text-secondary: #666666;
+  --spotter-text-body: #333333;
+  --spotter-code-bg: #1e1e1e;
+  --spotter-code-border: #333333;
+  --spotter-code-text: #E0E0E0;
+  --spotter-stats-bg: #191414;
+  --spotter-alt-section-bg: #F5F5F5;
+  --spotter-disclosure-bg: linear-gradient(90deg, #f0f4ff 0%, #eef2ff 100%);
+  --spotter-disclosure-border: #E0E0E0;
+  --spotter-disclosure-text: #555555;
+  --spotter-disclosure-strong: #191414;
+}
+
+/* ============================================
+   Global Typography & Base
+   ============================================ */
+html {
+  scroll-behavior: smooth;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--ifm-heading-font-family);
+  color: var(--ifm-heading-color);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+a {
+  transition: color 0.2s ease;
+}
+
+/* ============================================
+   Navbar
+   ============================================ */
+.navbar {
+  border-bottom: 1px solid var(--spotter-surface-border);
+  backdrop-filter: blur(10px);
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+[data-theme='light'] .navbar {
+  box-shadow: var(--ifm-navbar-shadow);
+}
+
+.navbar__title {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.navbar__link {
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.navbar__link:hover {
+  color: var(--ifm-color-primary);
+}
+
+/* ============================================
+   Sidebar
+   ============================================ */
+.menu__link--active:not(.menu__link--sublist) {
+  border-left: 3px solid var(--ifm-color-primary);
+  padding-left: calc(0.75rem - 3px);
+  font-weight: 600;
+}
+
+.menu__link {
+  transition: background-color 0.15s ease, color 0.15s ease;
+  border-radius: 4px;
+}
+
+/* ============================================
+   Footer
+   ============================================ */
+.footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.footer__title {
+  color: #FFFFFF;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+}
+
+.footer__link-item {
+  transition: color 0.2s ease;
+}
+
+/* ============================================
+   Tables
+   ============================================ */
+table {
+  border-collapse: collapse;
+}
+
+table thead tr {
+  background-color: var(--ifm-table-head-background);
+}
+
+table thead th {
+  color: var(--ifm-table-head-color);
+  font-weight: 700;
+  border-bottom: 2px solid var(--ifm-table-border-color);
+}
+
+table td, table th {
+  border-color: var(--ifm-table-border-color);
+}
+
+table tbody tr:nth-child(even) {
+  background-color: var(--ifm-table-stripe-background);
+}
+
+/* ============================================
+   Code Blocks
+   ============================================ */
+pre {
+  border: 1px solid var(--spotter-surface-border);
+  border-radius: 8px;
+}
+
+code {
+  border-radius: 4px;
+}
+
+/* ============================================
+   Scrollbar (dark mode)
+   ============================================ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   Buttons — Spotify Style
+   ============================================ */
+.button--spotify {
+  background-color: #1DB954;
+  color: #FFFFFF;
+  border: 2px solid #1DB954;
+  font-weight: 700;
+  border-radius: 500px;
+  padding: 0.75rem 2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.button--spotify:hover {
+  background-color: #1ed760;
+  border-color: #1ed760;
+  color: #FFFFFF;
+  transform: scale(1.04);
+  text-decoration: none;
+}
+
+.button--spotify:active {
+  transform: scale(0.98);
+}
+
+.button--spotify-outline {
+  background-color: transparent;
+  color: var(--spotter-text-primary);
+  border: 2px solid var(--spotter-surface-border);
+  font-weight: 700;
+  border-radius: 500px;
+  padding: 0.75rem 2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.button--spotify-outline:hover {
+  border-color: #1DB954;
+  color: #1DB954;
+  transform: scale(1.04);
+  text-decoration: none;
+}
+
+.button--spotify-outline:active {
+  transform: scale(0.98);
+}
+
+/* ============================================
+   Hero Section
+   ============================================ */
+.hero--spotter {
+  background: linear-gradient(180deg, #121212 0%, #1a1a1a 50%, #121212 100%);
+  padding: 6rem 0 4rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero--spotter::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -10%;
+  width: 120%;
+  height: 200%;
+  background: radial-gradient(ellipse at 50% 0%, rgba(29, 185, 84, 0.12) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+[data-theme='light'] .hero--spotter {
+  background: linear-gradient(180deg, #FAFAFA 0%, #F0F0F0 50%, #FAFAFA 100%);
+}
+
+[data-theme='light'] .hero--spotter::before {
+  background: radial-gradient(ellipse at 50% 0%, rgba(29, 185, 84, 0.08) 0%, transparent 60%);
+}
+
+.hero__logo {
+  font-size: 4.5rem;
+  display: block;
+  margin-bottom: 1rem;
+  filter: drop-shadow(0 4px 12px rgba(29, 185, 84, 0.3));
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.hero__title--spotter {
+  font-size: 4.5rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin-bottom: 1.25rem;
+  color: var(--spotter-text-primary);
+  position: relative;
+}
+
+.hero__title--spotter span {
+  background: linear-gradient(135deg, #FFFFFF 0%, #1DB954 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+[data-theme='light'] .hero__title--spotter span {
+  background: linear-gradient(135deg, #191414 0%, #1DB954 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero__subtitle--spotter {
+  font-size: 1.25rem;
+  line-height: 1.6;
+  color: var(--spotter-text-secondary);
+  max-width: 640px;
+  margin: 0 auto 2.5rem;
+}
+
+.hero__subtitle--spotter strong {
+  color: var(--spotter-text-primary);
+}
+
+.hero__cta {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ============================================
+   AI Disclosure Banner
+   ============================================ */
+.ai-disclosure {
+  background: var(--spotter-disclosure-bg);
+  border-top: 1px solid var(--spotter-disclosure-border);
+  border-bottom: 1px solid var(--spotter-disclosure-border);
+  padding: 0.75rem 0;
+  text-align: center;
+}
+
+.ai-disclosure__text {
+  color: var(--spotter-disclosure-text);
+  font-size: 0.85rem;
+}
+
+.ai-disclosure__text strong {
+  color: var(--spotter-disclosure-strong);
+}
+
+.ai-disclosure__link {
+  color: #1DB954;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.ai-disclosure__link:hover {
+  color: #1ed760;
+  text-decoration: none;
+}
+
+.ai-disclosure__learn-more {
+  color: var(--spotter-disclosure-text);
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.ai-disclosure__learn-more:hover {
+  color: var(--spotter-text-primary);
+}
+
+/* ============================================
+   Stats Bar
+   ============================================ */
+.stats-bar {
+  background-color: var(--spotter-stats-bg);
+  padding: 2.5rem 0;
+  border-bottom: 1px solid var(--spotter-surface-border);
+}
+
+.stat-item {
+  text-align: center;
+  padding: 0.5rem;
+}
+
+.stat-number {
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: #1DB954;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--spotter-text-secondary);
+  margin-top: 0.25rem;
+  font-weight: 600;
+}
+
+/* ============================================
+   Section Styles
+   ============================================ */
+.features-section {
+  padding: 5rem 0;
+}
+
+.features-section-alt {
+  padding: 5rem 0;
+  background-color: var(--spotter-alt-section-bg);
+}
+
+.section-title {
+  text-align: center;
+  font-size: 2.25rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.03em;
+  color: var(--spotter-text-primary);
+}
+
+.section-subtitle {
+  text-align: center;
+  color: var(--spotter-text-secondary);
+  font-size: 1.1rem;
+  margin-bottom: 3rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ============================================
+   Feature Cards
+   ============================================ */
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--spotter-surface);
+  border: 1px solid var(--spotter-surface-border);
+  border-radius: 12px;
+  padding: 1.75rem;
+  height: 100%;
+  transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+  overflow: hidden;
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #1DB954, #1ed760);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--spotter-surface-border-hover);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px var(--spotter-surface-border-hover);
+  text-decoration: none;
+  color: inherit;
+}
+
+.feature-card:hover::before {
+  opacity: 1;
+}
+
+.feature-card__icon {
+  font-size: 2.25rem;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+
+.feature-card__title {
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+  color: var(--spotter-text-primary);
+}
+
+.feature-card__description {
+  color: var(--spotter-text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  flex-grow: 1;
+  margin-bottom: 0.75rem;
+}
+
+.feature-card__link {
+  color: #1DB954;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: color 0.2s ease;
+}
+
+.feature-card:hover .feature-card__link {
+  color: #1ed760;
+}
+
+/* ============================================
+   Tech Stack Cards
+   ============================================ */
+.tech-card {
+  background: var(--spotter-surface);
+  border-radius: 12px;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  border: 1px solid var(--spotter-surface-border);
+  transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.tech-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--spotter-surface-border-hover);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.tech-card__icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.tech-card__label {
+  font-weight: 700;
+  color: var(--spotter-text-primary);
+  font-size: 0.9rem;
+}
+
+.tech-card__sub {
+  color: var(--spotter-text-secondary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ============================================
+   Quick Start Code Block
+   ============================================ */
+.quickstart-code {
+  background: var(--spotter-code-bg);
+  border-radius: 12px;
+  padding: 1.75rem;
+  border: 1px solid var(--spotter-code-border);
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'JetBrains Mono', monospace;
+  overflow: auto;
+  position: relative;
+}
+
+.quickstart-code pre {
+  margin: 0;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.quickstart-code code {
+  color: var(--spotter-code-text);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  background: none;
 }
 
 /* ============================================
    Badge Components - Shared Base Styles
+   (Preserved from design plugin)
    ============================================ */
 .severity-badge,
 .domain-badge,
@@ -204,25 +831,25 @@ h1, h2, h3, h4, h5, h6 {
   text-decoration: none;
   padding: 0.1rem 0.35rem;
   border-radius: 0.25rem;
-  background-color: rgba(212, 118, 78, 0.1);
+  background-color: rgba(29, 185, 84, 0.1);
   color: var(--ifm-color-primary-dark);
-  border: 1px solid rgba(212, 118, 78, 0.2);
+  border: 1px solid rgba(29, 185, 84, 0.2);
   transition: background-color 0.2s, border-color 0.2s;
   white-space: nowrap;
 }
 .rfc-ref:hover {
-  background-color: rgba(212, 118, 78, 0.2);
-  border-color: rgba(212, 118, 78, 0.4);
+  background-color: rgba(29, 185, 84, 0.2);
+  border-color: rgba(29, 185, 84, 0.4);
   text-decoration: none;
 }
 [data-theme='dark'] .rfc-ref {
-  background-color: rgba(232, 155, 120, 0.15);
+  background-color: rgba(29, 185, 84, 0.15);
   color: var(--ifm-color-primary-light);
-  border-color: rgba(232, 155, 120, 0.3);
+  border-color: rgba(29, 185, 84, 0.3);
 }
 [data-theme='dark'] .rfc-ref:hover {
-  background-color: rgba(232, 155, 120, 0.25);
-  border-color: rgba(232, 155, 120, 0.5);
+  background-color: rgba(29, 185, 84, 0.25);
+  border-color: rgba(29, 185, 84, 0.5);
 }
 
 /* ============================================
@@ -291,3 +918,32 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--ifm-color-emphasis-900);
 }
 
+/* ============================================
+   Responsive Tweaks
+   ============================================ */
+@media (max-width: 768px) {
+  .hero__title--spotter {
+    font-size: 2.75rem;
+  }
+
+  .hero__subtitle--spotter {
+    font-size: 1.05rem;
+  }
+
+  .hero__logo {
+    font-size: 3rem;
+  }
+
+  .hero__cta {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .stat-number {
+    font-size: 1.75rem;
+  }
+
+  .section-title {
+    font-size: 1.75rem;
+  }
+}

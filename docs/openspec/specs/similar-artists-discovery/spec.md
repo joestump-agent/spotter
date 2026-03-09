@@ -206,7 +206,7 @@ flowchart TD
 
 ### Scenario 1: On-demand similar artist discovery
 
-```
+```gherkin
 Given user "alice" is viewing the artist page for "Radiohead" (ID=42)
 And no SimilarArtist entries exist for Radiohead
 When alice clicks "Find Similar Artists"
@@ -223,7 +223,7 @@ And publishes a success notification "Found 5 artists similar to Radiohead"
 
 ### Scenario 2: Cached results prevent re-discovery
 
-```
+```gherkin
 Given SimilarArtist entries for "Pink Floyd" were created 3 days ago
 When FindSimilarArtistsForAll processes "Pink Floyd"
 Then the service finds existing entries with CreatedAt > 7-day cutoff
@@ -233,7 +233,7 @@ And moves to the next artist after zero delay
 
 ### Scenario 3: AI suggests an artist not in library
 
-```
+```gherkin
 Given the OpenAI response includes {"name": "Unknown Band", "id": 999, "confidence": 0.85}
 And no artist with ID 999 exists in the user's library
 And no artist with a name containing "Unknown Band" exists in the user's library
@@ -245,7 +245,7 @@ And continues processing the remaining entries
 
 ### Scenario 4: OpenAI API failure during discovery
 
-```
+```gherkin
 Given the OpenAI API key is valid but the API returns HTTP 429 (rate limited)
 When FindSimilarArtists calls callOpenAI
 Then callOpenAI returns an error "API returned status 429: ..."
@@ -256,7 +256,7 @@ And no SimilarArtist entries are modified
 
 ### Scenario 5: Service unavailable (no SimilarArtistsSvc)
 
-```
+```gherkin
 Given h.SimilarArtistsSvc is nil (OpenAI not configured)
 When a user clicks "Find Similar Artists"
 Then ArtistFindSimilar returns HTTP 503 "Similar artists service not available"
@@ -266,7 +266,7 @@ And no event bus notifications are published
 
 ### Scenario 6: Artist ID fallback to name matching
 
-```
+```gherkin
 Given the AI response includes {"name": "The Beatles", "id": 50, "confidence": 0.95}
 And artist ID 50 does not belong to the current user
 But an artist named "The Beatles" exists in the user's library with ID 73

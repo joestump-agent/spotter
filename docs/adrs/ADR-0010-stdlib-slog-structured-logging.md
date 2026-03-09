@@ -99,4 +99,4 @@ Logger initialized in `cmd/server/main.go:38-41` as `slog.New(slog.NewTextHandle
 * No-op handler (vibes): `internal/vibes/generator.go:28-33` — identical `nopHandler` for the mixtape generator
 * Logger injection pattern: `cmd/server/main.go:78-110` — single `logger` instance passed to all service constructors
 * Go version: `go.mod:3` — `go 1.24.0` (slog available since Go 1.21)
-* Related: ADR-0009 (Viper configuration that the logger reports on during startup)
+* Related: [ADR-0009](./ADR-0009-viper-environment-variable-configuration.md) (Viper configuration that the logger reports on during startup)

@@ -15,8 +15,8 @@ Spotter runs three background goroutine loops in `cmd/server/main.go` — listen
 * Container orchestrators (Docker, Kubernetes) send SIGTERM and expect the process to exit within a configurable grace period (default 30 seconds in Docker)
 * Three ticker loops use `context.Background()` — there is no parent context to cancel when shutdown is requested
 * Per-user goroutines spawned by each loop are unbounded and untracked — there is no mechanism to wait for them to finish
-* SQLite writes are atomic per transaction (ADR-0003) but a sync operation may span multiple transactions — partial completion is possible
-* The event bus (ADR-0007) should stop accepting new subscriptions and drain existing ones during shutdown
+* SQLite writes are atomic per transaction ([ADR-0003](./ADR-0003-sqlite-embedded-database.md)) but a sync operation may span multiple transactions — partial completion is possible
+* The event bus ([ADR-0007](./ADR-0007-in-memory-event-bus.md)) should stop accepting new subscriptions and drain existing ones during shutdown
 * The HTTP server (`http.ListenAndServe`) has no built-in graceful shutdown — it must be replaced with `http.Server.Shutdown()`
 * Spotter is a single binary with no external coordination — shutdown logic must be self-contained
 
@@ -29,14 +29,14 @@ Spotter runs three background goroutine loops in `cmd/server/main.go` — listen
 
 ## Decision Outcome
 
-Chosen option: **`signal.NotifyContext` + `sync.WaitGroup` + buffered semaphore**, because it uses only Go standard library primitives (`os/signal`, `context`, `sync`), integrates naturally with the existing ticker loop pattern (ADR-0013), and provides a clear shutdown sequence: (1) `signal.NotifyContext` creates a context that is cancelled on SIGTERM/SIGINT, (2) all background loops select on `ctx.Done()` to stop ticking, (3) a `sync.WaitGroup` tracks in-flight per-user goroutines so the main function can wait for them to complete, (4) a buffered channel semaphore bounds per-user concurrency to prevent goroutine explosion during shutdown drain. The HTTP server is migrated from `http.ListenAndServe` to `http.Server{}.Shutdown(ctx)` for graceful connection draining.
+Chosen option: **`signal.NotifyContext` + `sync.WaitGroup` + buffered semaphore**, because it uses only Go standard library primitives (`os/signal`, `context`, `sync`), integrates naturally with the existing ticker loop pattern ([ADR-0013](./ADR-0013-goroutine-ticker-background-scheduling.md)), and provides a clear shutdown sequence: (1) `signal.NotifyContext` creates a context that is cancelled on SIGTERM/SIGINT, (2) all background loops select on `ctx.Done()` to stop ticking, (3) a `sync.WaitGroup` tracks in-flight per-user goroutines so the main function can wait for them to complete, (4) a buffered channel semaphore bounds per-user concurrency to prevent goroutine explosion during shutdown drain. The HTTP server is migrated from `http.ListenAndServe` to `http.Server{}.Shutdown(ctx)` for graceful connection draining.
 
 ### Consequences
 
 * Good, because zero external dependencies — uses only `os/signal`, `context`, `sync`, and `net/http` from the standard library
 * Good, because `signal.NotifyContext` is idiomatic Go (introduced in Go 1.16) and returns a standard `context.Context` compatible with all existing service methods that accept contexts
 * Good, because `sync.WaitGroup` provides a simple, race-free mechanism to wait for all in-flight goroutines before process exit
-* Good, because the buffered semaphore pattern (`make(chan struct{}, N)`) bounds per-user concurrency, addressing the unbounded goroutine concern from ADR-0013
+* Good, because the buffered semaphore pattern (`make(chan struct{}, N)`) bounds per-user concurrency, addressing the unbounded goroutine concern from [ADR-0013](./ADR-0013-goroutine-ticker-background-scheduling.md)
 * Good, because `http.Server.Shutdown()` drains active HTTP connections gracefully, ensuring in-progress SSE streams and API requests complete
 * Good, because the 30-second timeout budget aligns with Docker's default `stop_grace_period`, ensuring the process exits before the container runtime sends SIGKILL
 * Bad, because adds complexity to `cmd/server/main.go` — the three simple `go func()` blocks must now coordinate through shared context and WaitGroup
@@ -83,7 +83,7 @@ Frameworks that manage goroutine lifecycles with structured start/stop semantics
 
 ### No Graceful Shutdown
 
-Accept that SIGTERM kills the process immediately. Rely on SQLite's transaction atomicity (ADR-0003) to prevent database corruption. Accept that in-flight sync operations may produce partial results.
+Accept that SIGTERM kills the process immediately. Rely on SQLite's transaction atomicity ([ADR-0003](./ADR-0003-sqlite-embedded-database.md)) to prevent database corruption. Accept that in-flight sync operations may produce partial results.
 
 * Good, because zero implementation effort — no code changes required
 * Good, because SQLite transactions are atomic — individual write operations are never half-committed
@@ -145,8 +145,8 @@ flowchart TD
 
 * Current background loops: `cmd/server/main.go:123-200` — three `go func()` blocks with `time.NewTicker` and `context.Background()`
 * Current HTTP server: `cmd/server/main.go:337-340` — `http.ListenAndServe` with no shutdown path
-* Ticker loop pattern: see ADR-0013 (goroutine ticker background scheduling)
-* SQLite transaction atomicity: see ADR-0003 (SQLite embedded database)
-* Event bus cleanup on shutdown: see ADR-0007 (in-memory event bus)
+* Ticker loop pattern: see [ADR-0013](./ADR-0013-goroutine-ticker-background-scheduling.md) (goroutine ticker background scheduling)
+* SQLite transaction atomicity: see [ADR-0003](./ADR-0003-sqlite-embedded-database.md) (SQLite embedded database)
+* Event bus cleanup on shutdown: see [ADR-0007](./ADR-0007-in-memory-event-bus.md) (in-memory event bus)
 * `signal.NotifyContext` documentation: Go stdlib `os/signal` package, available since Go 1.16
 * Docker stop grace period: default 10 seconds (`docker stop`), configurable via `--stop-timeout` or `stop_grace_period` in Compose

@@ -39,7 +39,7 @@ Spotter uses Navidrome's authentication system:
 No separate API keys are required - your Navidrome credentials are sufficient.
 
 :::info
-Your Navidrome password is stored encrypted for background sync operations. See [Authentication](/docs/api/authentication) for details on session security.
+Your Navidrome password is stored encrypted for background sync operations. See the [API Reference](/api/spotter) for details on session security.
 :::
 
 ## Synced Data
@@ -113,5 +113,5 @@ SPOTTER_NAVIDROME_BASE_URL=http://localhost:4533
 When using a reverse proxy (nginx, Traefik, etc.), ensure:
 
 - The proxy passes all Subsonic API endpoints
-- WebSocket connections are supported (for SSE)
+- Long-lived HTTP connections are supported (for SSE)
 - Proper host headers are forwarded

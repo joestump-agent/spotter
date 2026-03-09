@@ -87,4 +87,4 @@ Store image bytes directly in PostgreSQL as `bytea` columns.
 * **Image serving**: `internal/handlers/` — auth-gated routes at `/library/artist/{id}.png` and `/library/album/{id}.png`
 * **DB schema**: `ent/schema/artist_image.go`, `ent/schema/album_image.go` — `local_path` field (string)
 * **Production note**: The container at `ie01.stump.wtf` does NOT have a volume mount for `/app/data`, so images are re-downloaded after every container update. WUD triggers automatic container updates on new tags, which clears all images.
-* **Related**: ADR-0015 (pluggable enricher registry — enrichers call `DownloadAndSaveImage`), SPEC metadata-enrichment-pipeline REQ-ENRICH-031..033
+* **Related**: [ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md) (pluggable enricher registry — enrichers call `DownloadAndSaveImage`), [SPEC metadata-enrichment-pipeline](../openspec/specs/metadata-enrichment-pipeline/spec.md) REQ-ENRICH-031..033

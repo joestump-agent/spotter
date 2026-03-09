@@ -88,7 +88,7 @@ Extract the mixtape generation into a standalone HTTP/gRPC service that Spotter 
 
 * Good, because true decoupling — the generator can be scaled, deployed, and versioned independently
 * Good, because language-agnostic — the generator could be written in Python with better ML library support
-* Bad, because dramatically increases infrastructure complexity — contradicts the single-binary, single-instance deployment model (ADR-0003)
+* Bad, because dramatically increases infrastructure complexity — contradicts the single-binary, single-instance deployment model ([ADR-0003](./ADR-0003-sqlite-embedded-database.md))
 * Bad, because network latency and serialization overhead for every generation request
 * Bad, because the generator needs access to the user's library (available tracks, listening history) — either the service needs database access or the caller must serialize large datasets in each request
 * Bad, because a personal music server does not benefit from microservice scaling — the user base is typically one person
@@ -110,5 +110,5 @@ Extract the mixtape generation into a standalone HTTP/gRPC service that Spotter 
 * Handler usage (albums): `internal/handlers/albums.go:575-592` — album-seeded mixtape generation
 * Handler usage (playlists): `internal/handlers/playlists.go:898-923` — `h.PlaylistEnhancer.EnhancePlaylist(ctx, req)`
 * Nil-generator test: `internal/handlers/vibes_test.go:739` — tests behavior when generator is not configured
-* OpenAI configuration: see ADR-0008
-* Single-instance constraint: see ADR-0003 (SQLite)
+* OpenAI configuration: see [ADR-0008](./ADR-0008-openai-api-litellm-compatible-llm-backend.md)
+* Single-instance constraint: see [ADR-0003](./ADR-0003-sqlite-embedded-database.md) (SQLite)

@@ -17,7 +17,7 @@ How should Spotter classify and respond to external service errors to improve re
 * Background sync runs unattended — the user may not check logs for hours or days after a credential expires
 * External APIs have varying rate limit and error behaviors — Spotify uses 429 with `Retry-After`, Last.fm returns XML errors, Navidrome uses Subsonic error codes
 * Spotter is a single-user personal server — a simple in-memory backoff counter per provider is sufficient (no distributed state needed)
-* The event bus (ADR-0007) already supports `NotificationPayload` with `IconType` — fatal errors can be surfaced to the browser as toast notifications
+* The event bus ([ADR-0007](./ADR-0007-in-memory-event-bus.md)) already supports `NotificationPayload` with `IconType` — fatal errors can be surfaced to the browser as toast notifications
 * Overly aggressive retry on transient errors risks hitting rate limits and making the situation worse
 
 ## Considered Options
@@ -106,6 +106,6 @@ flowchart TD
 * Current error handling: `internal/services/sync.go:235-244` — logs error, continues to next provider
 * Background sync loop: `cmd/server/main.go:123-141` — `time.NewTicker` with configurable interval
 * Event bus notification: `internal/events/bus.go` — `Publish()` with `NotificationPayload`
-* Provider factory pattern: see ADR-0016
-* Background scheduling: see ADR-0013
-* Event bus: see ADR-0007
+* Provider factory pattern: see [ADR-0016](./ADR-0016-pluggable-provider-factory-pattern.md)
+* Background scheduling: see [ADR-0013](./ADR-0013-goroutine-ticker-background-scheduling.md)
+* Event bus: see [ADR-0007](./ADR-0007-in-memory-event-bus.md)

@@ -58,7 +58,7 @@ The base `Provider` interface (`providers.go:44-48`) requires only `Type() Type`
 * Good, because `SyncProvider()` at line 68 filters the active providers list to run only a specific provider type — supports targeted sync from the UI
 * Good, because the `Authenticator` interface is explicitly documented to exclude Navidrome (`providers.go:104`) — preventing confusion between app login and provider connection
 * Neutral, because three providers may not warrant a factory abstraction, but the pattern costs little and enables future providers
-* Bad, because no type-keyed registry (unlike the enricher pattern in ADR-0015) — providers are identified only by position in the slice, requiring iteration to find a specific type
+* Bad, because no type-keyed registry (unlike the enricher pattern in [ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md)) — providers are identified only by position in the slice, requiring iteration to find a specific type
 
 ### Hardcoded Provider List
 
@@ -103,5 +103,5 @@ Load provider implementations dynamically from configuration or shared libraries
 * Navidrome provider factory: `internal/providers/navidrome/` — implements `HistoryFetcher`, `PlaylistManager`, `PlaylistSyncer`
 * Spotify provider factory: `internal/providers/spotify/` — implements `HistoryFetcher`, `PlaylistManager`, `Authenticator`
 * Last.fm provider factory: `internal/providers/lastfm/` — implements `HistoryFetcher`, `Authenticator`
-* Related: ADR-0015 (enricher registry uses a type-keyed map variant of the same factory pattern)
+* Related: [ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md) (enricher registry uses a type-keyed map variant of the same factory pattern)
 * Governing specification: `music-provider-integration`

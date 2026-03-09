@@ -98,7 +98,7 @@ type Event struct {
 **REQ-SSE-004** — The SSE handler MUST detect client disconnection via `r.Context().Done()` and return cleanly, triggering the cleanup function to remove the subscriber.
 
 **REQ-SSE-005** — Each SSE event MUST use the `EventType` string as the `event:` field in the SSE protocol:
-```
+```text
 event: mixtape-generated
 data: <div id="mixtape-42" ...>...</div>
 
@@ -146,7 +146,7 @@ sequenceDiagram
 
 ### Scenario 1: Mixtape generation with real-time progress
 
-```
+```gherkin
 Given a user requests mixtape generation from the vibes UI
 When the handler starts the generation goroutine
 Then it immediately publishes EventTypeMixtapeGenerating
@@ -160,7 +160,7 @@ And HTMX swaps the completed card, replacing the spinner
 
 ### Scenario 2: Multiple browser tabs receive same event
 
-```
+```gherkin
 Given a user has two browser tabs open, both connected to /events
 When a mixtape is generated
 Then the Bus fans out to both subscriber channels
@@ -170,7 +170,7 @@ And both update their UI simultaneously
 
 ### Scenario 3: Slow subscriber drops events
 
-```
+```gherkin
 Given a user's browser tab is not consuming events quickly enough
 And the subscriber channel buffer (capacity 10) is full
 When MixtapeGenerator publishes an event
@@ -182,7 +182,7 @@ And the tab shows stale state until the user refreshes
 
 ### Scenario 4: Client disconnects during generation
 
-```
+```gherkin
 Given the user closes their browser tab while AI generation is in progress
 When the SSE handler detects r.Context().Done()
 Then the handler calls the cleanup function

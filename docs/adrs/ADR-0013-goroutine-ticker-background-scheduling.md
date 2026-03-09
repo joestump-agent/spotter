@@ -39,7 +39,7 @@ Chosen option: **Native goroutines + time.NewTicker**, because it requires zero 
 * Good, because the playlist sync loop includes a 1-minute startup delay, staggered from the metadata loop to avoid thundering herd on startup
 * Good, because each loop follows the same pattern: parse duration → log config → start goroutine → `defer ticker.Stop()` → `for range ticker.C` → query users → spawn per-user goroutines
 * Bad, because no persistence — if the process restarts mid-sync, any incomplete work is lost and must be redone on the next tick
-* Bad, because no distributed coordination — running multiple Spotter instances would result in duplicate sync operations (consistent with single-instance deployment model per ADR-0003)
+* Bad, because no distributed coordination — running multiple Spotter instances would result in duplicate sync operations (consistent with single-instance deployment model per [ADR-0003](./ADR-0003-sqlite-embedded-database.md))
 * Bad, because per-user goroutines are unbounded — a deployment with many users could spawn excessive concurrent goroutines, though this is unlikely for a personal music server
 
 ### Confirmation
@@ -102,7 +102,7 @@ Store pending background tasks in a `scheduled_tasks` SQLite table. A single pol
 * Good, because uses existing SQLite infrastructure — no new external service
 * Good, because task history provides built-in audit trail of what ran and when
 * Bad, because polling interval introduces scheduling latency (1-5 seconds between polls)
-* Bad, because frequent polling creates unnecessary SQLite read load — counter to the single-writer model (ADR-0003)
+* Bad, because frequent polling creates unnecessary SQLite read load — counter to the single-writer model ([ADR-0003](./ADR-0003-sqlite-embedded-database.md))
 * Bad, because requires a new database schema (`scheduled_tasks` table), migration, and cleanup logic
 * Bad, because marking tasks as completed, handling retries, and preventing duplicate execution adds significant complexity compared to a simple ticker loop
 
@@ -115,5 +115,5 @@ Store pending background tasks in a `scheduled_tasks` SQLite table. A single pol
 * Playlist sync interval config: `internal/config/config.go:13` — `PlaylistSync.SyncInterval` (default `"1h"`, env `SPOTTER_PLAYLIST_SYNC_SYNC_INTERVAL`)
 * Viper config defaults: `internal/config/config.go:211,234,254` — `v.SetDefault("sync.interval", "5m")`, `v.SetDefault("playlist_sync.sync_interval", "1h")`, `v.SetDefault("metadata.interval", "1h")`
 * Syncer service: `internal/services/` — `NewSyncer`, `NewPlaylistSyncService`, `NewMetadataService`
-* Single-instance deployment constraint: see ADR-0003 (SQLite)
-* Event bus for background job notifications: see ADR-0007 (in-memory event bus)
+* Single-instance deployment constraint: see [ADR-0003](./ADR-0003-sqlite-embedded-database.md) (SQLite)
+* Event bus for background job notifications: see [ADR-0007](./ADR-0007-in-memory-event-bus.md) (in-memory event bus)

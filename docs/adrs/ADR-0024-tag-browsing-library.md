@@ -21,11 +21,11 @@ The primary challenge is querying JSON arrays efficiently in PostgreSQL to aggre
 ## Decision Drivers
 
 * Tags already exist on all three entity types (`tags []string` and `ai_tags []string` on Artist, Album, and Track schemas) -- no schema migration needed for tag data itself
-* PostgreSQL provides native JSONB operators (`jsonb_array_elements_text`, `?`, `@>`) for querying JSON arrays efficiently (ADR-0023)
-* The existing browse pages (Artist Index, Album Index) follow a consistent HTMX + Templ pattern with pagination, tile/table views, and stat cards (ADR-0001)
+* PostgreSQL provides native JSONB operators (`jsonb_array_elements_text`, `?`, `@>`) for querying JSON arrays efficiently ([ADR-0023](./ADR-0023-multi-database-support-postgresql-mariadb.md))
+* The existing browse pages (Artist Index, Album Index) follow a consistent HTMX + Templ pattern with pagination, tile/table views, and stat cards ([ADR-0001](./ADR-0001-htmx-templ-server-driven-ui.md))
 * The dual-entity view (artists + albums together) is a new UI pattern not present in existing browse pages
 * Tag aggregation across three tables could be expensive for large libraries without proper indexing or caching
-* The stat HUD should reuse the existing `components.StatCard` pattern from the Home page (ADR-0001)
+* The stat HUD should reuse the existing `components.StatCard` pattern from the Home page ([ADR-0001](./ADR-0001-htmx-templ-server-driven-ui.md))
 
 ## Considered Options
 
@@ -35,7 +35,7 @@ The primary challenge is querying JSON arrays efficiently in PostgreSQL to aggre
 
 ## Decision Outcome
 
-Chosen option: **Option 1 (Query JSON arrays at runtime using PostgreSQL JSONB operators)**, because it requires zero schema changes, leverages PostgreSQL's built-in JSONB indexing capabilities, and keeps tag data in its canonical location on the entity schemas. The performance concern is mitigated by adding GIN indexes on the `tags` and `ai_tags` JSON columns and by paginating the tag detail view. This approach aligns with the existing Ent + PostgreSQL architecture (ADR-0004, ADR-0023) and avoids introducing synchronization complexity between tag source data and a denormalized index.
+Chosen option: **Option 1 (Query JSON arrays at runtime using PostgreSQL JSONB operators)**, because it requires zero schema changes, leverages PostgreSQL's built-in JSONB indexing capabilities, and keeps tag data in its canonical location on the entity schemas. The performance concern is mitigated by adding GIN indexes on the `tags` and `ai_tags` JSON columns and by paginating the tag detail view. This approach aligns with the existing Ent + PostgreSQL architecture ([ADR-0004](./ADR-0004-ent-orm-code-generation.md), [ADR-0023](./ADR-0023-multi-database-support-postgresql-mariadb.md)) and avoids introducing synchronization complexity between tag source data and a denormalized index.
 
 If performance proves insufficient for very large libraries, this decision can be revisited in favor of Option 2 (denormalized table) as a future optimization without changing the user-facing API.
 
@@ -44,7 +44,7 @@ If performance proves insufficient for very large libraries, this decision can b
 * Good, because no schema migration or new Ent entities are required -- tags remain on their source entities
 * Good, because PostgreSQL JSONB operators (`@>`, `jsonb_array_elements_text`) are well-optimized with GIN indexes
 * Good, because the tag index page can use a single raw SQL query to aggregate unique tags with counts across all three entity tables
-* Good, because the implementation follows existing patterns (chi handler + templ template + ent queries) per ADR-0001, ADR-0002, ADR-0004
+* Good, because the implementation follows existing patterns (chi handler + templ template + ent queries) per [ADR-0001](./ADR-0001-htmx-templ-server-driven-ui.md), [ADR-0002](./ADR-0002-chi-http-router.md), [ADR-0004](./ADR-0004-ent-orm-code-generation.md)
 * Bad, because raw SQL is needed for JSONB aggregation -- Ent's query builder does not natively support `jsonb_array_elements_text`
 * Bad, because tag values are not normalized (case, spelling) -- "shoegaze" vs "Shoegaze" vs "shoe-gaze" may appear as separate tags without preprocessing
 * Bad, because combining `tags` and `ai_tags` from three tables requires a UNION query, which is more complex than single-table queries
@@ -175,7 +175,7 @@ Use PostgreSQL's native JSONB operators to query `tags` and `ai_tags` JSON colum
 * Good, because zero schema changes -- tags remain in their canonical location on Artist, Album, and Track entities
 * Good, because PostgreSQL JSONB operators with GIN indexes provide efficient querying even for medium-to-large libraries
 * Good, because tag data is always consistent -- no synchronization between source and index needed
-* Good, because aligns with PostgreSQL capabilities already chosen in ADR-0023
+* Good, because aligns with PostgreSQL capabilities already chosen in [ADR-0023](./ADR-0023-multi-database-support-postgresql-mariadb.md)
 * Neutral, because requires raw SQL queries since Ent does not natively support JSONB operators -- but raw SQL is already used elsewhere (e.g., `GroupBy` aggregates in artist handlers)
 * Bad, because aggregating tags across 6 column sources (3 entities x 2 tag fields) via UNION is verbose
 * Bad, because tag names are not normalized -- "Rock", "rock", "ROCK" would appear as separate tags
@@ -183,21 +183,21 @@ Use PostgreSQL's native JSONB operators to query `tags` and `ai_tags` JSON colum
 
 ### Option 2: Denormalized Tag Index Table
 
-Create a new `Tag` entity in Ent with fields `name string`, `normalized_name string`, and many-to-many edges to Artist, Album, and Track. Populate the tag-entity associations during metadata enrichment (ADR-0015).
+Create a new `Tag` entity in Ent with fields `name string`, `normalized_name string`, and many-to-many edges to Artist, Album, and Track. Populate the tag-entity associations during metadata enrichment ([ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md)).
 
 * Good, because tag names can be normalized at write time (lowercase, trim, deduplicate spellings)
 * Good, because standard Ent queries can be used -- no raw SQL needed
 * Good, because a separate Tag entity enables future features: tag descriptions, tag hierarchies, user-created tags
 * Good, because fast reads -- tag index is a simple `SELECT * FROM tags ORDER BY name`
 * Bad, because requires a new Ent schema entity and `go generate ./ent` to regenerate the ORM layer
-* Bad, because requires modifying all enrichers (ADR-0015) to populate tag associations during enrichment
+* Bad, because requires modifying all enrichers ([ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md)) to populate tag associations during enrichment
 * Bad, because tag data would be duplicated between the source entity fields and the tag table -- risk of drift
 * Bad, because existing data requires a one-time backfill migration to populate the tag table from existing JSON arrays
 * Bad, because many-to-many edges (tag <-> artist, tag <-> album, tag <-> track) add 3 junction tables and significant generated code
 
 ### Option 3: Materialized View with Periodic Refresh
 
-Create a PostgreSQL materialized view that pre-aggregates tag data (tag name, entity counts, listen counts). Refresh the view on a background ticker (ADR-0013) -- e.g., every 30 minutes or after enrichment completes.
+Create a PostgreSQL materialized view that pre-aggregates tag data (tag name, entity counts, listen counts). Refresh the view on a background ticker ([ADR-0013](./ADR-0013-goroutine-ticker-background-scheduling.md)) -- e.g., every 30 minutes or after enrichment completes.
 
 * Good, because reads are extremely fast -- the materialized view is a pre-computed result set
 * Good, because the UNION aggregation SQL is written once and encapsulated in the view definition
@@ -205,7 +205,7 @@ Create a PostgreSQL materialized view that pre-aggregates tag data (tag name, en
 * Neutral, because Ent can query materialized views via raw SQL, though without type-safe query builders
 * Bad, because data is stale between refreshes -- a newly enriched artist's tags won't appear until the next refresh
 * Bad, because `REFRESH MATERIALIZED VIEW` can be expensive for large datasets and blocks reads unless using `CONCURRENTLY` (which requires a unique index)
-* Bad, because materialized views are a PostgreSQL-specific feature -- would not work if the project ever returns to SQLite support (ADR-0023)
+* Bad, because materialized views are a PostgreSQL-specific feature -- would not work if the project ever returns to SQLite support ([ADR-0023](./ADR-0023-multi-database-support-postgresql-mariadb.md))
 * Bad, because adds operational complexity -- another background ticker to monitor and debug
 
 ## Architecture Diagram
@@ -270,6 +270,6 @@ flowchart TD
 * Sidebar navigation: `internal/views/layouts/dashboard.templ:103-141` -- Library section with Artists, Albums, Tracks links
 * Route registration: `cmd/server/main.go:488-512` -- Library route group under `/library`
 * Home page HUD pattern: `internal/views/home/index.templ:107-112` -- 4-tile stat grid using `StatCardLink`
-* AI enrichment pipeline that generates `ai_tags`: ADR-0015 (Enricher Registry), ADR-0008 (OpenAI backend)
-* Database: ADR-0023 (PostgreSQL), ADR-0004 (Ent ORM)
-* UI framework: ADR-0001 (HTMX + Templ), ADR-0002 (chi router), ADR-0011 (Tailwind + DaisyUI)
+* AI enrichment pipeline that generates `ai_tags`: [ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md) (Enricher Registry), [ADR-0008](./ADR-0008-openai-api-litellm-compatible-llm-backend.md) (OpenAI backend)
+* Database: [ADR-0023](./ADR-0023-multi-database-support-postgresql-mariadb.md) (PostgreSQL), [ADR-0004](./ADR-0004-ent-orm-code-generation.md) (Ent ORM)
+* UI framework: [ADR-0001](./ADR-0001-htmx-templ-server-driven-ui.md) (HTMX + Templ), [ADR-0002](./ADR-0002-chi-http-router.md) (chi router), [ADR-0011](./ADR-0011-tailwind-daisyui-ui-styling.md) (Tailwind + DaisyUI)

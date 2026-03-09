@@ -18,7 +18,7 @@ When Spotter enriches an artist or album, the Lidarr enricher checks whether it 
 
 Rather than submitting directly to Lidarr's API during enrichment (which would flood Lidarr when processing a large library), Spotter uses a **decoupled queue with backpressure**:
 
-```
+```text
 Enrichment discovers album not in Lidarr
     ↓
 Album + artist inserted into submission queue (DB table)

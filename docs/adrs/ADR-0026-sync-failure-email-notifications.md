@@ -146,8 +146,8 @@ sequenceDiagram
 
 ## More Information
 
-* **Related**: ADR-0005 (Navidrome primary identity — explains why we cannot rely on Navidrome
-  for email), ADR-0006 (AES-256-GCM — `User.email` does not require encryption at rest as it
+* **Related**: [ADR-0005](./ADR-0005-navidrome-primary-identity-provider.md) (Navidrome primary identity — explains why we cannot rely on Navidrome
+  for email), [ADR-0006](./ADR-0006-aes256-gcm-application-layer-encryption.md) (AES-256-GCM — `User.email` does not require encryption at rest as it
   is not a credential)
 * **Existing infrastructure to reuse**:
   - `internal/services/resilience.go` — `BackoffManager`, `ErrorClassFatal`, `MarkNotified()`

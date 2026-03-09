@@ -165,7 +165,7 @@ sequenceDiagram
 
 ### Scenario 1: Normal SIGTERM shutdown
 
-```
+```gherkin
 Given Spotter is running with two in-flight sync goroutines
 When the process receives SIGTERM
 Then signal.NotifyContext cancels the root context
@@ -180,7 +180,7 @@ And total shutdown time is under 30 seconds
 
 ### Scenario 2: Timeout exceeded (hard exit)
 
-```
+```gherkin
 Given Spotter is running with a metadata enrichment goroutine
 And the enrichment is making a slow external API call (e.g., MusicBrainz rate-limited)
 When the process receives SIGTERM
@@ -195,7 +195,7 @@ And the process exits with code 1
 
 ### Scenario 3: Shutdown during active AI generation
 
-```
+```gherkin
 Given a user has requested mixtape generation
 And the OpenAI API call is in progress (streaming response)
 When the process receives SIGTERM
@@ -210,7 +210,7 @@ And shutdown proceeds normally
 
 ### Scenario 4: Restart after unclean shutdown
 
-```
+```gherkin
 Given Spotter was killed with SIGKILL during a listen sync (no graceful shutdown)
 And the sync had imported 300 of 500 new listens
 When Spotter restarts and the next sync tick fires

@@ -10,10 +10,10 @@ Spotter is built with a modern Go stack emphasizing simplicity and performance.
 
 ### Backend
 
-- **Language**: Go 1.23+
+- **Language**: Go 1.24+
 - **Router**: [chi](https://github.com/go-chi/chi) - Lightweight HTTP router
 - **ORM**: [ent](https://entgo.io/) - Entity framework for Go
-- **Database**: SQLite (default), PostgreSQL, MySQL supported
+- **Database**: PostgreSQL (recommended), SQLite for development
 
 ### Frontend
 
@@ -29,7 +29,7 @@ Spotter is built with a modern Go stack emphasizing simplicity and performance.
 
 ## Directory Structure
 
-```
+```text
 spotter/
 ├── cmd/
 │   └── server/
@@ -60,12 +60,12 @@ spotter/
 ├── data/
 │   ├── prompts/             # AI prompt templates
 │   └── images/              # Downloaded images
-└── website/                 # Docusaurus documentation
+└── docs-site/               # Docusaurus documentation
 ```
 
 ## Request Flow
 
-```
+```text
 Browser → HTTP Handler → Service → Repository → Database
                 ↓
             Template → HTMX Response

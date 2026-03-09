@@ -215,7 +215,7 @@ sequenceDiagram
 
 ### Scenario 1: Successful first-time login
 
-```
+```gherkin
 Given a user has a valid Navidrome account with username "alice" and password "pass123"
 And no Spotter User record exists for "alice"
 When the user submits POST /login with username="alice" and password="pass123"
@@ -229,7 +229,7 @@ And the user is redirected to /
 
 ### Scenario 2: Failed Navidrome authentication
 
-```
+```gherkin
 Given a user submits POST /login with username="alice" and password="wrong"
 When authenticateNavidrome calls Navidrome ping.view
 Then Navidrome returns subsonic-response.status != "ok"
@@ -241,7 +241,7 @@ And no session cookie is set
 
 ### Scenario 3: AuthMiddleware rejects unauthenticated request
 
-```
+```gherkin
 Given a browser sends GET / without a spotter_token cookie
 When AuthMiddleware processes the request
 Then it detects the missing cookie
@@ -251,7 +251,7 @@ And the downstream handler is never called
 
 ### Scenario 4: Spotify OAuth with CSRF validation
 
-```
+```gherkin
 Given user "alice" (ID=42) is logged in and clicks "Connect Spotify"
 When SpotifyLogin handles the request
 Then it generates a 32-byte random state and encrypts userID 42
@@ -269,7 +269,7 @@ And redirects to /preferences/providers
 
 ### Scenario 5: OAuth callback with expired state cookie
 
-```
+```gherkin
 Given a Spotify OAuth callback arrives but the spotify_oauth_state cookie has expired (>10 minutes)
 When SpotifyCallback attempts to read the cookie
 Then it fails with a missing cookie error
@@ -279,7 +279,7 @@ And no token exchange or database writes occur
 
 ### Scenario 6: Last.fm token exchange
 
-```
+```gherkin
 Given user "bob" (ID=7) is logged in and initiates Last.fm connection
 When LastFMLogin generates state and encrypts userID 7
 Then the combined state:encryptedUserID is stored in lastfm_oauth_state cookie

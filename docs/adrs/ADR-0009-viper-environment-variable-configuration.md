@@ -101,4 +101,4 @@ Use `kelseyhightower/envconfig` for struct-tag-based environment variable bindin
 * Config initialization: `cmd/server/main.go:44` — `config.Load()` called once, result passed to all services
 * Environment variable examples: `.env.example` — documents required and optional `SPOTTER_*` variables
 * Viper dependency: `go.mod:11` — `github.com/spf13/viper v1.21.0`
-* Related: ADR-0008 (OpenAI configuration that leverages these env vars)
+* Related: [ADR-0008](./ADR-0008-openai-api-litellm-compatible-llm-backend.md) (OpenAI configuration that leverages these env vars)

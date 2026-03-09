@@ -10,7 +10,7 @@ We welcome contributions to Spotter! This guide will help you get started.
 
 ### Prerequisites
 
-- Go 1.23+
+- Go 1.24+
 - Node.js & npm
 - Make
 - Git
@@ -49,7 +49,7 @@ make lint-go
 ### Templates
 
 - Use templ for all HTML templates
-- Keep templates in `internal/templates/`
+- Keep templates in `internal/views/`
 - Format with:
 
 ```bash
@@ -101,7 +101,7 @@ make lint
 
 Follow conventional commit messages:
 
-```
+```text
 feat: add new feature
 fix: resolve bug in playlist sync
 docs: update API documentation
@@ -117,14 +117,14 @@ refactor: simplify enricher interface
 
 ## Project Structure
 
-```
+```text
 internal/
 ├── config/        # Configuration
 ├── handlers/      # HTTP handlers
 ├── providers/     # External service providers
 ├── enrichers/     # Metadata enrichers
 ├── services/      # Business logic
-├── templates/     # templ templates
+├── views/         # templ templates
 └── middleware/    # HTTP middleware
 ```
 
@@ -155,7 +155,7 @@ internal/
 go generate ./ent
 ```
 
-3. Migrations are automatic with ent
+3. Ent applies migrations automatically
 
 ## Testing
 
@@ -179,11 +179,11 @@ make test-coverage
 
 ## Documentation
 
-- Update relevant docs in `website/docs/`
+- Update relevant docs in `docs-site/docs/`
 - Run docs locally:
 
 ```bash
-cd website && npm start
+cd docs-site && npm start
 ```
 
 ## Questions?

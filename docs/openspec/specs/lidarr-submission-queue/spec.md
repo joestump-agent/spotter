@@ -106,12 +106,12 @@ only start if Lidarr is configured (`SPOTTER_LIDARR_BASE_URL` and `SPOTTER_LIDAR
 non-empty).
 
 The submitter SHALL wake on a configurable interval (`SPOTTER_LIDARR_SUBMIT_INTERVAL`, default
-`"30s"`). On each wake cycle, the submitter SHALL:
+`"3m"`). On each wake cycle, the submitter SHALL:
 
 1. Query the `LidarrQueue` for items with `status=queued` OR (`status=failed` AND `retry_at <= now`)
 2. If no eligible items exist, sleep until the next interval (MUST NOT call Lidarr API)
 3. If eligible items exist, check Lidarr's queue depth via `GET /api/v1/queue`
-4. If queue depth >= `SPOTTER_LIDARR_QUEUE_MAX` (default `20`), log a backpressure metric event and sleep until the next interval
+4. If queue depth >= `SPOTTER_LIDARR_QUEUE_MAX` (default `50`), log a backpressure metric event and sleep until the next interval
 5. If queue depth < cap, submit the oldest eligible item (artists before albums, ordered by `created_at`)
 6. On success, update the queue row to `status=submitted` and update the entity's `lidarr_id` and `lidarr_status`
 7. On failure, increment `attempts`, set `last_error`, compute `retry_at` using exponential backoff, and set `status=failed`. The submitter SHALL skip the failed item and continue processing remaining eligible items in the current wake cycle.
@@ -169,7 +169,7 @@ The submitter MUST respect `ctx.Done()` for graceful shutdown (ADR-0018).
 Failed submissions MUST use exponential backoff consistent with ADR-0020. The backoff
 duration SHALL be calculated as:
 
-```
+```text
 delay = min(base * 2^(attempts-1) + jitter, max_delay)
 ```
 
@@ -206,8 +206,8 @@ The system SHALL support the following configuration keys via Viper (ADR-0009):
 
 | Config Key | Env Var | Type | Default | Description |
 |---|---|---|---|---|
-| `lidarr.queue_max` | `SPOTTER_LIDARR_QUEUE_MAX` | int | `20` | Maximum Lidarr queue depth before backpressure pauses submissions |
-| `lidarr.submit_interval` | `SPOTTER_LIDARR_SUBMIT_INTERVAL` | duration | `"30s"` | How often the submitter wakes to check and attempt to drain |
+| `lidarr.queue_max` | `SPOTTER_LIDARR_QUEUE_MAX` | int | `50` | Maximum Lidarr queue depth before backpressure pauses submissions |
+| `lidarr.submit_interval` | `SPOTTER_LIDARR_SUBMIT_INTERVAL` | duration | `"3m"` | How often the submitter wakes to check and attempt to drain |
 
 These keys SHALL be added to the `Lidarr` config struct alongside the existing `BaseURL` and
 `APIKey` fields.
@@ -215,7 +215,7 @@ These keys SHALL be added to the `Lidarr` config struct alongside the existing `
 #### Scenario: Default configuration
 
 - **WHEN** no `SPOTTER_LIDARR_QUEUE_MAX` or `SPOTTER_LIDARR_SUBMIT_INTERVAL` is set
-- **THEN** the submitter SHALL use a queue cap of 20 and a wake interval of 30 seconds
+- **THEN** the submitter SHALL use a queue cap of 50 and a wake interval of 3 minutes
 
 #### Scenario: Custom configuration
 

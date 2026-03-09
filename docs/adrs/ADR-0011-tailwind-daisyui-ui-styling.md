@@ -8,7 +8,7 @@ decision-makers: joestump
 
 ## Context and Problem Statement
 
-Spotter's UI is server-rendered using Go Templ templates with HTMX for interactivity (ADR-0001). The application needs a styling approach that provides a consistent design system, supports theming for user personalization, and works naturally with server-rendered HTML rather than requiring a JavaScript component framework. How should Spotter style its UI components?
+Spotter's UI is server-rendered using Go Templ templates with HTMX for interactivity ([ADR-0001](./ADR-0001-htmx-templ-server-driven-ui.md)). The application needs a styling approach that provides a consistent design system, supports theming for user personalization, and works naturally with server-rendered HTML rather than requiring a JavaScript component framework. How should Spotter style its UI components?
 
 ## Decision Drivers
 
@@ -105,4 +105,4 @@ Headless React component library with Tailwind CSS styling, providing accessible
 * Login page: `internal/views/auth/login.templ` — demonstrates `hero`, `card`, `form-control`, `input`, `btn`, `alert`, `divider` components
 * Toast component: `internal/views/components/toast.templ` — demonstrates `alert`, `toast` with conditional DaisyUI variant classes via `templ.KV()`
 * Theme configuration: `internal/config/config.go:71-74` — `Theme.Available` and `Theme.Default` config fields
-* HTMX + Templ UI decision: see ADR-0001
+* HTMX + Templ UI decision: see [ADR-0001](./ADR-0001-htmx-templ-server-driven-ui.md)

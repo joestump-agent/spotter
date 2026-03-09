@@ -115,7 +115,7 @@ Out of scope: Vibes AI generation (see Vibes spec), playlist sync track matching
 
 ## Data Structures
 
-```
+```text
 ArtistData
 ├── MusicBrainzID: string
 ├── SpotifyID: string
@@ -163,7 +163,7 @@ flowchart TD
     end
 
     subgraph Storage
-        DB["SQLite / Ent\n(persist merged ArtistData)"]
+        DB["PostgreSQL / Ent\n(persist merged ArtistData)"]
         IMG["./data/ directory\n(cached images)"]
         SE["SyncEvent\n(audit log per entity)"]
     end
@@ -180,7 +180,7 @@ flowchart TD
 
 ### Scenario 1: Full artist enrichment pipeline
 
-```
+```gherkin
 Given an artist "Miles Davis" with no enriched data
 When MetadataService.EnrichAll() runs
 Then MusicBrainz resolves the MusicBrainz ID
@@ -196,7 +196,7 @@ And a success SyncEvent is created for each enricher that returned data
 
 ### Scenario 2: Enricher failure does not halt pipeline
 
-```
+```gherkin
 Given the Fanart.tv API is unavailable
 When the pipeline processes an artist
 Then Fanart.tv enricher returns an error
@@ -208,7 +208,7 @@ And the artist is still saved with data from all other enrichers
 
 ### Scenario 3: Image selection from multiple sources
 
-```
+```gherkin
 Given Spotify returns an image with isPrimary=false, likes=0
 And Fanart.tv returns an image with isPrimary=true, likes=500
 When the pipeline selects the best image

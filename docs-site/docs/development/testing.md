@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Testing
 
-Guide to testing Spotter during development.
+This guide covers testing Spotter during development.
 
 ## Running Tests
 
@@ -40,7 +40,7 @@ go test -v ./...
 
 Tests are located alongside the code they test:
 
-```
+```text
 internal/
 ├── providers/
 │   └── spotify/
@@ -153,7 +153,7 @@ func TestAPIEndpoint(t *testing.T) {
 
 Place test data in `testdata/` directories:
 
-```
+```text
 internal/
 ├── enrichers/
 │   └── spotify/

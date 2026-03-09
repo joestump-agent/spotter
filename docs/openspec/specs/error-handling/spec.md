@@ -51,7 +51,7 @@ Out of scope: Provider-specific API client implementation, retry logic within a 
 ### Backoff Strategy
 
 **REQ-BACK-001** — When a retriable error occurs, the system MUST calculate the next retry delay using exponential backoff:
-```
+```text
 delay = min(baseDelay * 2^consecutiveFailures, maxDelay) * jitterFactor
 ```
 Where:
@@ -106,7 +106,7 @@ Where:
 
 ### Scenario 1: Transient network error with recovery
 
-```
+```gherkin
 Given Spotify returns a network timeout during listen sync
 When the syncer records the error
 Then consecutiveFailures is set to 1
@@ -120,7 +120,7 @@ And nextRetryAt is cleared
 
 ### Scenario 2: Repeated transient errors with escalating backoff
 
-```
+```gherkin
 Given Spotify returns 503 on three consecutive sync attempts
 Then the backoff delays are approximately:
   - After 1st failure: ~30s
@@ -131,7 +131,7 @@ And jitter is applied to each delay (+/-25%)
 
 ### Scenario 3: Fatal credential revocation
 
-```
+```gherkin
 Given the user revokes Spotify access from their Spotify account settings
 When the syncer attempts to use the stored refresh token
 And Spotify returns 401 on the token refresh
@@ -145,7 +145,7 @@ And the Spotify provider is not retried until the user reconnects
 
 ### Scenario 4: OAuth token refresh with retry
 
-```
+```gherkin
 Given the Spotify access token has expired
 When the syncer calls the Spotify API and receives 401
 And the token refresh succeeds (new access token obtained)
@@ -155,7 +155,7 @@ And if the retry succeeds, backoff state is reset
 
 ### Scenario 5: Process restart clears backoff state
 
-```
+```gherkin
 Given the Navidrome provider has a backoff of 15 minutes remaining
 When the Spotter process is restarted
 Then all in-memory backoff state is lost

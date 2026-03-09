@@ -112,5 +112,5 @@ flowchart TD
 * Hook registration: `internal/database/db.go:21` — `RegisterEncryptionHooks(client, encryptor)`
 * Hook implementation: `internal/database/hooks.go` — intercepts `SpotifyAuth`, `LastFMAuth`, `NavidromeAuth` mutations
 * Code generation command: `go generate ./ent` (Makefile `generate` target)
-* Encryption decision: see ADR-0006
-* Database engine decision: see ADR-0003
+* Encryption decision: see [ADR-0006](./ADR-0006-aes256-gcm-application-layer-encryption.md)
+* Database engine decision: see [ADR-0003](./ADR-0003-sqlite-embedded-database.md)

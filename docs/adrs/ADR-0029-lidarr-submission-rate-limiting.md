@@ -1,14 +1,14 @@
 ---
-status: proposed
+status: accepted
 date: 2026-03-04
-decision-makers: Joe Stump
+decision-makers: joestump
 ---
 
 # ADR-0029: Rate-Limited Lidarr Submission Queue with Backpressure and Pending State Tracking
 
 ## Context and Problem Statement
 
-When a new user connects their Spotify account to Spotter, the metadata enrichment pipeline (ADR-0015) processes their entire listening history and all playlist tracks. For users with large Spotify libraries (hundreds of playlists, thousands of unique albums), the Lidarr enricher submits every discovered artist and album to Lidarr in rapid succession during a single enrichment cycle. This floods Lidarr's download queue, overwhelming its indexer search capacity, saturating disk I/O, and potentially triggering rate limits from upstream indexers (Newznab/Torznab). Unlike MusicBrainz (which has a 1100ms inter-request delay), the Lidarr enricher currently has **no rate limiting, no backoff, and no queuing** — every `addArtist()` and `addAlbum()` call fires immediately during enrichment.
+When a new user connects their Spotify account to Spotter, the metadata enrichment pipeline ([ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md)) processes their entire listening history and all playlist tracks. For users with large Spotify libraries (hundreds of playlists, thousands of unique albums), the Lidarr enricher submits every discovered artist and album to Lidarr in rapid succession during a single enrichment cycle. This floods Lidarr's download queue, overwhelming its indexer search capacity, saturating disk I/O, and potentially triggering rate limits from upstream indexers (Newznab/Torznab). Unlike MusicBrainz (which has a 1100ms inter-request delay), the Lidarr enricher currently has **no rate limiting, no backoff, and no queuing** — every `addArtist()` and `addAlbum()` call fires immediately during enrichment.
 
 Additionally, the current status model only tracks items that have been submitted to Lidarr (`available`, `monitored`, `pending`, `grabbed`, `missing`). There is no concept of items that Spotter *intends* to submit but has not yet sent — making it impossible for users to see what is queued locally versus what has actually been requested in Lidarr.
 
@@ -34,7 +34,7 @@ How should Spotter throttle Lidarr submissions to prevent queue flooding while g
 
 Chosen option: **Option 1 (DB-persisted submission queue with Lidarr queue backpressure)**, because it decouples Lidarr submission from the enrichment pipeline, uses actual Lidarr queue depth as the throttling signal (rather than an arbitrary fixed rate), persists pending submissions across restarts, and introduces a `queued` status that gives users visibility into what Spotter intends to submit before it reaches Lidarr.
 
-The enrichment pipeline will no longer call `addArtist()` / `addAlbum()` directly. Instead, it will insert a row into a `lidarr_queue` table (or Ent entity) with status `queued`. A dedicated background goroutine (`LidarrSubmitter`) wakes on a configurable interval (default: 30 seconds via `SPOTTER_LIDARR_SUBMIT_INTERVAL`), checks Lidarr's current queue depth via its API (e.g. `GET /api/v1/queue`), and only submits items if the queue is below the configured cap (`SPOTTER_LIDARR_QUEUE_MAX`, default: 20). When the Lidarr queue is at or above the cap, the submitter logs a backpressure event and sleeps until the next interval — no submissions are made until Lidarr has drained below the threshold. Failed submissions use exponential backoff (consistent with ADR-0020) before retry.
+The enrichment pipeline will no longer call `addArtist()` / `addAlbum()` directly. Instead, it will insert a row into a `lidarr_queue` table (or Ent entity) with status `queued`. A dedicated background goroutine (`LidarrSubmitter`) wakes on a configurable interval (default: 3 minutes via `SPOTTER_LIDARR_SUBMIT_INTERVAL`), checks Lidarr's current queue depth via its API (e.g. `GET /api/v1/queue`), and only submits items if the queue is below the configured cap (`SPOTTER_LIDARR_QUEUE_MAX`, default: 50). When the Lidarr queue is at or above the cap, the submitter logs a backpressure event and sleeps until the next interval — no submissions are made until Lidarr has drained below the threshold. Failed submissions use exponential backoff (consistent with [ADR-0020](./ADR-0020-error-handling-resilience.md)) before retry.
 
 ### Consequences
 
@@ -44,7 +44,7 @@ The enrichment pipeline will no longer call `addArtist()` / `addAlbum()` directl
 * Good, because the configurable wake interval (`SPOTTER_LIDARR_SUBMIT_INTERVAL`) controls how frequently the submitter checks Lidarr and attempts to drain
 * Good, because the persistent queue survives process restarts — no submissions are lost when the container updates
 * Good, because the new `queued` status lets the UI show "Waiting for Lidarr" with a distinct icon, giving users visibility into the backlog
-* Good, because backoff on submission failure (ADR-0020 pattern) prevents hammering Lidarr when it is unreachable
+* Good, because backoff on submission failure ([ADR-0020](./ADR-0020-error-handling-resilience.md) pattern) prevents hammering Lidarr when it is unreachable
 * Bad, because it introduces a new Ent entity (`LidarrQueue`) and a background goroutine, adding operational complexity
 * Bad, because there is a delay between catalog discovery and Lidarr submission — users may need to wait minutes to hours for large backlogs to drain
 * Bad, because the queue table grows and needs periodic cleanup of completed/failed entries
@@ -71,7 +71,7 @@ Decouple Lidarr submission from enrichment by recording submission intent in a d
 * Good, because the `queued` status provides UI visibility into the pre-submission backlog
 * Good, because the cap and interval are operator-configurable for different Lidarr/indexer capacities
 * Good, because failed submissions use exponential backoff, preventing cascading failures
-* Neutral, because requires a new Ent entity and background goroutine (consistent with existing patterns like ADR-0013)
+* Neutral, because requires a new Ent entity and background goroutine (consistent with existing patterns like [ADR-0013](./ADR-0013-goroutine-ticker-background-scheduling.md))
 * Bad, because introduces eventual consistency — album status in the UI may lag behind actual Lidarr state
 * Bad, because queue table requires periodic cleanup of old completed entries
 * Bad, because depends on Lidarr's queue API being available and accurate
@@ -134,11 +134,11 @@ flowchart TD
 
 ## More Information
 
-* **Related ADRs**: ADR-0015 (enricher registry — Lidarr enricher registration), ADR-0013 (goroutine ticker — background submitter follows same pattern), ADR-0020 (error handling — backoff strategy for failed submissions), ADR-0023 (multi-database — queue table supports PostgreSQL/SQLite/MariaDB)
+* **Related ADRs**: [ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md) (enricher registry — Lidarr enricher registration), [ADR-0013](./ADR-0013-goroutine-ticker-background-scheduling.md) (goroutine ticker — background submitter follows same pattern), [ADR-0020](./ADR-0020-error-handling-resilience.md) (error handling — backoff strategy for failed submissions), [ADR-0023](./ADR-0023-multi-database-support-postgresql-mariadb.md) (multi-database — queue table supports PostgreSQL/SQLite/MariaDB)
 * **Existing rate limiting reference**: `internal/enrichers/musicbrainz/musicbrainz.go` implements a mutex-protected 1100ms delay between API calls — Option 2 would mirror this pattern
 * **Configuration**:
-  * `SPOTTER_LIDARR_QUEUE_MAX` (int, default `20`) — maximum Lidarr queue depth before backpressure pauses submissions
-  * `SPOTTER_LIDARR_SUBMIT_INTERVAL` (Go duration string, default `"30s"`) — how often the submitter wakes to check Lidarr queue depth and attempt to drain
+  * `SPOTTER_LIDARR_QUEUE_MAX` (int, default `50`) — maximum Lidarr queue depth before backpressure pauses submissions
+  * `SPOTTER_LIDARR_SUBMIT_INTERVAL` (Go duration string, default `"3m"`) — how often the submitter wakes to check Lidarr queue depth and attempt to drain
 * **Lidarr queue API**: `GET /api/v1/queue` returns the current download queue with `totalRecords` — this is the backpressure signal
 * **Queue cleanup**: Completed queue entries older than 7 days should be pruned by the existing metadata ticker or a dedicated cleanup pass
 * **Lidarr enricher files**: `internal/enrichers/lidarr/lidarr.go` (610 lines) — `addArtist()` at ~L350 and `addAlbum()` at ~L450 are the submission methods that will be replaced with queue inserts

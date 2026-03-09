@@ -128,5 +128,5 @@ flowchart TD
 * Encrypted fields: `internal/database/hooks.go` — `NavidromeAuth.Password`, `SpotifyAuth.AccessToken`, `SpotifyAuth.RefreshToken`, `LastFMAuth.SessionKey`
 * Key configuration: `internal/config/config.go:182-197` — `GetEncryptionKeyBytes()` validates 64 hex chars
 * Key validation: `internal/config/config.go:294-306` — startup validation of key format
-* Encryption decision: see ADR-0006
-* Database: see ADR-0003 (SQLite transactions)
+* Encryption decision: see [ADR-0006](./ADR-0006-aes256-gcm-application-layer-encryption.md)
+* Database: see [ADR-0003](./ADR-0003-sqlite-embedded-database.md) (SQLite transactions)

@@ -169,7 +169,7 @@ Out of scope: Log aggregation infrastructure (Loki, Grafana), alerting rules, lo
 
 ### Text format (default)
 
-```
+```text
 time=2026-02-21T10:30:00Z level=INFO msg=metric.sync provider=navidrome listens_synced=42 playlists_synced=3 duration_ms=1234 success=true error=""
 ```
 
@@ -195,7 +195,7 @@ cat spotter.log | jq 'select(.msg == "metric.enricher" and .success == false)'
 
 ### Scenario 1: Operator analyzes sync performance
 
-```
+```gherkin
 Given SPOTTER_LOG_FORMAT=json is set
 And the sync loop has been running for 24 hours
 When the operator runs: cat spotter.log | jq 'select(.msg == "metric.sync")'
@@ -206,7 +206,7 @@ And they can calculate average sync duration and total listens synced per day
 
 ### Scenario 2: Operator investigates high token usage
 
-```
+```gherkin
 Given SPOTTER_LOG_FORMAT=json is set
 And multiple users have been generating mixtapes
 When the operator runs: cat spotter.log | jq 'select(.msg == "metric.llm") | .tokens_used' | awk '{sum+=$1} END {print sum}'
@@ -216,7 +216,7 @@ And they can break down usage by operation type to identify the most expensive f
 
 ### Scenario 3: Text format backward compatibility
 
-```
+```gherkin
 Given SPOTTER_LOG_FORMAT is not set (or set to "text")
 When the application starts and runs background jobs
 Then all metric events are emitted in slog TextHandler format
@@ -226,7 +226,7 @@ And the only difference from pre-observability output is the addition of new met
 
 ### Scenario 4: Track matching strategy effectiveness
 
-```
+```gherkin
 Given SPOTTER_LOG_FORMAT=json is set
 And a playlist sync has matched 100 tracks
 When the operator queries metric.track_match events

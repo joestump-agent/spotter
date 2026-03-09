@@ -112,4 +112,4 @@ If Spotify matches incorrect tracks:
 
 1. The automatic search may have failed
 2. Try refreshing the entity
-3. Manual override planned for future
+3. A manual override is planned for a future release.

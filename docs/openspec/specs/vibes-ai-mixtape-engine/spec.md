@@ -109,7 +109,7 @@ Out of scope: SSE streaming (see Event Bus & SSE spec), Navidrome write-back (se
 
 ## Data Model
 
-```
+```text
 DJ
 ├── id: int (primary key)
 ├── name: string
@@ -172,7 +172,7 @@ flowchart TD
 
     subgraph Downstream["Downstream"]
         TM["TrackMatcher\n(fuzzy library match)"]
-        DB["SQLite / Ent\n(persist mixtape tracks)"]
+        DB["PostgreSQL / Ent\n(persist mixtape tracks)"]
         BUS["events.Bus\n(publish progress events)"]
     end
 
@@ -212,7 +212,7 @@ flowchart TD
 
 ### Scenario 1: Generate a mixtape from a DJ persona
 
-```
+```gherkin
 Given a user has a DJ persona "Late Night Jazz" with genres_include=["jazz", "soul"]
 And the user's library contains 500 tracks
 When the user requests mixtape generation
@@ -228,7 +228,7 @@ And publishes EventTypeMixtapeGenerated with matched/unmatched counts
 
 ### Scenario 2: Generation with an artist seed
 
-```
+```gherkin
 Given a DJ persona and an artist seed for "Miles Davis"
 When generation is requested
 Then the prompt template receives SeedType=artist and SeedArtist with name, genres, bio, AI summary
@@ -237,7 +237,7 @@ And the generated mixtape reflects the artist's sonic neighborhood
 
 ### Scenario 3: AI response contains markdown code fences
 
-```
+```gherkin
 Given the LLM returns ```json\n{...}\n```
 When the parser processes the response
 Then it strips the markdown fences and parses the inner JSON
@@ -246,7 +246,7 @@ And generation succeeds without error
 
 ### Scenario 4: Generation timeout
 
-```
+```gherkin
 Given the AI API does not respond within vibes.timeout_seconds
 When the HTTP client times out
 Then the system logs the timeout with structured fields

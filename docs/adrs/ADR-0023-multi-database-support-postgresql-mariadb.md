@@ -63,5 +63,5 @@ Compliance is confirmed by `go.mod` containing `github.com/lib/pq` and `github.c
 
 * Ent dialect constants: `entgo.io/ent/dialect` — `dialect.SQLite`, `dialect.Postgres`, `dialect.MySQL`
 * Spec: `docs/openspec/specs/multi-database-support/spec.md`
-* Previous decision: ADR-0003 (superseded by this ADR)
-* ORM choice: ADR-0004 (Ent ORM — unchanged)
+* Previous decision: [ADR-0003](./ADR-0003-sqlite-embedded-database.md) (superseded by this ADR)
+* ORM choice: [ADR-0004](./ADR-0004-ent-orm-code-generation.md) (Ent ORM — unchanged)

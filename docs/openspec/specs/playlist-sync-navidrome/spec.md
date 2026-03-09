@@ -164,7 +164,7 @@ stateDiagram-v2
 
 ### Scenario 1: Sync Spotify playlist to Navidrome
 
-```
+```gherkin
 Given a user has enabled sync on their Spotify "Road Trip" playlist (50 tracks)
 When the hourly scheduler fires
 Then the system loads all PlaylistTracks for "Road Trip"
@@ -182,7 +182,7 @@ And a SyncEvent audit record is created
 
 ### Scenario 2: Rebuild sync after new tracks added to library
 
-```
+```gherkin
 Given a user has added new albums to Navidrome since the last sync
 When the user clicks "Rebuild Sync" for a playlist
 Then the system re-runs TrackMatcher against the updated library
@@ -193,7 +193,7 @@ And status transitions from "warning" to "success" if all tracks now match
 
 ### Scenario 3: Track name normalization
 
-```
+```gherkin
 Given a Spotify track "Bohemian Rhapsody (2011 Remaster)" by "Queen"
 And the Navidrome library has "Bohemian Rhapsody" by "Queen"
 When exact matching is attempted after normalization

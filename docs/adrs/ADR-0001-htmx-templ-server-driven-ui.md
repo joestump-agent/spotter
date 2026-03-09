@@ -8,7 +8,7 @@ decision-makers: joestump
 
 ## Context and Problem Statement
 
-Spotter is a Go application that aggregates listening history, syncs playlists across music services, and generates AI-powered mixtapes. How should the UI layer be implemented? The team needed an approach that kept business logic in Go (where integrations already live), minimized JavaScript complexity, and delivered reactive, partial-page updates for long-running async operations (AI generation, sync status).
+Spotter is a Go application that aggregates listening history, syncs playlists across music services, and generates AI-powered mixtapes. How should the UI layer be implemented? The project needed an approach that kept business logic in Go (where integrations already live), minimized JavaScript complexity, and delivered reactive, partial-page updates for long-running async operations (AI generation, sync status).
 
 ## Decision Drivers
 
@@ -16,7 +16,7 @@ Spotter is a Go application that aggregates listening history, syncs playlists a
 * Long-running AI operations (mixtape generation, playlist enhancement) require real-time progress feedback without full-page reloads
 * The application is self-hosted for personal use; bundle sizes, build complexity, and frontend toolchain overhead should be minimal
 * Type safety and compile-time template correctness are preferred over runtime string interpolation
-* The team has Go expertise, not React/Vue ecosystem expertise
+* The developer has Go expertise, not React/Vue ecosystem expertise
 
 ## Considered Options
 
@@ -108,4 +108,4 @@ sequenceDiagram
 * Alpine.js: v3.x (CDN) — used for modal toggles and client-side widget state
 * 38 `.templ` files across `internal/views/` covering all pages and reusable components
 * SSE integration: `internal/handlers/sse.go` streams Templ-rendered fragments from `internal/events/bus.go`
-* Related decision: The event bus design (in-memory pub/sub) was chosen to complement this SSE streaming pattern — see ADR-0007
+* Related decision: The event bus design (in-memory pub/sub) was chosen to complement this SSE streaming pattern — see [ADR-0007](./ADR-0007-in-memory-event-bus.md)

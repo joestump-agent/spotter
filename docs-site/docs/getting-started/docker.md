@@ -81,7 +81,7 @@ The `/app/data` directory holds all mutable runtime data:
 | `/app/data/images/albums/` | Downloaded album artwork |
 | `/app/data/prompts/` | AI prompt templates |
 
-**Without this volume**, every container restart or image update wipes all downloaded artwork. Spotter will automatically re-detect missing files and queue them for re-download on the next sync, but it's much better to just persist the directory.
+**Without this volume**, every container restart or image update wipes all downloaded artwork. Spotter will automatically re-detect missing files and queue them for re-download on the next sync, but it's much better to persist the directory.
 
 Use a named volume (recommended):
 ```yaml

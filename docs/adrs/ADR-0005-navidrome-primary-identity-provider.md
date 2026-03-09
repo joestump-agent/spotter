@@ -21,7 +21,7 @@ Spotter is a companion application for Navidrome, a self-hosted music server. Us
 ## Considered Options
 
 * **Navidrome passthrough authentication** — validate credentials against Navidrome's Subsonic API; store session as a signed cookie
-* **Native user accounts** — manage hashed passwords in the local SQLite database, independent of Navidrome
+* **Native user accounts** — manage hashed passwords in the local database, independent of Navidrome
 * **OAuth2 / OpenID Connect** — delegate to an external identity provider (Google, GitHub, or a self-hosted IdP like Authentik)
 
 ## Decision Outcome
@@ -57,7 +57,7 @@ On login: validate credentials against Navidrome Subsonic API → create/update 
 
 ### Native User Accounts
 
-Store bcrypt-hashed passwords in SQLite. Implement registration, password reset, and session management independently.
+Store bcrypt-hashed passwords in the database. Implement registration, password reset, and session management independently.
 
 * Good, because fully independent of Navidrome availability for authentication
 * Good, because standard, well-understood pattern with good library support (`golang.org/x/crypto/bcrypt`)
@@ -108,4 +108,4 @@ sequenceDiagram
 * Auth middleware: `cmd/server/main.go:360-389` — reads cookie, queries local DB, injects context
 * Cookie settings: HttpOnly=true, Secure=`config.Security.SecureCookies`, SameSite=Lax, Expires=24h (`internal/handlers/auth.go:119-127`)
 * `NavidromeAuth` entity: stores encrypted Navidrome password for background API calls by sync/enrichment services
-* Encryption of stored credentials: see ADR-0006
+* Encryption of stored credentials: see [ADR-0006](./ADR-0006-aes256-gcm-application-layer-encryption.md)

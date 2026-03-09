@@ -13,11 +13,11 @@ Spotter's background operations — listen sync, metadata enrichment, playlist w
 ## Decision Drivers
 
 * Spotter is a personal application running on a single instance — metrics infrastructure (Prometheus, Grafana, Datadog) is excessive
-* The existing `*slog.Logger` is already injected into every service via dependency injection (ADR-0010)
+* The existing `*slog.Logger` is already injected into every service via dependency injection ([ADR-0010](./ADR-0010-stdlib-slog-structured-logging.md))
 * `slog` supports swappable handlers — `TextHandler` for human-readable output, `JSONHandler` for machine-parseable output
 * JSON-formatted log events are directly parseable by `jq`, `loki`, or simple shell scripts without any client library
 * Background loops currently log errors but not success metrics — there is no record of normal operation
-* Track matching uses a three-tier strategy (ISRC, exact match, fuzzy match) but there is no data on which strategy succeeds most often (ADR-0014)
+* Track matching uses a three-tier strategy (ISRC, exact match, fuzzy match) but there is no data on which strategy succeeds most often ([ADR-0014](./ADR-0014-three-tier-track-matching-algorithm.md))
 * AI operations (OpenAI API calls) have cost implications — token usage should be observable
 
 ## Considered Options
@@ -120,8 +120,8 @@ Continue with error-only logging. Rely on the absence of error logs to infer hea
 
 * Current logger initialization: `cmd/server/main.go:38-41` — `slog.New(slog.NewTextHandler(os.Stdout, opts))`
 * Current request logging: `internal/middleware/logging.go:11-31` — structured HTTP request logging with method, path, status, latency, request ID
-* slog handler choice: see ADR-0010 (stdlib slog structured logging)
-* Background loops to instrument: see ADR-0013 (goroutine ticker background scheduling)
-* Track matching strategies to observe: see ADR-0014 (three-tier track matching algorithm)
-* AI API backend: see ADR-0008 (OpenAI API / LiteLLM-compatible LLM backend)
-* Configuration system: see ADR-0009 (Viper environment variable configuration)
+* slog handler choice: see [ADR-0010](./ADR-0010-stdlib-slog-structured-logging.md) (stdlib slog structured logging)
+* Background loops to instrument: see [ADR-0013](./ADR-0013-goroutine-ticker-background-scheduling.md) (goroutine ticker background scheduling)
+* Track matching strategies to observe: see [ADR-0014](./ADR-0014-three-tier-track-matching-algorithm.md) (three-tier track matching algorithm)
+* AI API backend: see [ADR-0008](./ADR-0008-openai-api-litellm-compatible-llm-backend.md) (OpenAI API / LiteLLM-compatible LLM backend)
+* Configuration system: see [ADR-0009](./ADR-0009-viper-environment-variable-configuration.md) (Viper environment variable configuration)

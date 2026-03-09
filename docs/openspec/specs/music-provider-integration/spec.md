@@ -196,7 +196,7 @@ classDiagram
 
 ### Scenario 1: Factory returns nil for unconfigured provider
 
-```
+```gherkin
 Given a user has not connected Spotify
 When the Spotify factory is called for this user
 Then it queries user.QuerySpotifyAuth() and finds no record
@@ -206,7 +206,7 @@ And the sync service skips Spotify for this user without logging an error
 
 ### Scenario 2: Spotify token refresh
 
-```
+```gherkin
 Given a user's Spotify access token has expired
 When the Spotify factory is called
 Then it reads the stored encrypted refresh token from SpotifyAuth
@@ -217,7 +217,7 @@ And returns a ready-to-use provider with the refreshed token
 
 ### Scenario 3: Last.fm history fetch with pagination
 
-```
+```gherkin
 Given a user's last sync was 7 days ago
 When GetRecentListens is called with since=7_days_ago
 Then the provider calls user.getRecentTracks with from=since.Unix()

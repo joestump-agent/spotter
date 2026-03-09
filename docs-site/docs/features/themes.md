@@ -47,7 +47,7 @@ The dark theme channels the neon-soaked, digital future imagined in 1980s cyberp
 
 ### Aesthetic
 
-Blade Runner meets Tron - dark, electric, and futuristic.
+Blade Runner meets Tron — dark, electric, and futuristic.
 
 ## Theme Controls
 

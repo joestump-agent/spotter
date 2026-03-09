@@ -28,7 +28,7 @@ If you want to build from source or contribute to Spotter:
 
 ### Prerequisites
 
-- **Go 1.23+** - [Download Go](https://go.dev/dl/)
+- **Go 1.24+** - [Download Go](https://go.dev/dl/)
 - **Node.js & npm** - For Tailwind CSS generation ([Download Node.js](https://nodejs.org/))
 - **Make** - Build automation tool (usually pre-installed on macOS/Linux)
 

@@ -87,41 +87,7 @@ SPOTTER_METADATA_IMAGES_MAX_HEIGHT=1000
 
 ## Manual Enrichment
 
-Trigger enrichment manually from the Preferences > Tasks page:
-
-1. **Run Metadata Enricher**: Process all entities lacking metadata
-2. **Sync All Artist Images**: Re-fetch artist images
-3. **Sync All Album Art**: Re-fetch album artwork
-
-## AI Enrichment
-
-OpenAI integration generates intelligent content:
-
-- **Artist Biographies**: Detailed, engaging biographies
-- **Album Summaries**: Context about the album's significance
-- **Track Descriptions**: Information about individual tracks
-- **Smart Tags**: Relevant genre and mood tags
-
-### Configuration
-
-```bash
-# API endpoint (supports LiteLLM and compatible proxies)
-SPOTTER_OPENAI_BASE_URL=https://api.openai.com/v1
-
-# Model selection
-SPOTTER_OPENAI_MODEL=gpt-4o
-
-# Custom prompt templates directory
-SPOTTER_METADATA_AI_PROMPTS_DIRECTORY=./data/prompts
-```
-
-### Prompt Templates
-
-Customize AI output by editing templates in `data/prompts/`:
-
-- `artist.tmpl` - Artist enrichment prompt
-- `album.tmpl` - Album enrichment prompt
-- `track.tmpl` - Track enrichment prompt
+See the [Enrichers Overview](/docs/enrichers/overview) for details on manual enrichment and individual enricher configuration.
 
 ## Rate Limiting
 

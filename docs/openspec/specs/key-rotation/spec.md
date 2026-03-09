@@ -88,7 +88,7 @@ Out of scope: Automated key generation, key storage recommendations (documented 
 ### Audit Logging
 
 **REQ-ROT-050** — The subcommand MUST print a summary to stdout upon successful completion:
-```
+```text
 Key rotation complete.
   NavidromeAuth: N rows re-encrypted
   SpotifyAuth:   N rows re-encrypted (access_token + refresh_token)
@@ -108,7 +108,7 @@ Update your environment variable:
 
 ### Scenario 1: Successful key rotation
 
-```
+```gherkin
 Given the database contains:
   - 1 NavidromeAuth with an encrypted password
   - 1 SpotifyAuth with encrypted access_token and refresh_token
@@ -125,7 +125,7 @@ And the summary is printed to stdout
 
 ### Scenario 2: Wrong old key provided
 
-```
+```gherkin
 Given the database contains encrypted fields
 When the operator runs rotate-key with an incorrect --old-key
 Then the pre-rotation validation attempts to decrypt a field
@@ -137,7 +137,7 @@ And the exit status is non-zero
 
 ### Scenario 3: Transaction rollback on partial failure
 
-```
+```gherkin
 Given the database contains encrypted fields
 And one field contains corrupted ciphertext (e.g., truncated base64)
 When the operator runs rotate-key with the correct --old-key
@@ -149,7 +149,7 @@ And the subcommand reports which field and row ID failed
 
 ### Scenario 4: Server is running during rotation attempt
 
-```
+```gherkin
 Given the Spotter server is running (holding a database connection)
 When the operator runs rotate-key
 Then the subcommand detects the database lock
@@ -159,7 +159,7 @@ And exits with non-zero status
 
 ### Scenario 5: Empty database (no encrypted fields)
 
-```
+```gherkin
 Given the database has no NavidromeAuth, SpotifyAuth, or LastFMAuth rows
 When the operator runs rotate-key
 Then the subcommand prints: "No encrypted fields found. Nothing to rotate."

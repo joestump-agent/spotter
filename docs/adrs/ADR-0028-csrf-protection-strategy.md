@@ -16,10 +16,10 @@ The session cookie is already set with `SameSite=Lax` (not `Strict`) because `Sa
 
 * `SameSite=Strict` is not viable — it breaks OAuth cross-site redirect chains (Spotify/Last.fm callback → Spotter authenticated route)
 * Spotter is a single-user, self-hosted application — the attack surface for CSRF is limited to the operator's own browsing context
-* OAuth callback handlers already validate a cryptographic `state` parameter for CSRF protection (ADR-0022 T4)
+* OAuth callback handlers already validate a cryptographic `state` parameter for CSRF protection ([ADR-0022](./ADR-0022-threat-model-security-assumptions.md) T4)
 * All POST endpoints require an authenticated session (JWT cookie) — unauthenticated POST endpoints do not exist except login
 * The login form POSTs credentials to Navidrome; a CSRF attack on login would authenticate as the attacker's account, which is not useful in a single-user app
-* Adding token-based CSRF middleware (double-submit cookie, Gorilla CSRF) would add complexity with minimal security benefit given the threat model (ADR-0022)
+* Adding token-based CSRF middleware (double-submit cookie, Gorilla CSRF) would add complexity with minimal security benefit given the threat model ([ADR-0022](./ADR-0022-threat-model-security-assumptions.md))
 * Modern browsers universally support `SameSite` (Chrome 80+, Firefox 69+, Safari 13+)
 
 ## Considered Options
@@ -94,6 +94,6 @@ Use the `gorilla/csrf` package to add per-request CSRF tokens with automatic for
 * **Session cookie setup**: `internal/handlers/auth.go:142-153` — `HttpOnly: true`, `Secure: config`, `SameSite: Lax`
 * **OAuth state CSRF**: `internal/handlers/spotify_auth.go:22-50` — cryptographic state parameter validated on callback
 * **Security headers**: `internal/middleware/security.go` — `X-Frame-Options: DENY`, CSP, `X-Content-Type-Options: nosniff`
-* **Threat model**: ADR-0022 — T3 (session cookie theft), T4 (CSRF on OAuth callbacks), T5 (input validation)
+* **Threat model**: [ADR-0022](./ADR-0022-threat-model-security-assumptions.md) — T3 (session cookie theft), T4 (CSRF on OAuth callbacks), T5 (input validation)
 * **SameSite=Lax constraint**: Issue #161 — OAuth redirect chains require Lax, not Strict
-* **Related**: ADR-0005 (Navidrome primary identity — JWT cookie approach), ADR-0022 (threat model)
+* **Related**: [ADR-0005](./ADR-0005-navidrome-primary-identity-provider.md) (Navidrome primary identity — JWT cookie approach), [ADR-0022](./ADR-0022-threat-model-security-assumptions.md) (threat model)

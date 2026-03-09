@@ -10,16 +10,16 @@ decision-makers: joestump
 
 Spotter currently stores tag-like data across multiple disjoint fields on Artist, Album, and Track entities: `genres` (from Spotify), `tags` (from Last.fm and other sources), and `ai_tags` (from OpenAI). Albums also carry a scalar `genre` field and a `label` field (record label). These fields lack a common type system -- there is no way to distinguish whether a tag originated from ID3 metadata, a record label, an AI enricher, or a streaming provider. This makes it impossible to filter the library by tag provenance (e.g., "show me all artists with the AI-generated tag 'dream pop'") and prevents the UI from visually differentiating tag sources.
 
-ADR-0024 introduced a tag browsing page that queries these JSON arrays at runtime using PostgreSQL JSONB operators, but it treats all tags as untyped strings. As the library grows, the need for a proper tag taxonomy becomes clear: genres are just one form of tag, labels are another, and AI-generated tags should be visually branded to match Spotter's existing AI branding (sparkles icon, accent color). Additionally, the ability to relate tags to each other (e.g., "shoegaze" is related to "dream pop") would enable discovery features like "related tags" when browsing.
+[ADR-0024](./ADR-0024-tag-browsing-library.md) introduced a tag browsing page that queries these JSON arrays at runtime using PostgreSQL JSONB operators, but it treats all tags as untyped strings. As the library grows, the need for a proper tag taxonomy becomes clear: genres are just one form of tag, labels are another, and AI-generated tags should be visually branded to match Spotter's existing AI branding (sparkles icon, accent color). Additionally, the ability to relate tags to each other (e.g., "shoegaze" is related to "dream pop") would enable discovery features like "related tags" when browsing.
 
 ## Decision Drivers
 
-* Tags currently live in 6+ separate JSON array fields across 3 entity tables, making unified queries verbose and error-prone (ADR-0024 requires a 6-way UNION)
+* Tags currently live in 6+ separate JSON array fields across 3 entity tables, making unified queries verbose and error-prone ([ADR-0024](./ADR-0024-tag-browsing-library.md) requires a 6-way UNION)
 * Each tag source (ID3, Spotify genres, Last.fm social tags, AI-generated tags, record labels) has different trust levels and semantic meanings that users should be able to distinguish
 * The existing AI branding pattern (sparkles icon `icon-[heroicons--sparkles]`, `badge-accent` color, `text-accent` styling) is well-established in the UI (artist show, track show, album show pages) and should extend consistently to AI tags in the new taxonomy
-* PostgreSQL's JSONB queries for tag aggregation are becoming the performance bottleneck identified in ADR-0024 -- a denormalized table would simplify queries significantly
+* PostgreSQL's JSONB queries for tag aggregation are becoming the performance bottleneck identified in [ADR-0024](./ADR-0024-tag-browsing-library.md) -- a denormalized table would simplify queries significantly
 * Tag relationships (e.g., "shoegaze" is related to "dream pop") are impossible to express with flat string arrays
-* The enricher pipeline (ADR-0015) already distinguishes tag sources -- Last.fm returns `Tags`, Spotify returns `Genres`, OpenAI returns `AITags` -- but this provenance is lost when stored as undifferentiated `[]string` fields
+* The enricher pipeline ([ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md)) already distinguishes tag sources -- Last.fm returns `Tags`, Spotify returns `Genres`, OpenAI returns `AITags` -- but this provenance is lost when stored as undifferentiated `[]string` fields
 
 ## Considered Options
 
@@ -29,7 +29,7 @@ ADR-0024 introduced a tag browsing page that queries these JSON arrays at runtim
 
 ## Decision Outcome
 
-Chosen option: **Option 1 (First-class Tag entity with typed tags and denormalized query table)**, because it provides proper relational modeling for tags, enables tag relationships, normalizes tag names (solving the case-sensitivity issue identified in ADR-0024), and replaces verbose JSONB UNION queries with standard Ent query builder joins. The denormalized query table enables fast filtering by tag type without complex SQL.
+Chosen option: **Option 1 (First-class Tag entity with typed tags and denormalized query table)**, because it provides proper relational modeling for tags, enables tag relationships, normalizes tag names (solving the case-sensitivity issue identified in [ADR-0024](./ADR-0024-tag-browsing-library.md)), and replaces verbose JSONB UNION queries with standard Ent query builder joins. The denormalized query table enables fast filtering by tag type without complex SQL.
 
 ### Tag Type Enum
 
@@ -45,10 +45,10 @@ The `ai` tag type uses the existing AI branding: sparkles icon and accent color,
 
 ### Consequences
 
-* Good, because tag names are normalized at write time (lowercase, trimmed) -- resolves the "shoegaze" vs "Shoegaze" vs "shoe-gaze" inconsistency noted in ADR-0024
+* Good, because tag names are normalized at write time (lowercase, trimmed) -- resolves the "shoegaze" vs "Shoegaze" vs "shoe-gaze" inconsistency noted in [ADR-0024](./ADR-0024-tag-browsing-library.md)
 * Good, because tag provenance is preserved through the `tag_type` enum -- users can filter by "show me only AI tags" or "show me only ID3 tags"
 * Good, because tag relationships enable discovery: browsing "shoegaze" can suggest "dream pop", "noise pop", "post-punk"
-* Good, because the denormalized query table replaces the 6-way UNION query from ADR-0024 with a simple indexed lookup
+* Good, because the denormalized query table replaces the 6-way UNION query from [ADR-0024](./ADR-0024-tag-browsing-library.md) with a simple indexed lookup
 * Good, because standard Ent query builder can be used for all tag operations -- no more raw SQL for tag aggregation
 * Good, because AI tag branding remains consistent with existing UI patterns
 * Bad, because requires a new Ent schema entity (`Tag`) and `go generate ./ent`, adding generated code
@@ -66,7 +66,7 @@ Compliance is confirmed by:
 - Enricher updates in `internal/enrichers/` to set `tag_type` when returning tags
 - UI components using the tag type icon/color mapping table above
 - A migration script or startup backfill that populates the Tag entity from existing JSON array fields
-- Tag browsing page (ADR-0024) updated to query the new Tag entity instead of JSONB arrays
+- Tag browsing page ([ADR-0024](./ADR-0024-tag-browsing-library.md)) updated to query the new Tag entity instead of JSONB arrays
 
 ## Pros and Cons of the Options
 
@@ -110,7 +110,7 @@ Add `id3_tags []string`, `label_tags []string`, `source_tags []string` columns t
 * Bad, because tag aggregation still requires UNION queries (now across 15 columns instead of 6)
 * Bad, because tag relationships still cannot be expressed
 * Bad, because tag names are still not normalized across columns
-* Bad, because this approach makes the ADR-0024 UNION problem worse, not better
+* Bad, because this approach makes the [ADR-0024](./ADR-0024-tag-browsing-library.md) UNION problem worse, not better
 
 ## Ent Schema Design
 
@@ -273,7 +273,7 @@ erDiagram
 
 ## UI Tag Rendering
 
-Tags are rendered with type-specific icons and DaisyUI badge colors (ADR-0011):
+Tags are rendered with type-specific icons and DaisyUI badge colors ([ADR-0011](./ADR-0011-tailwind-daisyui-ui-styling.md)):
 
 ```html
 <!-- ID3 tag -->
@@ -333,9 +333,9 @@ This pattern is consistent with the existing tag rendering in `internal/views/ar
 
 * Current tag storage: `ent/schema/artist.go:54` (`tags`), `ent/schema/artist.go:65` (`genres`), `ent/schema/artist.go:87` (`ai_tags`), `ent/schema/album.go:57` (`genre`), `ent/schema/album.go:60` (`tags`), `ent/schema/album.go:72` (`label`), `ent/schema/album.go:91` (`ai_tags`), `ent/schema/track.go:80` (`tags`), `ent/schema/track.go:83` (`genres`), `ent/schema/track.go:109` (`ai_tags`)
 * AI branding pattern: `internal/views/components/ui.templ:158-170` (`AISummaryCard` with sparkles + accent), `internal/views/artists/show.templ:269-274` (AI tags with sparkles + `badge-accent`)
-* Tag browsing (to be updated): ADR-0024
-* Enricher pipeline: ADR-0015 (enricher registry), `internal/enrichers/enrichers.go` (type definitions)
+* Tag browsing (to be updated): [ADR-0024](./ADR-0024-tag-browsing-library.md)
+* Enricher pipeline: [ADR-0015](./ADR-0015-pluggable-enricher-registry-pattern.md) (enricher registry), `internal/enrichers/enrichers.go` (type definitions)
 * Enricher tag sources: Last.fm sets `Tags` (`internal/enrichers/lastfm/lastfm.go:248-264`), Spotify sets `Genres` (`internal/enrichers/spotify/spotify.go:407`), OpenAI sets `AITags` (`internal/enrichers/openai/openai.go:484-489`), Navidrome sets `Genres` (`internal/enrichers/navidrome/navidrome.go:672`)
-* ORM: ADR-0004 (Ent ORM with code generation)
-* Database: ADR-0023 (PostgreSQL)
-* UI framework: ADR-0011 (Tailwind CSS + DaisyUI)
+* ORM: [ADR-0004](./ADR-0004-ent-orm-code-generation.md) (Ent ORM with code generation)
+* Database: [ADR-0023](./ADR-0023-multi-database-support-postgresql-mariadb.md) (PostgreSQL)
+* UI framework: [ADR-0011](./ADR-0011-tailwind-daisyui-ui-styling.md) (Tailwind CSS + DaisyUI)
