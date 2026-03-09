@@ -133,7 +133,7 @@ export default function Home(): React.ReactElement {
             <Link className="button button--lg button--spotify-outline" to="/docs">
               Documentation
             </Link>
-            <Link className="button button--lg button--spotify-outline" to="/api/spotter">
+            <Link className="button button--lg button--spotify-outline" to="/api/spotter-api">
               API Reference
             </Link>
             <Link

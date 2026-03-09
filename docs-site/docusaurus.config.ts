@@ -136,7 +136,7 @@ const config: Config = {
           label: 'Specs',
         },
         {
-          to: '/api/spotter',
+          to: '/api/spotter-api',
           label: 'API',
           position: 'left',
         },
@@ -176,7 +176,7 @@ const config: Config = {
             },
             {
               label: 'API Reference',
-              to: '/api/spotter',
+              to: '/api/spotter-api',
             },
           ],
         },

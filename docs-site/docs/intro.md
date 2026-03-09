@@ -36,4 +36,4 @@ Spotter is built with:
 - [Installation Guide](/docs/getting-started/installation)
 - [Configuration Reference](/docs/getting-started/configuration)
 - [Vibes Engine Documentation](/docs/features/vibes-engine)
-- [API Reference](/api/spotter)
+- [API Reference](/api/spotter-api)

@@ -39,7 +39,7 @@ Spotter uses Navidrome's authentication system:
 No separate API keys are required - your Navidrome credentials are sufficient.
 
 :::info
-Your Navidrome password is stored encrypted for background sync operations. See the [API Reference](/api/spotter) for details on session security.
+Your Navidrome password is stored encrypted for background sync operations. See the [API Reference](/api/spotter-api) for details on session security.
 :::
 
 ## Synced Data
