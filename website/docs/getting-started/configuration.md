@@ -91,8 +91,8 @@ SPOTTER_DATABASE_SOURCE=host=localhost port=5432 dbname=spotter user=spotter pas
 | :--- | :--- | :--- |
 | `SPOTTER_LIDARR_BASE_URL` | Base URL to your Lidarr instance | *None* |
 | `SPOTTER_LIDARR_API_KEY` | API Key for your Lidarr instance | *None* |
-| `SPOTTER_LIDARR_QUEUE_MAX` | Max Lidarr queue depth before pausing submissions | `20` |
-| `SPOTTER_LIDARR_SUBMIT_INTERVAL` | How often the submitter checks and drains the queue | `30s` |
+| `SPOTTER_LIDARR_QUEUE_MAX` | Max Lidarr queue depth before pausing submissions | `50` |
+| `SPOTTER_LIDARR_SUBMIT_INTERVAL` | How often the submitter checks and drains the queue | `3m` |
 
 ## Metadata Enrichment Configuration
 

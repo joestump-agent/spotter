@@ -122,8 +122,8 @@ type Config struct {
 	Lidarr struct {
 		BaseURL        string `mapstructure:"base_url"`
 		APIKey         string `mapstructure:"api_key"`
-		QueueMax       int    `mapstructure:"queue_max"`       // Maximum Lidarr queue depth before backpressure (default: 20)
-		SubmitInterval string `mapstructure:"submit_interval"` // How often to wake the submitter (default: "30s")
+		QueueMax       int    `mapstructure:"queue_max"`       // Maximum Lidarr queue depth before backpressure (default: 50)
+		SubmitInterval string `mapstructure:"submit_interval"` // How often to wake the submitter (default: "3m")
 	} `mapstructure:"lidarr"`
 	Sync struct {
 		Interval string `mapstructure:"interval"`
@@ -284,8 +284,8 @@ func Load() (*Config, error) {
 	v.SetDefault("lidarr.base_url", "")
 	v.SetDefault("lidarr.api_key", "")
 	// Governing: SPEC-0017 REQ "Configuration", ADR-0029
-	v.SetDefault("lidarr.queue_max", 20)
-	v.SetDefault("lidarr.submit_interval", "30s")
+	v.SetDefault("lidarr.queue_max", 50)
+	v.SetDefault("lidarr.submit_interval", "3m")
 	v.SetDefault("spotify.client_id", "")
 	v.SetDefault("spotify.client_secret", "")
 	v.SetDefault("spotify.redirect_url", "http://127.0.0.1:8080/auth/spotify/callback")

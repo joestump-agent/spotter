@@ -100,8 +100,8 @@ type lidarrProfile struct {
 func (s *LidarrSubmitter) Run(ctx context.Context) {
 	interval, err := time.ParseDuration(s.config.Lidarr.SubmitInterval)
 	if err != nil {
-		s.logger.Error("invalid lidarr submit interval, using default 30s", "error", err, "value", s.config.Lidarr.SubmitInterval)
-		interval = 30 * time.Second
+		s.logger.Error("invalid lidarr submit interval, using default 3m", "error", err, "value", s.config.Lidarr.SubmitInterval)
+		interval = 3 * time.Minute
 	}
 
 	ticker := time.NewTicker(interval)
@@ -184,7 +184,7 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 
 		queueMax := s.config.Lidarr.QueueMax
 		if queueMax <= 0 {
-			queueMax = 20
+			queueMax = 50
 		}
 
 		// Count remaining eligible items for metrics
@@ -220,23 +220,33 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 		if submitErr != nil {
 			// Governing: SPEC-0017 REQ "Backoff Strategy", REQ "Observability" — metric.lidarr.failed
 			newAttempts := item.Attempts + 1
+			errMsg := submitErr.Error()
+
+			// Detect permanently-failed submissions that will never succeed on retry.
+			// These are set to maxAttempts so they won't be retried.
+			permanent := isPermanentLidarrError(errMsg)
+			if permanent {
+				newAttempts = maxAttempts
+			}
+
 			s.logger.Info("metric.lidarr.failed",
 				"entity_type", item.EntityType,
 				"entity_id", item.EntityID,
-				"error", submitErr.Error(),
+				"error", errMsg,
 				"attempts", newAttempts,
+				"permanent", permanent,
 			)
 
 			update := s.db.LidarrQueue.UpdateOneID(item.ID).
 				SetAttempts(newAttempts).
-				SetLastError(submitErr.Error()).
+				SetLastError(errMsg).
 				SetStatus(lidarrqueue.StatusFailed)
 
 			if newAttempts < maxAttempts {
 				retryAt := ComputeBackoff(newAttempts)
 				update = update.SetRetryAt(retryAt)
 			}
-			// If maxAttempts reached, leave status=failed with no retry_at (won't be retried)
+			// If maxAttempts reached (or permanent failure), leave status=failed with no retry_at (won't be retried)
 
 			if err := update.Exec(ctx); err != nil {
 				s.logger.Error("failed to update queue item after failure", "error", err, "item_id", item.ID)
@@ -334,6 +344,12 @@ func (s *LidarrSubmitter) submitArtist(ctx context.Context, item *ent.LidarrQueu
 
 	artistToAdd := results[0]
 
+	// Validate that the artist has a name — some MusicBrainz entries return
+	// empty names from Lidarr's lookup, which will fail Lidarr's validation.
+	if artistToAdd.ArtistName == "" {
+		return 0, fmt.Errorf("artist lookup returned empty name for mbid %s", item.MusicbrainzID)
+	}
+
 	// Get root folder
 	var rootFolders []lidarrRootFolder
 	if err := s.doRequest(ctx, "GET", "rootfolder", nil, &rootFolders); err != nil {
@@ -344,6 +360,9 @@ func (s *LidarrSubmitter) submitArtist(ctx context.Context, item *ent.LidarrQueu
 	}
 
 	// Build payload
+	// Set monitored=true but disable automatic search to avoid flooding
+	// Lidarr's download queue. Albums are submitted individually via the
+	// album queue entries, which provides controlled backpressure.
 	payload := map[string]interface{}{
 		"artistName":        artistToAdd.ArtistName,
 		"foreignArtistId":   artistToAdd.ForeignArtistID,
@@ -351,6 +370,10 @@ func (s *LidarrSubmitter) submitArtist(ctx context.Context, item *ent.LidarrQueu
 		"metadataProfileId": 1,
 		"path":              fmt.Sprintf("%s/%s", rootFolders[0].Path, artistToAdd.ArtistName),
 		"monitored":         true,
+		"addOptions": map[string]interface{}{
+			"monitor":                "none",
+			"searchForMissingAlbums": false,
+		},
 	}
 
 	// Get quality profile
@@ -438,6 +461,9 @@ func (s *LidarrSubmitter) submitAlbum(ctx context.Context, item *ent.LidarrQueue
 		"foreignAlbumId": albumToAdd.ForeignAlbumID,
 		"artistId":       artistID,
 		"monitored":      true,
+		"addOptions": map[string]interface{}{
+			"searchForNewAlbum": true,
+		},
 	}
 
 	var newAlbum lidarrSubmitAlbum
@@ -555,6 +581,15 @@ func (s *LidarrSubmitter) logSubmissionEvent(ctx context.Context, item *ent.Lida
 		Exec(ctx); err != nil {
 		s.logger.Error("failed to create sync event", "error", err)
 	}
+}
+
+// isPermanentLidarrError returns true for errors that will never succeed on retry.
+func isPermanentLidarrError(errMsg string) bool {
+	return strings.Contains(errMsg, "artist lookup returned empty name") ||
+		strings.Contains(errMsg, "ArtistPathValidator") ||
+		strings.Contains(errMsg, "already configured for an existing artist") ||
+		strings.Contains(errMsg, "not found in lidarr lookup for mbid") ||
+		strings.Contains(errMsg, "artist not found in lidarr for album submission")
 }
 
 // ComputeBackoff calculates the retry time using exponential backoff with jitter.
