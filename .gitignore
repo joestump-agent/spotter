@@ -25,9 +25,6 @@ npm-debug.log
 /package-lock.json
 
 # Docusaurus
-website/build/
-website/.docusaurus/
-website/.cache-loader/
 docs-site/node_modules/
 docs-site/build/
 docs-site/.docusaurus/

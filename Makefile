@@ -155,7 +155,7 @@ lint-templ: ## Run templ fmt to check Templ template formatting
 
 lint-md: ## Run markdownlint on Markdown files
 	@echo "Linting Markdown files..."
-	@npx markdownlint "**/*.md" --ignore node_modules --ignore .beads --ignore "website/node_modules"
+	@npx markdownlint "**/*.md" --ignore node_modules --ignore "docs-site/node_modules"
 	@echo "✓ Markdown linting passed"
 
 lint-docs: ## Build Docusaurus docs (checks for broken links)
@@ -204,20 +204,20 @@ docker-run: ## Run application in Docker
 
 docs-deps: ## Install documentation dependencies
 	@echo "Installing documentation dependencies..."
-	cd website && npm install
+	cd docs-site && npm install
 	@echo "✓ Documentation dependencies installed"
 
 docs-build: ## Build documentation site
 	@echo "Building documentation..."
-	cd website && npm run build
-	@echo "✓ Documentation built to website/build/"
+	cd docs-site && npm run build
+	@echo "✓ Documentation built to docs-site/build/"
 
 docs-serve: ## Start local documentation server with hot-reload
 	@echo "Starting documentation server..."
 	@echo "Documentation will be available at http://localhost:3000/spotter/"
-	cd website && npm start
+	cd docs-site && npm start
 
 docs-clean: ## Clean documentation build artifacts
 	@echo "Cleaning documentation artifacts..."
-	rm -rf website/build website/.docusaurus website/.cache-loader
+	rm -rf docs-site/build docs-site/.docusaurus docs-site/.cache-loader
 	@echo "✓ Documentation cleaned"

@@ -5,7 +5,6 @@
 extends: default
 
 ignore: |
-  .beads/
   node_modules/
   .git/
 

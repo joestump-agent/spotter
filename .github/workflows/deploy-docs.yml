@@ -8,6 +8,7 @@ on:
       - "docs-site/**"
       - "docs/adrs/**"
       - "docs/openspec/**"
+      - "openapi.yaml"
       - ".github/workflows/deploy-docs.yml"
   workflow_dispatch:
 
@@ -45,6 +46,10 @@ jobs:
       - name: Build content (ADRs + Specs → MDX)
         working-directory: docs-site
         run: npm run build-content
+
+      - name: Generate API docs
+        working-directory: docs-site
+        run: npm run gen-api-docs
 
       - name: Build website
         working-directory: docs-site

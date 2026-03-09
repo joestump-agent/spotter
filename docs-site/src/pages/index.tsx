@@ -123,16 +123,19 @@ export default function Home(): React.ReactElement {
             <span>Spotter</span>
           </h1>
           <p className="hero__subtitle--spotter">
-            Music discovery and playlist sync for{' '}
+            AI-powered music discovery and playlist sync for{' '}
             <strong style={{ color: '#fff' }}>Navidrome</strong>.
-            Architecture decisions, specifications, and implementation details.
+            Aggregate listening history, generate mixtapes with AI DJs, and enrich your music library.
           </p>
           <div className="hero__cta">
-            <Link className="button button--lg button--spotify" to="/specs">
-              Browse Specs
+            <Link className="button button--lg button--spotify" to="/docs/getting-started/docker">
+              Get Started
             </Link>
-            <Link className="button button--lg button--spotify-outline" to="/decisions">
-              View ADRs
+            <Link className="button button--lg button--spotify-outline" to="/docs">
+              Documentation
+            </Link>
+            <Link className="button button--lg button--spotify-outline" to="/api/spotter">
+              API Reference
             </Link>
             <Link
               className="button button--lg button--spotify-outline"
@@ -213,6 +216,47 @@ export default function Home(): React.ReactElement {
       </div>
 
       <main>
+        {/* Quick Start */}
+        <section className="features-section">
+          <div className="container">
+            <h2 className="section-title">Quick Start</h2>
+            <p className="section-subtitle">Up and running in under a minute with Docker</p>
+            <div className="row" style={{ justifyContent: 'center' }}>
+              <div className="col col--8">
+                <div
+                  style={{
+                    background: '#282828',
+                    borderRadius: '8px',
+                    padding: '1.5rem',
+                    border: '1px solid #3E3E3E',
+                    fontFamily: "'SF Mono', 'Fira Code', 'Fira Mono', monospace",
+                    overflow: 'auto',
+                  }}
+                >
+                  <pre style={{ margin: 0, background: 'none', border: 'none' }}>
+                    <code style={{ color: '#ccc', fontSize: '0.875rem', lineHeight: 1.6 }}>
+{`# Download the compose file
+curl -o docker-compose.yml \\
+  https://raw.githubusercontent.com/joestump/spotter/main/docker-compose.postgres.yml
+
+# Edit with your Navidrome URL, API keys, etc.
+$EDITOR docker-compose.yml
+
+# Start Spotter + PostgreSQL
+docker compose up -d`}
+                    </code>
+                  </pre>
+                </div>
+                <p style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+                  <Link to="/docs/getting-started/docker" style={{ color: '#1DB954' }}>
+                    View full installation guide →
+                  </Link>
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Features */}
         <section className="features-section">
           <div className="container">

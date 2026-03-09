@@ -39,7 +39,7 @@ jobs:
         run: npm install
 
       - name: Install documentation dependencies
-        run: cd website && npm install
+        run: cd docs-site && npm install
 
       - name: Install yamllint
         run: pip install yamllint
@@ -151,18 +151,24 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: website/package-lock.json
+          cache-dependency-path: docs-site/package-lock.json
 
       - name: Install docs dependencies
-        run: cd website && npm ci
+        run: cd docs-site && npm ci
+
+      - name: Build content
+        run: cd docs-site && npm run build-content
+
+      - name: Generate API docs
+        run: cd docs-site && npm run gen-api-docs
 
       - name: Build docs
-        run: cd website && npm run build
+        run: cd docs-site && npm run build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: website/build
+          path: docs-site/build
 
       - name: Deploy to GitHub Pages
         id: deploy
