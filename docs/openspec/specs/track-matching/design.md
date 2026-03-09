@@ -73,7 +73,7 @@ the library size. This keeps matching fast even for large playlists.
 
 ### Weighted Fuzzy Scoring with Bonus
 
-**Choice**: Fuzzy score = (title_similarity * 0.6) + (artist_similarity * 0.4), with a +0.1
+**Choice**: Fuzzy score = (title\_similarity \* 0.6) + (artist\_similarity \* 0.4), with a +0.1
 bonus (capped at 1.0) when both components exceed 0.8.
 
 **Rationale**: Track title is more discriminating than artist name for identity — many artists
