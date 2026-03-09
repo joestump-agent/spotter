@@ -177,10 +177,6 @@ function main() {
   fs.writeFileSync(path.join(ADRS_DEST, '_category_.json'), JSON.stringify({
     label: 'Architecture Decisions',
     position: 2,
-    link: {
-      type: 'generated-index',
-      description: 'Architecture Decision Records (ADRs).'
-    }
   }, null, 2));
 
   const files = fs.readdirSync(ADRS_SOURCE);

@@ -9,7 +9,7 @@ const features = [
     title: 'Playlist Sync',
     description:
       'Automatically syncs your Navidrome playlists with listening data, keeping your music library in perfect harmony.',
-    link: '/specs/playlist-sync-navidrome',
+    link: '/specs/playlist-sync-navidrome/spec',
     linkText: 'View Spec →',
   },
   {
@@ -17,7 +17,7 @@ const features = [
     title: 'AI Mixtape Engine',
     description:
       'Generate personalized mixtapes using LLM-powered curation — like having a DJ who actually knows your taste.',
-    link: '/specs/vibes-ai-mixtape-engine',
+    link: '/specs/vibes-ai-mixtape-engine/spec',
     linkText: 'View Spec →',
   },
   {
@@ -25,7 +25,7 @@ const features = [
     title: 'Similar Artists',
     description:
       'Discover new music through intelligent artist similarity analysis powered by your own listening history.',
-    link: '/specs/similar-artists-discovery',
+    link: '/specs/similar-artists-discovery/spec',
     linkText: 'View Spec →',
   },
   {
@@ -33,7 +33,7 @@ const features = [
     title: 'Secure Auth',
     description:
       'Navidrome-backed authentication with AES-256-GCM encryption, secure sessions, and key rotation support.',
-    link: '/specs/user-authentication',
+    link: '/specs/user-authentication/spec',
     linkText: 'View Spec →',
   },
   {
@@ -41,7 +41,7 @@ const features = [
     title: 'Live Event Bus',
     description:
       'Real-time SSE event streaming keeps every connected client in sync without polling overhead.',
-    link: '/specs/event-bus-sse',
+    link: '/specs/event-bus-sse/spec',
     linkText: 'View Spec →',
   },
   {
@@ -49,7 +49,7 @@ const features = [
     title: 'Observability',
     description:
       'Structured metrics and logging throughout — track sync performance, LLM costs, and system health.',
-    link: '/specs/observability',
+    link: '/specs/observability/spec',
     linkText: 'View Spec →',
   },
 ];

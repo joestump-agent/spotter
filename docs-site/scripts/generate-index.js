@@ -96,6 +96,54 @@ ${rows.join('\n')}
   console.log('  Generated specs index page');
 }
 
+function generateDecisionsIndex() {
+  if (!fs.existsSync(ADRS_SOURCE)) return;
+
+  const decisionsDest = path.join(DOCS_DEST, 'decisions');
+  fs.mkdirSync(decisionsDest, { recursive: true });
+
+  const files = fs.readdirSync(ADRS_SOURCE)
+    .filter(f => f.endsWith('.md') && f !== '0000-template.md' && f !== 'README.md')
+    .sort();
+
+  const rows = [];
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(ADRS_SOURCE, file), 'utf-8');
+    const titleMatch = content.match(/^#\s+(.+)$/m);
+    const title = titleMatch ? titleMatch[1].trim() : file.replace(/\.md$/, '');
+
+    // Extract status from frontmatter
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    let status = 'unknown';
+    if (fmMatch) {
+      const statusMatch = fmMatch[1].match(/^status:\s*"?([^"\n]+)"?/m);
+      if (statusMatch) status = statusMatch[1].trim();
+    }
+
+    const slug = file.replace(/\.md$/, '');
+    rows.push(`| [${title}](./decisions/${slug}) | ${status} |`);
+  }
+
+  if (rows.length === 0) return;
+
+  const content = `---
+title: "Architecture Decisions"
+sidebar_label: "Overview"
+sidebar_position: 0
+slug: /decisions
+---
+
+# Architecture Decisions
+
+| Decision | Status |
+|----------|--------|
+${rows.join('\n')}
+`;
+
+  fs.writeFileSync(path.join(decisionsDest, 'index.mdx'), content);
+  console.log('  Generated decisions index page');
+}
+
 function generate() {
   const adrCount = countAdrs();
   const specCount = countSpecs();
@@ -131,6 +179,7 @@ This project has **${specCount}** specification${specCount !== 1 ? 's' : ''} def
   fs.writeFileSync(path.join(DOCS_DEST, 'index.mdx'), content);
   console.log('  Generated index page');
 
+  generateDecisionsIndex();
   generateSpecsIndex();
 }
 
