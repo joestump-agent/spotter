@@ -5,7 +5,7 @@
   "scripts": {
     "docusaurus": "docusaurus",
     "build-content": "node scripts/build-docs.js",
-    "gen-api-docs": "docusaurus gen-api-docs all",
+    "gen-api-docs": "docusaurus gen-api-docs all && node scripts/fix-api-info-path.js",
     "clean-api-docs": "docusaurus clean-api-docs all",
     "watch-content": "chokidar '../docs/openspec/**/*' '../docs/adrs/**/*' -c 'npm run build-content' --initial",
     "start": "npm run build-content && npm run gen-api-docs && docusaurus start",
