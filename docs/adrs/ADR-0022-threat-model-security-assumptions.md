@@ -146,7 +146,7 @@ Spotter does not terminate TLS. HTTPS is delegated to the reverse proxy (Caddy, 
 
 ### T8: Denial of Service (DoS)
 
-Spotter does not implement rate limiting, request throttling, or connection limits. A flood of requests could exhaust the single-threaded SQLite write lock or Go runtime resources.
+Spotter implements per-IP rate limiting on `POST /login` only (`internal/middleware/ratelimit.go`, configured via `security.auth_rate_limit`) to slow credential stuffing. It does not implement general request throttling or connection limits. A flood of requests could exhaust the single-threaded SQLite write lock or Go runtime resources.
 
 **Rationale**: Spotter is a single-user application on a personal server. The attack surface for DoS is limited to the operator's own network. If exposed to the internet, the reverse proxy should handle rate limiting.
 

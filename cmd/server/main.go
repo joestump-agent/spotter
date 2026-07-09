@@ -428,7 +428,7 @@ func main() {
 	// Middleware
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	// Governing: SPEC-0014 REQ "HTTP Server Timeouts", SPEC user-authentication REQ "Security Headers"
+	// Governing: SPEC user-authentication REQ "Security Headers and Server Timeouts"
 	r.Use(internalMiddleware.SecurityHeaders)
 	r.Use(internalMiddleware.Logger(logger))
 	r.Use(middleware.Recoverer)
@@ -571,7 +571,7 @@ func main() {
 
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 
-	// Governing: SPEC-0014 REQ "HTTP Server Timeouts", SPEC user-authentication REQ "Security Headers"
+	// Governing: SPEC user-authentication REQ "Security Headers and Server Timeouts"
 	// Parse server timeouts from config with sensible defaults to protect against slowloris DoS
 	readHeaderTimeout, err := time.ParseDuration(cfg.Server.ReadHeaderTimeout)
 	if err != nil {

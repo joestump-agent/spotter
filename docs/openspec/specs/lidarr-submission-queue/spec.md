@@ -1,6 +1,6 @@
 # SPEC-0017: Lidarr Submission Queue with Backpressure
 
-**Status:** proposed
+**Status:** accepted
 **Version:** 0.1.0
 **Last Updated:** 2026-03-04
 **Governing ADRs:** ADR-0029 (Lidarr submission rate limiting), ADR-0015 (pluggable enricher registry), ADR-0013 (goroutine ticker scheduling), ADR-0020 (error handling and resilience)
@@ -180,7 +180,7 @@ Where:
 
 A failed item SHALL be retried when `retry_at <= now` during the submitter's next wake cycle.
 
-The system SHOULD cap maximum attempts at 10. After 10 failed attempts, the item MUST remain
+The system MUST cap maximum attempts at 10. After 10 failed attempts, the item MUST remain
 in `status=failed` and MUST NOT be automatically retried. The user MAY manually retry via a
 future UI action.
 

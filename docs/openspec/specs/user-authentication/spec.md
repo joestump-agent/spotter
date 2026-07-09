@@ -11,7 +11,7 @@ Spotter delegates primary authentication to Navidrome's Subsonic API, avoiding a
 
 Beyond the primary login, Spotter supports two OAuth provider integrations. Spotify uses a standard OAuth2 authorization code flow with PKCE-less redirect, CSRF protection via a state cookie containing a random token, and an encrypted user ID embedded in the state parameter for session recovery in the callback. Last.fm uses a similar flow adapted to its non-standard auth API (token-based rather than authorization code). Both flows store their respective tokens/session keys in encrypted Ent entities (`SpotifyAuth`, `LastFMAuth`).
 
-The `AuthMiddleware` function (defined in `cmd/server/main.go`) protects all routes except the login page, logout, and OAuth callbacks. It reads the `spotter_token` cookie, queries the PostgreSQL (Ent ORM) for the user, and injects the `*ent.User` into the request context via `handlers.UserContextKey`.
+The `AuthMiddleware` function (defined in `cmd/server/main.go`) protects all routes except the login page, logout, and OAuth callbacks. It reads the `spotter_token` cookie, validates the signed JWT it contains, queries the configured database (Ent ORM) for the user, and injects the `*ent.User` into the request context via `handlers.UserContextKey`.
 
 ## Scope
 
@@ -79,13 +79,22 @@ Out of scope: Navidrome Subsonic API internals, background sync behavior after l
 
 **REQ-MIDDLEWARE-001** — The `AuthMiddleware` function (`cmd/server/main.go:360-389`) MUST be applied to all protected route groups via `r.Use(AuthMiddleware(client))`.
 
-**REQ-MIDDLEWARE-002** — The middleware MUST read the `spotter_token` cookie from the request. If the cookie is missing or its value is empty, the middleware MUST redirect to `/auth/login` with HTTP 303.
+**REQ-MIDDLEWARE-002** — The middleware MUST read the `spotter_token` cookie from the request. If the cookie is missing or its value is empty, the middleware MUST reject the request according to the client type:
+- HTMX requests (`HX-Request: true` header): HTTP 401 with an `HX-Redirect: /auth/login` response header
+- SSE requests (`Accept: text/event-stream`): HTTP 401 with no redirect
+- All other (plain browser) requests: HTTP 303 redirect to `/auth/login`
 
-**REQ-MIDDLEWARE-003** — The middleware MUST query the Ent `User` entity by `username` from the cookie value. If no user is found (or a database error occurs), the middleware MUST redirect to `/auth/login`.
+**REQ-MIDDLEWARE-003** — The middleware MUST validate the cookie value as a signed JWT (per REQ-SESSION-001) and query the Ent `User` entity by the `UserID` claim. If validation fails, no user is found, or a database error occurs, the middleware MUST reject the request per the client-type rules in REQ-MIDDLEWARE-002.
 
 **REQ-MIDDLEWARE-004** — On successful user lookup, the middleware MUST inject the `*ent.User` into the request context using `handlers.UserContextKey` (a typed `contextKey` string `"user"`) and call `next.ServeHTTP()`.
 
 **REQ-MIDDLEWARE-005** — Handlers MUST retrieve the authenticated user via `h.GetUser(r.Context())`, which extracts the `*ent.User` from the context. A `nil` return value indicates no authenticated user.
+
+### Security Headers and Server Timeouts
+
+**REQ-MIDDLEWARE-006** — The router MUST apply the `SecurityHeaders` middleware (`internal/middleware/security.go`) to every response, setting at minimum: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and a Content-Security-Policy restricting `script-src` to the application's own origin plus its allow-listed CDNs.
+
+**REQ-MIDDLEWARE-007** — The HTTP server MUST configure read-header, read, write, and idle timeouts from `server.*` configuration (with non-zero defaults) to bound slow-client connections.
 
 ### Spotify OAuth
 
@@ -99,7 +108,7 @@ Out of scope: Navidrome Subsonic API internals, background sync behavior after l
 
 **REQ-SPOTIFY-005** — The handler MUST store the CSRF state (without the encrypted user ID) in a cookie named `spotify_oauth_state` with the following properties:
 - HttpOnly: `true`
-- Secure: determined by `r.TLS != nil`
+- Secure: determined by the `security.secure_cookies` configuration (`SPOTTER_SECURITY_SECURE_COOKIES`), matching the session cookie — TLS typically terminates at a reverse proxy (ADR-0022), so `r.TLS` is not a reliable signal
 - SameSite: `Lax`
 - Expires: 10 minutes (`spotifyStateTTL`)
 
@@ -118,7 +127,10 @@ Out of scope: Navidrome Subsonic API internals, background sync behavior after l
 10. Trigger a background sync for the user
 11. Redirect to `/preferences/providers`
 
-**REQ-SPOTIFY-008** — If any validation step fails (missing state, state mismatch, decryption failure, missing code, exchange failure), the handler MUST redirect to an appropriate error URL and log the failure with the remote IP.
+**REQ-SPOTIFY-008** — If any validation step fails, the handler MUST log the failure with the remote IP and redirect (HTTP 303) to the URL matching the failure class:
+- State/CSRF failures (missing or mismatched state, decryption failure): `/auth/login?error=invalid_state`
+- Expired or unrecoverable session (state cookie missing/expired, user lookup failure): `/auth/login?error=session_expired`
+- Provider-denied or exchange failures (missing code, token exchange error): `/preferences/providers?error={missing_code|exchange_failed|spotify_denied}`
 
 ### Last.fm OAuth
 
@@ -128,7 +140,7 @@ Out of scope: Navidrome Subsonic API internals, background sync behavior after l
 
 **REQ-LASTFM-003** — The handler MUST generate a random state string (32 bytes, base64url-encoded) and encrypt the user ID. The combined `"{state}:{encryptedUserID}"` value MUST be stored in a cookie named `lastfm_oauth_state` with:
 - HttpOnly: `true`
-- Secure: determined by `r.TLS != nil`
+- Secure: determined by the `security.secure_cookies` configuration (`SPOTTER_SECURITY_SECURE_COOKIES`), matching the session cookie — TLS typically terminates at a reverse proxy (ADR-0022), so `r.TLS` is not a reliable signal
 - SameSite: `Lax`
 - Expires: 10 minutes (`lastfmStateTTL`)
 
@@ -157,7 +169,7 @@ sequenceDiagram
     participant Browser
     participant Handler as PostLogin\n(auth.go)
     participant Navidrome as Navidrome API\n(ping.view)
-    participant DB as PostgreSQL\n(Ent ORM)
+    participant DB as Database\n(Ent ORM)
 
     Browser->>Handler: POST /login {username, password}
     Handler->>Handler: Validate inputs (non-empty, max length)
@@ -185,7 +197,7 @@ sequenceDiagram
     participant SpotifyLogin as SpotifyLogin\n(spotify_auth.go)
     participant Spotify as Spotify API
     participant SpotifyCallback as SpotifyCallback\n(spotify_auth.go)
-    participant DB as PostgreSQL\n(Ent ORM)
+    participant DB as Database\n(Ent ORM)
     participant Bus as events.Bus
 
     Browser->>SpotifyLogin: GET /auth/spotify/login

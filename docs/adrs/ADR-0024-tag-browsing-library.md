@@ -1,10 +1,13 @@
 ---
-status: accepted
+status: superseded
 date: 2026-02-28
 decision-makers: Joe Stump
+superseded-by: ADR-0025
 ---
 
 # ADR-0024: Tag Browsing Library Page with Dual Entity View and Stat HUD
+
+> **Superseded by [ADR-0025](./ADR-0025-unified-tag-taxonomy.md).** This ADR's JSONB-at-runtime tag model was never implemented; ADR-0025's first-class Tag entity with a denormalized entity_tags table replaced it as the accepted approach. Any future tag-browsing UI should be specified against the ADR-0025 data model.
 
 ## Context and Problem Statement
 

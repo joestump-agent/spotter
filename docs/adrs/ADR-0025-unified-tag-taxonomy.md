@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-02-28
 decision-makers: joestump
+supersedes: ADR-0024
 ---
 
 # ADR-0025: Unified Tag Taxonomy with Typed Tags and Denormalized Query Table

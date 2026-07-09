@@ -97,8 +97,9 @@ Key rotation complete.
   Verification:  PASSED
 
 Update your environment variable:
-  SPOTTER_SECURITY_ENCRYPTION_KEY=<new-key>
+  SPOTTER_SECURITY_ENCRYPTION_KEY=<the value you passed as --new-key>
 ```
+The literal new key value MUST NOT appear in the summary (see REQ-ROT-051); the operator already possesses it, having supplied it as the `--new-key` argument.
 
 **REQ-ROT-051** — The subcommand MUST NOT log the old or new key values to stdout or any log file.
 

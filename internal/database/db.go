@@ -1,6 +1,6 @@
 package database
 
-// Governing: SPEC-0014 REQ "Driver Registration", ADR-0023
+// Governing: SPEC-0016 REQ "Driver Registration", ADR-0023
 import (
 	"context"
 	"database/sql"
@@ -27,7 +27,7 @@ func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client,
 		RegisterEncryptionHooks(client, encryptor)
 	}
 
-	// Governing: SPEC-0014 REQ "Schema Migration", ADR-0004 (Ent ORM handles DDL for all dialects)
+	// Governing: SPEC-0016 REQ "Schema Migration", ADR-0004 (Ent ORM handles DDL for all dialects)
 	ctx := context.Background()
 	if err := client.Schema.Create(ctx); err != nil {
 		// Attempt to close the client on schema creation failure

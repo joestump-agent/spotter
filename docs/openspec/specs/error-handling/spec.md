@@ -52,12 +52,14 @@ Out of scope: Provider-specific API client implementation, retry logic within a 
 
 **REQ-BACK-001** — When a retriable error occurs, the system MUST calculate the next retry delay using exponential backoff:
 ```text
-delay = min(baseDelay * 2^consecutiveFailures, maxDelay) * jitterFactor
+delay = min(baseDelay * 2^(consecutiveFailures-1) * jitterFactor, maxDelay)
 ```
 Where:
 - `baseDelay` = 30 seconds
 - `maxDelay` = 30 minutes
 - `jitterFactor` = random value in the range [0.75, 1.25]
+- `consecutiveFailures` starts at 1 for the first failure, so the first delay is ~30 seconds (22.5–37.5s with jitter)
+- Jitter is applied BEFORE the cap so the delay never exceeds `maxDelay` (see REQ-BACK-002)
 
 **REQ-BACK-002** — The backoff delay MUST NOT exceed 30 minutes regardless of the number of consecutive failures.
 
