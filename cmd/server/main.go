@@ -427,11 +427,14 @@ func main() {
 	r.Use(internalMiddleware.SecurityHeaders)
 	r.Use(internalMiddleware.Logger(logger))
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	// Governing: SPEC event-bus-sse REQ-SSE-004 — the request timeout is applied
+	// per-group below instead of globally so the long-lived SSE stream at
+	// /events is not killed every 60s by middleware.Timeout.
+	requestTimeout := middleware.Timeout(60 * time.Second)
 
 	// Static Files
 	fileServer := http.FileServer(http.Dir("./static"))
-	r.Handle("/static/*", http.StripPrefix("/static", fileServer))
+	r.With(requestTimeout).Handle("/static/*", http.StripPrefix("/static", fileServer))
 
 	// Governing: issue #155 — rate limiting on login endpoint
 	// Configure per-IP rate limiter for auth endpoints
@@ -443,6 +446,7 @@ func main() {
 
 	// Public Routes
 	r.Group(func(r chi.Router) {
+		r.Use(requestTimeout)
 		r.Get("/auth/login", h.Login)
 		// Apply rate limiting only to POST /login
 		r.With(internalMiddleware.RateLimit(loginLimiter, logger)).Post("/login", h.PostLogin)
@@ -457,8 +461,18 @@ func main() {
 		r.Get("/auth/lastfm/callback", h.LastFMCallback)
 	})
 
+	// SSE stream route. Governing: SPEC event-bus-sse REQ-SSE-004 — mounted in
+	// its own auth-protected group WITHOUT the request timeout middleware so the
+	// stream is not force-closed every 60s (which also dropped any events
+	// published during the reconnect gap). All other middleware still applies.
+	r.Group(func(r chi.Router) {
+		r.Use(AuthMiddleware(client, jwtManager, logger))
+		r.Get("/events", h.Events)
+	})
+
 	// Protected Routes
 	r.Group(func(r chi.Router) {
+		r.Use(requestTimeout)
 		r.Use(AuthMiddleware(client, jwtManager, logger))
 
 		// Governing: issue #155 — /data/* moved behind auth to prevent unauthenticated access
@@ -467,7 +481,6 @@ func main() {
 
 		r.Get("/", h.Home)
 
-		r.Get("/events", h.Events)
 		r.Get("/preferences", h.PreferencesRedirect)
 		r.Get("/preferences/account", h.PreferencesAccount)
 		r.Post("/preferences/account/email", h.PostPreferencesEmail)

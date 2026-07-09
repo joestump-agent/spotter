@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"spotter/ent/mixtape"
 	"spotter/ent/playlist"
 	"spotter/ent/playlisttrack"
+	"spotter/ent/track"
 	"spotter/ent/user"
 	"spotter/internal/providers"
 	"spotter/internal/vibes"
@@ -50,13 +52,18 @@ func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
 	// Governing: SPEC-0015 REQ playlist-pairing — hide Navidrome-source playlists that are
 	// managed by a paired non-Navidrome playlist (i.e. their remote_id appears as navidrome_playlist_id
 	// on another playlist for the same user).
-	managedNavidromeIDs, _ := h.Client.Playlist.Query().
+	managedNavidromeIDs, err := h.Client.Playlist.Query().
 		Where(
 			playlist.HasUserWith(user.ID(u.ID)),
 			playlist.NavidromePlaylistIDNEQ(""),
 		).
 		Select(playlist.FieldNavidromePlaylistID).
 		Strings(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to query managed navidrome playlist ids", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 
 	// Governing: SPEC listen-playlist-sync REQ-SYNC-032 (inactive playlists are hidden from the listing)
 	visibilityFilter := playlist.And(
@@ -1098,72 +1105,24 @@ func (h *Handler) applyEnhancementToNavidrome(ctx context.Context, u *ent.User, 
 		"navidrome_id", pl.NavidromePlaylistID,
 		"track_count", len(trackIDs))
 
-	// Update the playlist tracks in the database
-	// First, delete existing playlist tracks
-	_, err := h.Client.PlaylistTrack.Delete().
-		Where(playlisttrack.HasPlaylistWith(playlist.ID(pl.ID))).
-		Exec(ctx)
-	if err != nil {
-		h.Logger.Error("failed to delete existing playlist tracks",
+	// Governing: SPEC vibes-ai-mixtape-engine (issue #13) — the delete + re-insert
+	// + count update must be atomic. Without a transaction, a mid-apply failure
+	// truncates the playlist and the subsequent auto-sync propagates the data
+	// loss to Navidrome.
+	if err := h.applyEnhancementTracks(ctx, pl, trackIDs); err != nil {
+		h.Logger.Error("failed to apply enhancement to playlist, aborting Navidrome sync",
 			"playlist_id", pl.ID,
 			"error", err)
+		if h.Bus != nil {
+			h.Bus.PublishNotification(u.ID,
+				"Enhancement Failed",
+				"Failed to apply enhancement to "+pl.Name+": "+err.Error(),
+				"error")
+		}
+		return
 	}
 
-	// Add new tracks in order
-	for i, trackID := range trackIDs {
-		track, err := h.Client.Track.Get(ctx, trackID)
-		if err != nil {
-			h.Logger.Warn("track not found, skipping",
-				"track_id", trackID,
-				"error", err)
-			continue
-		}
-
-		// Get artist and album names
-		artistName := ""
-		albumName := ""
-		if edges, err := track.Edges.ArtistOrErr(); err == nil && edges != nil {
-			artistName = edges.Name
-		}
-		if edges, err := track.Edges.AlbumOrErr(); err == nil && edges != nil {
-			albumName = edges.Name
-		}
-
-		// Get duration if available
-		durationMs := 0
-		if track.DurationMs != nil {
-			durationMs = *track.DurationMs
-		}
-
-		_, err = h.Client.PlaylistTrack.Create().
-			SetPlaylist(pl).
-			SetTrack(track).
-			SetPosition(i + 1).
-			SetTrackName(track.Name).
-			SetArtistName(artistName).
-			SetAlbumName(albumName).
-			SetDurationMs(durationMs).
-			Save(ctx)
-		if err != nil {
-			h.Logger.Error("failed to create playlist track",
-				"playlist_id", pl.ID,
-				"track_id", trackID,
-				"error", err)
-		}
-	}
-
-	// Update playlist track count
-	_, err = h.Client.Playlist.UpdateOne(pl).
-		SetTrackCount(len(trackIDs)).
-		SetUpdatedAt(time.Now()).
-		Save(ctx)
-	if err != nil {
-		h.Logger.Error("failed to update playlist track count",
-			"playlist_id", pl.ID,
-			"error", err)
-	}
-
-	// Trigger sync to Navidrome
+	// Trigger sync to Navidrome (only reached when the transactional apply succeeded)
 	if pl.SyncToNavidrome || pl.Source == sourceNavidrome {
 		go func() {
 			if err := h.PlaylistSyncSvc.SyncPlaylistToNavidrome(ctx, pl.ID); err != nil {
@@ -1188,4 +1147,90 @@ func (h *Handler) applyEnhancementToNavidrome(ctx context.Context, u *ent.User, 
 			}
 		}()
 	}
+}
+
+// applyEnhancementTracks replaces the playlist's tracks with the given track IDs
+// (in order) and updates the track count, all inside a single Ent transaction.
+// On any failure the transaction is rolled back so the playlist is never left
+// truncated or partially populated.
+// Governing: SPEC vibes-ai-mixtape-engine (issue #13 — atomic enhancement apply)
+func (h *Handler) applyEnhancementTracks(ctx context.Context, pl *ent.Playlist, trackIDs []int) error {
+	tx, err := h.Client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	rollback := func(err error) error {
+		if rerr := tx.Rollback(); rerr != nil {
+			h.Logger.Error("failed to roll back enhancement transaction",
+				"playlist_id", pl.ID,
+				"error", rerr)
+		}
+		return err
+	}
+
+	// Delete existing playlist tracks
+	if _, err := tx.PlaylistTrack.Delete().
+		Where(playlisttrack.HasPlaylistWith(playlist.ID(pl.ID))).
+		Exec(ctx); err != nil {
+		return rollback(fmt.Errorf("failed to delete existing playlist tracks: %w", err))
+	}
+
+	// Add new tracks in order
+	inserted := 0
+	for _, trackID := range trackIDs {
+		t, err := tx.Track.Query().
+			Where(track.ID(trackID)).
+			WithArtist().
+			WithAlbum().
+			Only(ctx)
+		if err != nil {
+			h.Logger.Warn("track not found, skipping",
+				"track_id", trackID,
+				"error", err)
+			continue
+		}
+
+		// Get artist and album names
+		artistName := ""
+		albumName := ""
+		if t.Edges.Artist != nil {
+			artistName = t.Edges.Artist.Name
+		}
+		if t.Edges.Album != nil {
+			albumName = t.Edges.Album.Name
+		}
+
+		// Get duration if available
+		durationMs := 0
+		if t.DurationMs != nil {
+			durationMs = *t.DurationMs
+		}
+
+		if _, err := tx.PlaylistTrack.Create().
+			SetPlaylistID(pl.ID).
+			SetTrack(t).
+			SetPosition(inserted + 1).
+			SetTrackName(t.Name).
+			SetArtistName(artistName).
+			SetAlbumName(albumName).
+			SetDurationMs(durationMs).
+			Save(ctx); err != nil {
+			return rollback(fmt.Errorf("failed to create playlist track %d: %w", trackID, err))
+		}
+		inserted++
+	}
+
+	// Update playlist track count
+	if _, err := tx.Playlist.UpdateOneID(pl.ID).
+		SetTrackCount(inserted).
+		SetUpdatedAt(time.Now()).
+		Save(ctx); err != nil {
+		return rollback(fmt.Errorf("failed to update playlist track count: %w", err))
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit enhancement transaction: %w", err)
+	}
+	return nil
 }

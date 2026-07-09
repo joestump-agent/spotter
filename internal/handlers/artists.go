@@ -382,8 +382,9 @@ func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName
 		case groupByDay:
 			dateKey = l.PlayedAt.Local().Format("Jan 2")
 		case groupByWeek:
-			year, week := l.PlayedAt.Local().ISOWeek()
-			dateKey = time.Date(year, 1, 1, 0, 0, 0, 0, time.Local).AddDate(0, 0, (week-1)*7).Format("Jan 2")
+			// Use the same canonical week-start (Monday) as the label loop below
+			// so data keys and axis labels always align.
+			dateKey = startOfWeek(l.PlayedAt.Local()).Format("Jan 2")
 		case groupByMonth:
 			dateKey = l.PlayedAt.Local().Format("Jan 2006")
 		}
@@ -398,6 +399,11 @@ func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName
 	// Generate labels (dates)
 	labels := make([]string, 0)
 	current := startDate
+	if groupBy == groupByWeek {
+		// Anchor the label sequence on the canonical week start (Monday) so
+		// labels line up with the data keys computed above.
+		current = startOfWeek(startDate.Local())
+	}
 	for current.Before(now) || current.Equal(now) {
 		var dateKey string
 		var nextDate time.Time
@@ -447,6 +453,18 @@ func (h *Handler) getProviderHistory(ctx context.Context, userID int, artistName
 	}
 
 	return data
+}
+
+// startOfWeek returns midnight on the Monday of the week containing t, in t's
+// location. It is the single canonical week-start used for both the weekly
+// chart data keys and the axis labels in getProviderHistory, so the two can
+// never drift apart (issue #13: ISOWeek-projected keys never matched
+// startDate+n*7d labels, rendering the 6m timeframe as all zeros).
+func startOfWeek(t time.Time) time.Time {
+	// time.Weekday: Sunday=0 ... Saturday=6; shift so Monday=0 ... Sunday=6.
+	daysSinceMonday := (int(t.Weekday()) + 6) % 7
+	t = t.AddDate(0, 0, -daysSinceMonday)
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
 func capitalizeFirst(s string) string {

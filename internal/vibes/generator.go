@@ -134,16 +134,7 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 	}
 
 	// Determine max tracks
-	maxTracks := req.Mixtape.MaxTracks
-	if req.MaxTracks > 0 {
-		maxTracks = req.MaxTracks
-	}
-	if maxTracks <= 0 {
-		maxTracks = g.config.Vibes.DefaultMaxTracks
-	}
-	if maxTracks > g.config.Vibes.MaxTracks {
-		maxTracks = g.config.Vibes.MaxTracks
-	}
+	maxTracks := g.resolveMaxTracks(req)
 
 	g.logger.Debug("determined max tracks", "max_tracks", maxTracks)
 
@@ -267,6 +258,30 @@ func (g *MixtapeGenerator) GenerateMixtape(ctx context.Context, req *GenerationR
 	g.publishSuccess(req.UserID, req.Mixtape.Name, result.MatchedCount, tokensUsed)
 
 	return result, nil
+}
+
+// resolveMaxTracks determines the effective track count for a generation
+// request, clamping it to the configured bounds.
+// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-012 (vibes.min_tracks lower
+// bound is enforced, not just the max_tracks upper bound)
+func (g *MixtapeGenerator) resolveMaxTracks(req *GenerationRequest) int {
+	maxTracks := req.Mixtape.MaxTracks
+	if req.MaxTracks > 0 {
+		maxTracks = req.MaxTracks
+	}
+	if maxTracks <= 0 {
+		maxTracks = g.config.Vibes.DefaultMaxTracks
+	}
+	// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-012 — clamp to the
+	// configured minimum before the hard upper limit so a misconfigured
+	// min > max still respects the hard cap.
+	if min := g.config.Vibes.MinTracks; min > 0 && maxTracks < min {
+		maxTracks = min
+	}
+	if max := g.config.Vibes.MaxTracks; max > 0 && maxTracks > max {
+		maxTracks = max
+	}
+	return maxTracks
 }
 
 // validateRequest validates the generation request.
