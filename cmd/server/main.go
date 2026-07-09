@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -203,6 +204,74 @@ func main() {
 	// Governing: SPEC graceful-shutdown REQ-WG-001 (single shared WaitGroup for all per-user goroutines)
 	var wg sync.WaitGroup
 
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041, ADR-0013
+	// Per-user in-flight guard shared by all background loops so a tick skips
+	// users whose previous run for the same loop is still active.
+	inflight := services.NewInFlightGuard()
+
+	// Governing: SPEC observability REQ "BG-001", REQ "BG-002" (metric.background_tick emitted
+	// after all per-user work for the tick completes, with real duration and error counts)
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041 (overlapping per-user runs skipped)
+	// runPerUserTick fans out one background job goroutine per user for a single
+	// tick of the named loop, then emits metric.background_tick once every
+	// spawned goroutine has finished. Users whose previous run for this loop is
+	// still in flight are skipped.
+	runPerUserTick := func(loop string, run func(*ent.User) error) {
+		tickStart := time.Now()
+		// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
+		users, err := client.User.Query().All(ctx)
+		if err != nil {
+			logger.Error("failed to fetch users for background tick", "loop", loop, "error", err)
+			return
+		}
+		var tickWg sync.WaitGroup
+		var errCount atomic.Int64
+		processed, skipped := 0, 0
+		for _, u := range users {
+			// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041 (skip overlapping runs)
+			if !inflight.TryAcquire(loop, u.ID) {
+				logger.Info("skipping user, previous background run still in flight",
+					"loop", loop, "username", u.Username)
+				skipped++
+				continue
+			}
+			processed++
+			// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
+			wg.Add(1)
+			tickWg.Add(1)
+			go func(user *ent.User) {
+				defer wg.Done()
+				defer tickWg.Done()
+				defer inflight.Release(loop, user.ID)
+				// Governing: SPEC graceful-shutdown REQ-SEM-003, REQ-SEM-004 (semaphore acquire with ctx)
+				select {
+				case sem <- struct{}{}:
+					defer func() { <-sem }()
+				case <-ctx.Done():
+					return
+				}
+				// Governing: SPEC graceful-shutdown REQ-CTX-002 (cancelled ctx passed to service methods)
+				if err := run(user); err != nil {
+					// Governing: SPEC observability REQ "BG-002" (per-user errors logged at Error level)
+					logger.Error("background job failed", "loop", loop, "username", user.Username, "error", err)
+					errCount.Add(1)
+				}
+			}(u)
+		}
+		// Governing: SPEC observability REQ "BG-001" (emit only after per-user work completes)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tickWg.Wait()
+			logger.Info("metric.background_tick",
+				"loop", loop,
+				"users_processed", processed,
+				"users_skipped", skipped,
+				"duration_ms", time.Since(tickStart).Milliseconds(),
+				"errors", errCount.Load())
+		}()
+	}
+
 	// Governing: ADR-0013 (goroutine ticker scheduling), SPEC listen-playlist-sync REQ-SYNC-040 (configurable ticker interval)
 	// Governing: SPEC listen-playlist-sync REQ-SYNC-041 (per-user goroutines for parallel sync)
 	// Background Sync Loop for listens/playlists
@@ -225,38 +294,11 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				tickStart := time.Now()
-				// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
-				users, err := client.User.Query().All(ctx)
-				if err != nil {
-					logger.Error("failed to fetch users for background sync", "error", err)
-					continue
-				}
-				syncErrors := 0
-				for _, u := range users {
-					// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
-					wg.Add(1)
-					go func(user *ent.User) {
-						defer wg.Done()
-						// Governing: SPEC graceful-shutdown REQ-SEM-003, REQ-SEM-004 (semaphore acquire with ctx)
-						select {
-						case sem <- struct{}{}:
-							defer func() { <-sem }()
-						case <-ctx.Done():
-							return
-						}
-						// Governing: SPEC graceful-shutdown REQ-CTX-002 (cancelled ctx passed to service methods)
-						if err := syncer.Sync(ctx, user); err != nil {
-							logger.Error("background sync failed", "username", user.Username, "error", err)
-							syncErrors++
-						}
-					}(u)
-				}
-				logger.Info("metric.background_tick",
-					"loop", "sync",
-					"users_processed", len(users),
-					"duration_ms", time.Since(tickStart).Milliseconds(),
-					"errors", syncErrors)
+				// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041,
+				// SPEC observability REQ "BG-001"
+				runPerUserTick("sync", func(user *ent.User) error {
+					return syncer.Sync(ctx, user)
+				})
 			}
 		}
 	}()
@@ -280,39 +322,11 @@ func main() {
 			defer wg.Done()
 
 			// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-001", REQ "BG-002"
+			// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041 (overlapping runs skipped)
 			syncMetadataForUsers := func() {
-				tickStart := time.Now()
-				// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
-				users, err := client.User.Query().All(ctx)
-				if err != nil {
-					logger.Error("failed to fetch users for metadata sync", "error", err)
-					return
-				}
-				metadataErrors := 0
-				for _, u := range users {
-					// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
-					wg.Add(1)
-					go func(user *ent.User) {
-						defer wg.Done()
-						// Governing: SPEC graceful-shutdown REQ-SEM-003, REQ-SEM-004 (semaphore acquire with ctx)
-						select {
-						case sem <- struct{}{}:
-							defer func() { <-sem }()
-						case <-ctx.Done():
-							return
-						}
-						// Governing: SPEC graceful-shutdown REQ-CTX-002 (cancelled ctx passed to service methods)
-						if err := metadataSvc.SyncAll(ctx, user); err != nil {
-							logger.Error("metadata sync failed", "username", user.Username, "error", err)
-							metadataErrors++
-						}
-					}(u)
-				}
-				logger.Info("metric.background_tick",
-					"loop", "metadata",
-					"users_processed", len(users),
-					"duration_ms", time.Since(tickStart).Milliseconds(),
-					"errors", metadataErrors)
+				runPerUserTick("metadata", func(user *ent.User) error {
+					return metadataSvc.SyncAll(ctx, user)
+				})
 			}
 
 			// Initial delay to let the app start up
@@ -328,8 +342,9 @@ func main() {
 			ticker := time.NewTicker(metadataInterval)
 			defer ticker.Stop()
 			// Governing: SPEC graceful-shutdown REQ-CTX-001 (select on ctx.Done vs ticker.C)
-			// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041 (duplicate ticks skipped —
-			// syncMetadataForUsers blocks synchronously, so ticker events during execution are dropped)
+			// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041 (syncMetadataForUsers
+			// fans out per-user work without blocking this loop; the shared InFlightGuard
+			// skips users whose previous enrichment run is still active)
 			for {
 				select {
 				case <-ctx.Done():
@@ -370,38 +385,11 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				tickStart := time.Now()
-				// Governing: SPEC graceful-shutdown REQ-CTX-003 (per-user goroutines use root ctx)
-				users, err := client.User.Query().All(ctx)
-				if err != nil {
-					logger.Error("failed to fetch users for playlist sync", "error", err)
-					continue
-				}
-				plSyncErrors := 0
-				for _, u := range users {
-					// Governing: SPEC graceful-shutdown REQ-WG-002 (wg.Add before spawn, defer wg.Done first)
-					wg.Add(1)
-					go func(user *ent.User) {
-						defer wg.Done()
-						// Governing: SPEC graceful-shutdown REQ-SEM-003, REQ-SEM-004 (semaphore acquire with ctx)
-						select {
-						case sem <- struct{}{}:
-							defer func() { <-sem }()
-						case <-ctx.Done():
-							return
-						}
-						// Governing: SPEC graceful-shutdown REQ-CTX-002 (cancelled ctx passed to service methods)
-						if err := playlistSyncSvc.SyncAllEnabledPlaylists(ctx, user.ID); err != nil {
-							logger.Error("playlist sync failed", "username", user.Username, "error", err)
-							plSyncErrors++
-						}
-					}(u)
-				}
-				logger.Info("metric.background_tick",
-					"loop", "playlist_sync",
-					"users_processed", len(users),
-					"duration_ms", time.Since(tickStart).Milliseconds(),
-					"errors", plSyncErrors)
+				// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041,
+				// SPEC observability REQ "BG-001"
+				runPerUserTick("playlist_sync", func(user *ent.User) error {
+					return playlistSyncSvc.SyncAllEnabledPlaylists(ctx, user.ID)
+				})
 			}
 		}
 	}()

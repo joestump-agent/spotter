@@ -4,6 +4,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -62,6 +63,9 @@ func (s *Syncer) Register(factory providers.Factory) {
 // Governing: SPEC listen-playlist-sync REQ-SYNC-010 (full sync: providers -> history -> playlists)
 // Governing: SPEC listen-playlist-sync REQ-SYNC-011 (history failure does not abort playlist sync)
 // Sync performs a full synchronization (history and playlists) for the user.
+// It attempts both phases regardless of individual failures and returns the
+// joined errors so callers can observe partial failure.
+// Governing: SPEC observability REQ-BG-001 (callers count real per-user errors)
 func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 	s.logger.Info("starting full sync", "username", u.Username)
 	syncStart := time.Now()
@@ -105,7 +109,9 @@ func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 	}
 
 	s.logger.Info("full sync completed", "username", refreshedUser.Username)
-	return nil
+	// Governing: SPEC listen-playlist-sync REQ-SYNC-011 (history failure does not
+	// abort playlist sync) — both phases ran above; surface any failures now.
+	return errors.Join(histErr, plErr)
 }
 
 // SyncProvider performs a full synchronization for a specific provider only.
