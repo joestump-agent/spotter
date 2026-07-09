@@ -440,3 +440,62 @@ func TestRunMissingKeys(t *testing.T) {
 		t.Fatal("expected error for missing new key")
 	}
 }
+
+// TestReadEncryptedRows verifies rows are fully buffered and the cursor is
+// closed before the caller issues UPDATEs on the same transaction. PostgreSQL
+// ("pq: conn busy") and MySQL ("commands out of sync") reject statements
+// while a Rows cursor is open, so reencryptAll must read-then-write; this
+// test exercises the read-then-write shape on SQLite.
+// Governing: SPEC key-rotation REQ "ROT-010", ADR-0023 (multi-database support)
+func TestReadEncryptedRows(t *testing.T) {
+	db, _ := testDB(t)
+
+	for i := 1; i <= 3; i++ {
+		if _, err := db.Exec(
+			`INSERT INTO spotify_auths (access_token, refresh_token) VALUES (?, ?)`,
+			"access-"+strings.Repeat("x", i), "refresh-"+strings.Repeat("y", i)); err != nil {
+			t.Fatalf("failed to seed row: %v", err)
+		}
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("failed to begin tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := readEncryptedRows(tx, "spotify_auths", []string{"access_token", "refresh_token"})
+	if err != nil {
+		t.Fatalf("readEncryptedRows failed: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 buffered rows, got %d", len(rows))
+	}
+	for _, row := range rows {
+		if len(row.vals) != 2 {
+			t.Fatalf("expected 2 values per row, got %d", len(row.vals))
+		}
+		if !strings.HasPrefix(row.vals[0].String, "access-") || !strings.HasPrefix(row.vals[1].String, "refresh-") {
+			t.Fatalf("unexpected buffered values: %+v", row.vals)
+		}
+	}
+
+	// The cursor must be closed: an UPDATE on the same transaction has to
+	// succeed for every buffered row.
+	for _, row := range rows {
+		if _, err := tx.Exec(`UPDATE spotify_auths SET access_token = ? WHERE id = ?`, "rotated", row.id); err != nil {
+			t.Fatalf("update after readEncryptedRows failed (cursor still open?): %v", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
+
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM spotify_auths WHERE access_token = 'rotated'`).Scan(&n); err != nil {
+		t.Fatalf("count failed: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("expected 3 rotated rows, got %d", n)
+	}
+}

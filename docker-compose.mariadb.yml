@@ -34,6 +34,9 @@ services:
       SPOTTER_SECURITY_ENCRYPTION_KEY: "replace-with-64-hex-chars"
       SPOTTER_SECURITY_JWT_SECRET: "replace-with-at-least-32-chars"
       SPOTTER_SECURITY_SECURE_COOKIES: "true"
+      # Lidarr integration is optional — uncomment both lines to enable it.
+      # SPOTTER_LIDARR_BASE_URL: "http://lidarr:8686"
+      # SPOTTER_LIDARR_API_KEY: "your-lidarr-api-key"
     volumes:
       - spotter_data:/app/data
 

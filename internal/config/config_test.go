@@ -321,3 +321,46 @@ func TestConfig_MySQLDefaultSource(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "spotter:spotter@tcp(localhost:3306)/spotter?parseTime=true&charset=utf8mb4", cfg.Database.Source)
 }
+
+// Governing: SPEC-0016 (compose examples run without Lidarr), ADR-0023
+// Lidarr is optional: config loads without any Lidarr settings so the
+// shipped compose examples start cleanly.
+func TestConfig_LidarrOptional(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("SPOTTER_LIDARR_BASE_URL", "")
+	t.Setenv("SPOTTER_LIDARR_API_KEY", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Lidarr.BaseURL)
+	assert.Empty(t, cfg.Lidarr.APIKey)
+}
+
+func TestConfig_LidarrIncompleteBaseURLOnly(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("SPOTTER_LIDARR_BASE_URL", "http://localhost:8686")
+	t.Setenv("SPOTTER_LIDARR_API_KEY", "")
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "lidarr configuration is incomplete")
+}
+
+func TestConfig_LidarrIncompleteAPIKeyOnly(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("SPOTTER_LIDARR_BASE_URL", "")
+	t.Setenv("SPOTTER_LIDARR_API_KEY", "test-api-key")
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "lidarr configuration is incomplete")
+}
+
+func TestConfig_LidarrFullyConfigured(t *testing.T) {
+	setRequiredEnvVars(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "http://localhost:8686", cfg.Lidarr.BaseURL)
+	assert.Equal(t, "test-api-key", cfg.Lidarr.APIKey)
+}
