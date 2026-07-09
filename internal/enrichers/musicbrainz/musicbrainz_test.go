@@ -887,3 +887,52 @@ func TestEnrichTrack_EmptyStringMBID(t *testing.T) {
 	require.NotNil(t, data)
 	assert.Equal(t, "found", data.MusicBrainzID)
 }
+
+// TestEscapeLucene verifies Lucene query special characters are escaped.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-005 (IDMatcher correctness)
+func TestEscapeLucene(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain name unchanged", "Radiohead", "Radiohead"},
+		{"parentheses", "(Sandy) Alex G", `\(Sandy\) Alex G`},
+		{"slash", "AC/DC", `AC\/DC`},
+		{"boolean operators", "Iron & Wine || You", `Iron \& Wine \|\| You`},
+		{"mixed specials", `w+h-a!t:i^s"t~h*i?s\`, `w\+h\-a\!t\:i\^s\"t\~h\*i\?s\\`},
+		{"brackets and braces", "[{cool}]", `\[\{cool\}\]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, escapeLucene(tt.in))
+		})
+	}
+}
+
+// TestMatchArtist_EscapesLuceneSpecialCharacters verifies the search query
+// sent to MusicBrainz escapes names containing Lucene syntax like "(Sandy) Alex G".
+func TestMatchArtist_EscapesLuceneSpecialCharacters(t *testing.T) {
+	var gotQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("query")
+
+		response := artistSearchResponse{
+			Artists: []mbArtist{
+				{ID: "mbid-sandy", Name: "(Sandy) Alex G", Score: 100},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	enricher := createTestEnricher(t, server.URL)
+	matcher := enricher.(enrichers.IDMatcher)
+	mbid, confidence, err := matcher.MatchArtist(context.Background(), "(Sandy) Alex G")
+
+	require.NoError(t, err)
+	assert.Equal(t, "mbid-sandy", mbid)
+	assert.Equal(t, 1.0, confidence)
+	assert.Equal(t, `artist:\(Sandy\) Alex G`, gotQuery)
+}

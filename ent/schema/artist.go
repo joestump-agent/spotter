@@ -32,14 +32,16 @@ func (Artist) Fields() []ent.Field {
 			Optional().
 			MaxLen(500).
 			Comment("Name used for sorting, e.g., 'Beatles, The'"),
+		// Uniqueness for external IDs is scoped per user via composite indexes
+		// in Indexes() below — artists are per-user rows, so two users may
+		// each have an artist with the same MBID/Spotify ID.
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-040 (per-user catalog entities)
 		field.String("musicbrainz_id").
 			Optional().
-			Unique().
 			MaxLen(36). // UUID format
 			Comment("MusicBrainz artist MBID"),
 		field.String("spotify_id").
 			Optional().
-			Unique().
 			MaxLen(50).
 			Comment("Spotify artist ID"),
 		field.String("lastfm_url").
@@ -124,6 +126,16 @@ func (Artist) Indexes() []ent.Index {
 	return []ent.Index{
 		// Unique artist name per user
 		index.Fields("name").
+			Edges("user").
+			Unique(),
+		// External IDs are unique per user (not globally): artists are
+		// per-user rows, so the same MBID/Spotify ID may exist for different
+		// users. Mirrors the name-per-user pattern above.
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-040 (per-user catalog entities)
+		index.Fields("musicbrainz_id").
+			Edges("user").
+			Unique(),
+		index.Fields("spotify_id").
 			Edges("user").
 			Unique(),
 		// Index for MusicBrainz lookups

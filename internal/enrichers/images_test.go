@@ -1,6 +1,7 @@
 package enrichers
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"image/png"
@@ -29,7 +30,7 @@ func TestDownloadAndSaveImage(t *testing.T) {
 		tempDir := t.TempDir()
 		localPath := filepath.Join(tempDir, "test.png")
 
-		resultPath, err := DownloadAndSaveImage(server.URL, localPath, logger)
+		resultPath, err := DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
 		assert.NoError(t, err)
 		assert.Equal(t, localPath, resultPath)
 		assert.FileExists(t, localPath)
@@ -51,7 +52,7 @@ func TestDownloadAndSaveImage(t *testing.T) {
 		assert.NoError(t, err)
 		f.Close()
 
-		resultPath, err := DownloadAndSaveImage(server.URL, localPath, logger)
+		resultPath, err := DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
 		assert.NoError(t, err)
 		assert.Equal(t, localPath, resultPath)
 	})
@@ -66,7 +67,7 @@ func TestDownloadAndSaveImage(t *testing.T) {
 		tempDir := t.TempDir()
 		localPath := filepath.Join(tempDir, "notfound.png")
 
-		_, err := DownloadAndSaveImage(server.URL, localPath, logger)
+		_, err := DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
 		assert.Error(t, err)
 	})
 
@@ -80,7 +81,7 @@ func TestDownloadAndSaveImage(t *testing.T) {
 		tempDir := t.TempDir()
 		localPath := filepath.Join(tempDir, "bad.png")
 
-		_, err := DownloadAndSaveImage(server.URL, localPath, logger)
+		_, err := DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
 		assert.Error(t, err)
 	})
 
@@ -103,7 +104,7 @@ func TestDownloadAndSaveImage(t *testing.T) {
 
 		localPath := filepath.Join(readOnlyDir, "subdir", "image.png")
 
-		_, err = DownloadAndSaveImage(server.URL, localPath, logger)
+		_, err = DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
 		assert.Error(t, err)
 	})
 
@@ -118,7 +119,7 @@ func TestDownloadAndSaveImage(t *testing.T) {
 		tempDir := t.TempDir()
 		localPath := filepath.Join(tempDir, "resized.png")
 
-		_, err := DownloadAndSaveImage(server.URL, localPath, logger)
+		_, err := DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
 		assert.NoError(t, err)
 
 		f, err := os.Open(localPath)
@@ -129,4 +130,122 @@ func TestDownloadAndSaveImage(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, MaxImageSize, img.Width)
 	})
+
+	// Test Case 7: Both dimensions are bounded (resize.Thumbnail, not width-only)
+	t.Run("bounds both dimensions", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Tall image: within max width, but exceeds max height
+			img := image.NewRGBA(image.Rect(0, 0, 100, MaxImageSize+500))
+			png.Encode(w, img)
+		}))
+		defer server.Close()
+
+		tempDir := t.TempDir()
+		localPath := filepath.Join(tempDir, "tall.png")
+
+		_, err := DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
+		assert.NoError(t, err)
+
+		f, err := os.Open(localPath)
+		assert.NoError(t, err)
+		defer f.Close()
+
+		img, _, err := image.DecodeConfig(f)
+		assert.NoError(t, err)
+		assert.LessOrEqual(t, img.Width, MaxImageSize)
+		assert.Equal(t, MaxImageSize, img.Height)
+	})
+
+	// Test Case 8: Small images are never upscaled
+	t.Run("no upscaling", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			img := image.NewRGBA(image.Rect(0, 0, 32, 16))
+			png.Encode(w, img)
+		}))
+		defer server.Close()
+
+		tempDir := t.TempDir()
+		localPath := filepath.Join(tempDir, "small.png")
+
+		_, err := DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
+		assert.NoError(t, err)
+
+		f, err := os.Open(localPath)
+		assert.NoError(t, err)
+		defer f.Close()
+
+		img, _, err := image.DecodeConfig(f)
+		assert.NoError(t, err)
+		assert.Equal(t, 32, img.Width)
+		assert.Equal(t, 16, img.Height)
+	})
+
+	// Test Case 9: Failed downloads leave no partial file behind
+	t.Run("failed download leaves no file", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, "this is not an image")
+		}))
+		defer server.Close()
+
+		tempDir := t.TempDir()
+		localPath := filepath.Join(tempDir, "partial.png")
+
+		_, err := DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
+		assert.Error(t, err)
+		assert.NoFileExists(t, localPath)
+
+		// No leftover temp files either.
+		entries, err := os.ReadDir(tempDir)
+		assert.NoError(t, err)
+		assert.Empty(t, entries, "no temp files should remain after a failed download")
+	})
+}
+
+// TestSetMaxImageSize verifies the configured max dimension is applied.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-031 (configurable via metadata.images.max_width)
+func TestSetMaxImageSize(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	SetMaxImageSize(200)
+	t.Cleanup(func() { maxImageSize = MaxImageSize })
+
+	// Values <= 0 are ignored.
+	SetMaxImageSize(0)
+	SetMaxImageSize(-5)
+	assert.Equal(t, 200, maxImageSize)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		img := image.NewRGBA(image.Rect(0, 0, 400, 400))
+		png.Encode(w, img)
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	localPath := filepath.Join(tempDir, "configured.png")
+
+	_, err := DownloadAndSaveImage(context.Background(), server.URL, localPath, logger)
+	assert.NoError(t, err)
+
+	f, err := os.Open(localPath)
+	assert.NoError(t, err)
+	defer f.Close()
+
+	img, _, err := image.DecodeConfig(f)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, img.Width)
+	assert.Equal(t, 200, img.Height)
+}
+
+// TestImageFileName verifies filenames are unique per source URL so multiple
+// images of the same type for one entity never collide.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (unique local paths per image)
+func TestImageFileName(t *testing.T) {
+	a := ImageFileName(42, "thumbnail", "https://example.com/one.jpg")
+	b := ImageFileName(42, "thumbnail", "https://example.com/two.jpg")
+	c := ImageFileName(42, "thumbnail", "https://example.com/one.jpg")
+
+	assert.NotEqual(t, a, b, "different URLs must yield different filenames")
+	assert.Equal(t, a, c, "same URL must yield a stable filename")
+	assert.Contains(t, a, "42-thumbnail-")
+	assert.Contains(t, a, ".png")
 }

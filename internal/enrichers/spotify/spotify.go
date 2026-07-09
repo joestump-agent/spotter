@@ -495,8 +495,9 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 
 	var images []enrichers.ImageData
 	for i, img := range sp.Images {
-		localPath := fmt.Sprintf("data/images/artists/%d_spotify_%d.png", artist.ID, i)
-		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (unique local paths per image)
+		localPath := fmt.Sprintf("data/images/artists/%s", enrichers.ImageFileName(artist.ID, "thumbnail", img.URL))
+		_, err := enrichers.DownloadAndSaveImage(ctx, img.URL, localPath, e.logger)
 		if err != nil {
 			e.logger.Warn("failed to download spotify image", "url", img.URL, "error", err)
 			continue
@@ -597,8 +598,9 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 
 	var images []enrichers.ImageData
 	for i, img := range sp.Images {
-		localPath := fmt.Sprintf("data/images/albums/%d_spotify_%d.png", album.ID, i)
-		_, err := enrichers.DownloadAndSaveImage(img.URL, localPath, e.logger)
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (unique local paths per image)
+		localPath := fmt.Sprintf("data/images/albums/%s", enrichers.ImageFileName(album.ID, "cover_front", img.URL))
+		_, err := enrichers.DownloadAndSaveImage(ctx, img.URL, localPath, e.logger)
 		if err != nil {
 			e.logger.Warn("failed to download spotify image", "url", img.URL, "error", err)
 			continue

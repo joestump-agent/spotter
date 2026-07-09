@@ -319,8 +319,9 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 		// Last.fm images come in different sizes
 		width, height := imageSizeFromLastFM(img.Size)
 
-		localPath := fmt.Sprintf("data/images/artists/%d_lastfm_%s.png", artist.ID, img.Size)
-		_, err := enrichers.DownloadAndSaveImage(img.Text, localPath, e.logger)
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (unique local paths per image)
+		localPath := fmt.Sprintf("data/images/artists/%s", enrichers.ImageFileName(artist.ID, "thumbnail", img.Text))
+		_, err := enrichers.DownloadAndSaveImage(ctx, img.Text, localPath, e.logger)
 		if err != nil {
 			e.logger.Warn("failed to download lastfm image", "url", img.Text, "error", err)
 			continue
@@ -457,8 +458,9 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 
 		width, height := imageSizeFromLastFM(img.Size)
 
-		localPath := fmt.Sprintf("data/images/albums/%d_lastfm_%s.png", album.ID, img.Size)
-		_, err := enrichers.DownloadAndSaveImage(img.Text, localPath, e.logger)
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (unique local paths per image)
+		localPath := fmt.Sprintf("data/images/albums/%s", enrichers.ImageFileName(album.ID, "cover_front", img.Text))
+		_, err := enrichers.DownloadAndSaveImage(ctx, img.Text, localPath, e.logger)
 		if err != nil {
 			e.logger.Warn("failed to download lastfm image", "url", img.Text, "error", err)
 			continue

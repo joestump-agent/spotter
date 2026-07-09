@@ -578,6 +578,22 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		}
 	}
 
+	// Collect album images and set HasCoverArt BEFORE rendering the prompt
+	// template so {{if .HasCoverArt}} sections take effect.
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (OpenAI enrichment correctness)
+	var images []string
+	if album.Edges.Images != nil {
+		for _, img := range album.Edges.Images {
+			if img.LocalPath != "" {
+				images = append(images, img.LocalPath)
+			}
+		}
+	}
+
+	if len(images) > 0 {
+		data.HasCoverArt = true
+	}
+
 	// Generate prompt
 	var prompt string
 	if tmpl, ok := e.templates["album"]; ok {
@@ -590,20 +606,6 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 		}
 	} else {
 		prompt = e.fallbackAlbumPrompt(data)
-	}
-
-	// Collect album images
-	var images []string
-	if album.Edges.Images != nil {
-		for _, img := range album.Edges.Images {
-			if img.LocalPath != "" {
-				images = append(images, img.LocalPath)
-			}
-		}
-	}
-
-	if len(images) > 0 {
-		data.HasCoverArt = true
 	}
 
 	// Call OpenAI
