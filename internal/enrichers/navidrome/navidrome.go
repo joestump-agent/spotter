@@ -10,16 +10,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
 	"spotter/internal/tags"
-)
-
-const (
-	staticSalt = "static"
 )
 
 // Enricher implements the Navidrome metadata enricher.
@@ -558,8 +555,12 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 	var images []enrichers.ImageData
 
 	if coverArt := response.SubsonicResponse.Album.CoverArt; coverArt != "" {
-		// Build URL to fetch cover art - use user.Username from User entity
-		salt := staticSalt
+		// Governing: SPEC music-provider-integration REQ-PROV-051 (salt MUST be randomly generated per request)
+		// Build the cover-art URL with a fresh random salt and download it
+		// immediately. The token-bearing URL is a password equivalent, so it
+		// MUST NOT be persisted in image records or written to logs — only a
+		// credential-free URL (no u=/t=/s= params) is stored.
+		salt := generateSalt()
 		coverURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s&u=%s&t=%s&s=%s&c=spotter&v=1.16.1",
 			e.config.Navidrome.BaseURL,
 			coverArt,
@@ -567,14 +568,19 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 			generateToken(e.auth.Password, salt),
 			salt,
 		)
+		cleanURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s", e.config.Navidrome.BaseURL, coverArt)
 
 		localPath := fmt.Sprintf("data/images/albums/%d_navidrome.png", album.ID)
 		_, err := enrichers.DownloadAndSaveImage(coverURL, localPath, e.logger)
 		if err != nil {
-			e.logger.Warn("failed to download navidrome image", "url", coverURL, "error", err)
+			// DownloadAndSaveImage embeds the URL in its errors; redact the
+			// credentialed URL before logging.
+			e.logger.Warn("failed to download navidrome cover art",
+				"cover_art_id", coverArt,
+				"error", strings.ReplaceAll(err.Error(), coverURL, cleanURL))
 		} else {
 			images = append(images, enrichers.ImageData{
-				URL:       coverURL,
+				URL:       cleanURL,
 				LocalPath: localPath,
 				Type:      "cover_front",
 				Source:    "navidrome",

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"os"
+	"strings"
 	"testing"
 
 	"spotter/internal/crypto"
@@ -324,6 +325,93 @@ func TestRunSkipsEmptyFields(t *testing.T) {
 	db.QueryRow("SELECT password FROM navidrome_auths WHERE id = 2").Scan(&emptyVal)
 	if emptyVal != "" {
 		t.Errorf("expected empty password for row 2, got %q", emptyVal)
+	}
+}
+
+// TestRunLegacyCiphertextRotation verifies that legacy (bare base64)
+// ciphertexts written before the enc:v1: marker still rotate, and that the
+// rotated values are written in the new enc:v1: format.
+func TestRunLegacyCiphertextRotation(t *testing.T) {
+	oldKeyHex := randomHexKey(t)
+	newKeyHex := randomHexKey(t)
+	db, dsn := testDB(t)
+
+	oldEnc := mustEncryptor(t, oldKeyHex)
+
+	// Simulate a pre-marker ciphertext by stripping the enc:v1: prefix.
+	enc, err := oldEnc.Encrypt("legacy-password")
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	legacy := strings.TrimPrefix(enc, crypto.EncPrefixV1)
+	if _, err := db.Exec("INSERT INTO navidrome_auths (password) VALUES (?)", legacy); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	if err := run(oldKeyHex, newKeyHex, "sqlite3", dsn); err != nil {
+		t.Fatalf("run() error: %v", err)
+	}
+
+	var encVal string
+	db.QueryRow("SELECT password FROM navidrome_auths WHERE id = 1").Scan(&encVal)
+	if !crypto.IsEncrypted(encVal) {
+		t.Errorf("rotated value should carry the %s marker, got %q", crypto.EncPrefixV1, encVal)
+	}
+
+	newEnc := mustEncryptor(t, newKeyHex)
+	dec, err := newEnc.Decrypt(encVal)
+	if err != nil {
+		t.Fatalf("decrypt with new key: %v", err)
+	}
+	if dec != "legacy-password" {
+		t.Errorf("password = %q, want %q", dec, "legacy-password")
+	}
+}
+
+// TestRunSkipsPlaintextValues verifies that plaintext values — including
+// plaintext that merely looks like base64 — are left untouched by rotation
+// instead of failing the whole run.
+func TestRunSkipsPlaintextValues(t *testing.T) {
+	oldKeyHex := randomHexKey(t)
+	newKeyHex := randomHexKey(t)
+	db, dsn := testDB(t)
+
+	oldEnc := mustEncryptor(t, oldKeyHex)
+
+	enc, err := oldEnc.Encrypt("real-password")
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	if _, err := db.Exec("INSERT INTO navidrome_auths (password) VALUES (?)", enc); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	// Base64-shaped plaintext: the old heuristic misclassified this as ciphertext.
+	base64Plaintext := "dGhpcyBpcyBqdXN0IGEgbG9uZyBwbGFpbnRleHQgdmFsdWU="
+	if _, err := db.Exec("INSERT INTO navidrome_auths (password) VALUES (?)", base64Plaintext); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	if err := run(oldKeyHex, newKeyHex, "sqlite3", dsn); err != nil {
+		t.Fatalf("run() error: %v", err)
+	}
+
+	// Encrypted row rotated to the new key.
+	var encVal string
+	db.QueryRow("SELECT password FROM navidrome_auths WHERE id = 1").Scan(&encVal)
+	newEnc := mustEncryptor(t, newKeyHex)
+	dec, err := newEnc.Decrypt(encVal)
+	if err != nil {
+		t.Fatalf("decrypt with new key: %v", err)
+	}
+	if dec != "real-password" {
+		t.Errorf("password = %q, want %q", dec, "real-password")
+	}
+
+	// Plaintext row left exactly as-is.
+	var plainVal string
+	db.QueryRow("SELECT password FROM navidrome_auths WHERE id = 2").Scan(&plainVal)
+	if plainVal != base64Plaintext {
+		t.Errorf("plaintext row modified: got %q, want %q", plainVal, base64Plaintext)
 	}
 }
 
