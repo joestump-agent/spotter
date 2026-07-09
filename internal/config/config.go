@@ -373,11 +373,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("navidrome.base_url is required")
 	}
 
-	if cfg.Lidarr.BaseURL == "" {
-		return nil, fmt.Errorf("lidarr.base_url is required")
-	}
-	if cfg.Lidarr.APIKey == "" {
-		return nil, fmt.Errorf("lidarr.api_key is required")
+	// Governing: SPEC-0016 (compose examples run without Lidarr), ADR-0023
+	// Lidarr is an optional integration: the enricher reports itself
+	// unavailable and the queue submitter stays disabled when it is not
+	// configured. Only reject half-configured setups.
+	if (cfg.Lidarr.BaseURL == "") != (cfg.Lidarr.APIKey == "") {
+		return nil, fmt.Errorf("lidarr configuration is incomplete: set both lidarr.base_url and lidarr.api_key (SPOTTER_LIDARR_BASE_URL and SPOTTER_LIDARR_API_KEY) to enable Lidarr, or neither to run without it")
 	}
 
 	if cfg.OpenAI.APIKey == "" {

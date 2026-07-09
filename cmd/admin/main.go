@@ -294,32 +294,22 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 	}
 
 	for _, tf := range grouped {
-		cols := strings.Join(tf.columns, ", ")
-		query := fmt.Sprintf("SELECT id, %s FROM %s", cols, tf.table)
-		rows, err := tx.Query(query)
+		// Governing: ADR-0023 (multi-database support)
+		// Read every (id, values) pair into memory and close the cursor
+		// BEFORE issuing UPDATEs. PostgreSQL ("pq: conn busy") and MySQL
+		// ("commands out of sync") reject statements on a transaction while
+		// a Rows cursor is still open; SQLite tolerates it but gains nothing
+		// from interleaving.
+		encRows, err := readEncryptedRows(tx, tf.table, tf.columns)
 		if err != nil {
-			return nil, 0, fmt.Errorf("failed to query %s: %w", tf.table, err)
+			return nil, 0, err
 		}
 
 		rowCount := 0
-		for rows.Next() {
-			// Build scan destinations: id + N columns.
-			scanDest := make([]interface{}, 1+len(tf.columns))
-			var id int
-			scanDest[0] = &id
-			vals := make([]sql.NullString, len(tf.columns))
-			for i := range vals {
-				scanDest[i+1] = &vals[i]
-			}
-
-			if err := rows.Scan(scanDest...); err != nil {
-				_ = rows.Close()
-				return nil, 0, fmt.Errorf("failed to scan row from %s: %w", tf.table, err)
-			}
-
+		for _, row := range encRows {
 			rowModified := false
 			for i, col := range tf.columns {
-				if !vals[i].Valid || vals[i].String == "" {
+				if !row.vals[i].Valid || row.vals[i].String == "" {
 					continue // REQ "ROT-012": skip null/empty
 				}
 
@@ -327,10 +317,9 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 				// and legacy bare-base64 ciphertexts; legacy values that fail
 				// to decrypt are treated as plaintext and left untouched
 				// (they will be encrypted by the server on next write).
-				plaintext, wasEncrypted, err := oldEnc.DecryptAny(vals[i].String)
+				plaintext, wasEncrypted, err := oldEnc.DecryptAny(row.vals[i].String)
 				if err != nil {
-					_ = rows.Close()
-					return nil, 0, fmt.Errorf("decryption failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
+					return nil, 0, fmt.Errorf("decryption failed for %s.%s (row id=%d): %w", tf.table, col, row.id, err)
 				}
 				if !wasEncrypted {
 					continue // plaintext value: nothing to rotate
@@ -339,8 +328,7 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 				// REQ "ROT-041": Encrypt with new key (written in enc:v1: format)
 				newCipher, err := newEnc.Encrypt(plaintext)
 				if err != nil {
-					_ = rows.Close()
-					return nil, 0, fmt.Errorf("encryption failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
+					return nil, 0, fmt.Errorf("encryption failed for %s.%s (row id=%d): %w", tf.table, col, row.id, err)
 				}
 
 				var updateSQL string
@@ -349,9 +337,8 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 				} else {
 					updateSQL = fmt.Sprintf("UPDATE %s SET %s = ? WHERE id = ?", tf.table, col)
 				}
-				if _, err := tx.Exec(updateSQL, newCipher, id); err != nil {
-					_ = rows.Close()
-					return nil, 0, fmt.Errorf("update failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
+				if _, err := tx.Exec(updateSQL, newCipher, row.id); err != nil {
+					return nil, 0, fmt.Errorf("update failed for %s.%s (row id=%d): %w", tf.table, col, row.id, err)
 				}
 				totalFields++
 				rowModified = true
@@ -360,14 +347,49 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 				rowCount++
 			}
 		}
-		if err := rows.Err(); err != nil {
-			return nil, 0, fmt.Errorf("error iterating %s: %w", tf.table, err)
-		}
-		_ = rows.Close()
 		counts[tf.table] = rowCount
 	}
 
 	return counts, totalFields, nil
+}
+
+// encryptedRow holds one row's id and encrypted column values, buffered in
+// memory so the read cursor can be closed before UPDATEs are issued.
+type encryptedRow struct {
+	id   int
+	vals []sql.NullString
+}
+
+// readEncryptedRows loads id plus the given columns for every row of table
+// into memory and fully drains/closes the cursor before returning. This keeps
+// the transaction free for subsequent UPDATEs on drivers that allow only one
+// active statement per connection (PostgreSQL, MySQL).
+// Governing: SPEC key-rotation REQ "ROT-010", ADR-0023 (multi-database support)
+func readEncryptedRows(tx *sql.Tx, table string, columns []string) ([]encryptedRow, error) {
+	query := fmt.Sprintf("SELECT id, %s FROM %s", strings.Join(columns, ", "), table)
+	rows, err := tx.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query %s: %w", table, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []encryptedRow
+	for rows.Next() {
+		row := encryptedRow{vals: make([]sql.NullString, len(columns))}
+		scanDest := make([]interface{}, 1+len(columns))
+		scanDest[0] = &row.id
+		for i := range row.vals {
+			scanDest[i+1] = &row.vals[i]
+		}
+		if err := rows.Scan(scanDest...); err != nil {
+			return nil, fmt.Errorf("failed to scan row from %s: %w", table, err)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating %s: %w", table, err)
+	}
+	return result, nil
 }
 
 // verifyNewKey reads all encrypted fields from the database and verifies

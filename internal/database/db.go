@@ -10,8 +10,8 @@ import (
 	"spotter/ent"
 	"spotter/internal/crypto"
 
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
+	"github.com/go-sql-driver/mysql"
+	"github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -69,6 +69,22 @@ func driverToStdlib(driver string) string {
 	case driverPostgres:
 		return driverPostgres
 	case "mysql":
+		return "mysql"
+	default:
+		return "sqlite3"
+	}
+}
+
+// DriverName reports the dialect name ("postgres", "mysql", or "sqlite3") of
+// the driver backing db. It lets code that only holds a *sql.DB (e.g. the
+// entity_tags upsert in internal/tags) choose dialect-specific SQL without
+// threading the configured driver name through every call site.
+// Governing: SPEC-0016 REQ "Denormalized Entity Tags Table", ADR-0023
+func DriverName(db *sql.DB) string {
+	switch db.Driver().(type) {
+	case *pq.Driver:
+		return driverPostgres
+	case *mysql.MySQLDriver:
 		return "mysql"
 	default:
 		return "sqlite3"
