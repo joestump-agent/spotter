@@ -71,11 +71,17 @@ templ Toast(title, message, iconType string) {
 }
 
 // Governing: SPEC event-bus-sse REQ-SSE-012 (sse-swap="notification" with hx-swap for DOM swapping)
+// Governing: SPEC vibes-ai-mixtape-engine, SPEC event-bus-sse REQ-SSE-005 — the SSE
+// handler emits lifecycle events under their own named event types (mixtape-*,
+// playlist-enhanc*, similar-artists-*) so future consumers can target them
+// individually; the toast container subscribes to every toast-rendering event
+// name so those toasts actually appear in the DOM. The htmx SSE extension
+// accepts a comma-separated list of event names in sse-swap.
 templ ToastContainer() {
 	<div
 		id="toasts"
 		class="toast toast-end toast-top z-50 gap-2 mt-4 mr-4"
-		sse-swap="notification"
+		sse-swap="notification,mixtape-created,mixtape-updated,mixtape-deleted,mixtape-generating,mixtape-generated,mixtape-error,playlist-enhancing,playlist-enhanced,playlist-enhance-error,similar-artists-searching,similar-artists-found,similar-artists-error"
 		hx-swap="beforeend"
 	></div>
 }

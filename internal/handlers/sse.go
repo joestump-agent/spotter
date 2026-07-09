@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"time"
 
 	"spotter/ent"
 	"spotter/internal/events"
@@ -30,6 +31,16 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
 		return
 	}
+
+	// Governing: SPEC event-bus-sse REQ-SSE-004 — clear the per-connection write
+	// deadline so http.Server.WriteTimeout does not terminate this long-lived
+	// stream. The route is also mounted without the chi request-timeout
+	// middleware (see cmd/server/main.go); together these keep /events open
+	// until the client disconnects.
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+		h.Logger.Warn("failed to clear SSE write deadline, stream may be closed by server write timeout", "error", err)
+	}
+
 	flusher.Flush()
 
 	eventChan, cancel := h.Bus.Subscribe(u.ID)

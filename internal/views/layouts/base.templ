@@ -25,7 +25,11 @@ templ BaseWithTheme(title string, defaultTheme string) {
 			// Hyperscript: required for _="..." attributes in create_mixtape_modal, enhance_vibes_modal
 			<script src="https://unpkg.com/hyperscript.org@0.9.12"></script>
 			<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js"></script>
-			<script src="https://cdnjs.cloudflare.com/ajax/libs/timeago.js/4.0.2/timeago.min.js"></script>
+			<!-- Governing: SPEC user-authentication REQ "Security Headers and Server Timeouts" —
+			     timeago is served from cdn.jsdelivr.net (already allowed by the CSP script-src in
+			     internal/middleware/security.go) instead of cdnjs.cloudflare.com, which the CSP
+			     blocks. Keeping the CSP surface small is preferred over allowing another origin. -->
+			<script src="https://cdn.jsdelivr.net/npm/timeago.js@4.0.2/dist/timeago.min.js"></script>
 			<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 			<link href="/static/css/output.css" rel="stylesheet"/>
 			<style>

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"spotter/ent"
+	"spotter/ent/album"
 	"spotter/ent/artist"
 	"spotter/ent/dj"
 	"spotter/ent/listen"
@@ -222,6 +223,27 @@ func (h *Handler) DeleteDJ(w http.ResponseWriter, r *http.Request) {
 	_, err := h.GetDJForUser(r.Context(), djID, u.ID)
 	if err != nil {
 		http.Error(w, "DJ not found", http.StatusNotFound)
+		return
+	}
+
+	// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-003 (lead decision:
+	// deletion is blocked while mixtapes reference the DJ; a direct DELETE
+	// returns a friendly 409 with reassign guidance instead of surfacing the
+	// foreign-key violation as a 500).
+	mixtapeCount, err := h.Client.Mixtape.Query().
+		Where(mixtape.HasDjWith(dj.ID(djID))).
+		Count(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to count mixtapes for DJ", "dj_id", djID, "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	if mixtapeCount > 0 {
+		h.Logger.Info("blocked DJ deletion, mixtapes still assigned",
+			"dj_id", djID, "mixtape_count", mixtapeCount, "user_id", u.ID)
+		http.Error(w,
+			"This DJ still has "+strconv.Itoa(mixtapeCount)+" mixtape(s) assigned. Please reassign or delete the associated mixtapes before deleting this DJ.",
+			http.StatusConflict)
 		return
 	}
 
@@ -572,6 +594,9 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse optional seed data from the request
+	// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-022 — every seed lookup
+	// is scoped to the requesting user; IDs belonging to another user are
+	// rejected with 404 instead of silently leaking foreign catalog entities.
 	var seed *vibes.Seed
 	if err := r.ParseForm(); err == nil {
 		seedType := r.FormValue("seed_type")
@@ -580,29 +605,59 @@ func (h *Handler) GenerateMixtape(w http.ResponseWriter, r *http.Request) {
 		switch seedType {
 		case "artist":
 			if artistID, err := strconv.Atoi(seedID); err == nil {
-				a, err := h.Client.Artist.Get(r.Context(), artistID)
-				if err == nil {
-					seed = vibes.NewArtistSeed(a)
-					h.Logger.Debug("using artist seed", "artist_id", artistID, "artist_name", a.Name)
+				a, err := h.Client.Artist.Query().
+					Where(artist.ID(artistID), artist.HasUserWith(user.ID(u.ID))).
+					Only(r.Context())
+				if err != nil {
+					h.Logger.Warn("artist seed not found for user", "artist_id", artistID, "user_id", u.ID, "error", err)
+					http.Error(w, "Seed artist not found", http.StatusNotFound)
+					return
 				}
+				seed = vibes.NewArtistSeed(a)
+				h.Logger.Debug("using artist seed", "artist_id", artistID, "artist_name", a.Name)
 			}
 		case "album":
 			if albumID, err := strconv.Atoi(seedID); err == nil {
-				album, err := h.Client.Album.Get(r.Context(), albumID)
-				if err == nil {
-					seed = vibes.NewAlbumSeed(album)
-					h.Logger.Debug("using album seed", "album_id", albumID, "album_name", album.Name)
+				al, err := h.Client.Album.Query().
+					Where(album.ID(albumID), album.HasUserWith(user.ID(u.ID))).
+					Only(r.Context())
+				if err != nil {
+					h.Logger.Warn("album seed not found for user", "album_id", albumID, "user_id", u.ID, "error", err)
+					http.Error(w, "Seed album not found", http.StatusNotFound)
+					return
 				}
+				seed = vibes.NewAlbumSeed(al)
+				h.Logger.Debug("using album seed", "album_id", albumID, "album_name", al.Name)
 			}
 		case "tracks":
 			if trackIDsStr := r.FormValue("track_ids"); trackIDsStr != "" {
 				var trackIDs []int
+				seen := make(map[int]bool)
 				for _, idStr := range strings.Split(trackIDsStr, ",") {
-					if id, err := strconv.Atoi(strings.TrimSpace(idStr)); err == nil {
+					if id, err := strconv.Atoi(strings.TrimSpace(idStr)); err == nil && !seen[id] {
+						seen[id] = true
 						trackIDs = append(trackIDs, id)
 					}
 				}
 				if len(trackIDs) > 0 {
+					// Verify every requested track belongs to the user's library.
+					ownedCount, err := h.Client.Track.Query().
+						Where(
+							track.IDIn(trackIDs...),
+							track.HasArtistWith(artist.HasUserWith(user.ID(u.ID))),
+						).
+						Count(r.Context())
+					if err != nil {
+						h.Logger.Error("failed to verify track seed ownership", "error", err)
+						http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+						return
+					}
+					if ownedCount != len(trackIDs) {
+						h.Logger.Warn("track seed contains tracks not owned by user",
+							"user_id", u.ID, "requested", len(trackIDs), "owned", ownedCount)
+						http.Error(w, "One or more seed tracks not found", http.StatusNotFound)
+						return
+					}
 					seed = vibes.NewTrackIDsSeed(trackIDs)
 					h.Logger.Debug("using tracks seed", "track_ids", trackIDs)
 				}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"spotter/ent"
+	"spotter/ent/artist"
 	"spotter/ent/listen"
 	"spotter/ent/playlist"
 	"spotter/ent/playlisttrack"
@@ -411,10 +412,13 @@ func (e *PlaylistEnhancer) getListeningHistory(ctx context.Context, userID int) 
 }
 
 // getAvailableTracks retrieves tracks available for addition.
+// Governing: SPEC vibes-ai-mixtape-engine REQ-VIBES-022 — candidate tracks are
+// scoped to the requesting user's library (matching generator.getAvailableTracks)
+// so one user's enhancement can never surface another user's tracks.
 func (e *PlaylistEnhancer) getAvailableTracks(ctx context.Context, userID int, excludeIDs map[int]bool) ([]AvailableTrack, error) {
 	// Get tracks from user's library (limit for prompt size)
 	tracks, err := e.client.Track.Query().
-		Where(track.HasArtist()).
+		Where(track.HasArtistWith(artist.HasUserWith(user.ID(userID)))).
 		WithArtist().
 		WithAlbum().
 		Limit(500).
