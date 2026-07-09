@@ -46,7 +46,15 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 	// 1. Authenticate against Navidrome
 	if err := h.authenticateNavidrome(username, password); err != nil {
 		h.Logger.Error("Navidrome authentication failed", "error", err)
-		w.WriteHeader(http.StatusUnauthorized)
+		// htmx 1.9 does not swap non-2xx responses into the hx-target, so an
+		// HTMX login attempt with bad credentials would render nothing. For
+		// HTMX requests return HTTP 200 with the re-rendered login page (the
+		// hx-target="body" swap makes the error alert visible). Plain-browser
+		// requests keep the 401 status pinned by SPEC user-authentication
+		// Scenario "Failed login with invalid credentials".
+		if r.Header.Get("HX-Request") != "true" {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
 		h.Render(w, r, auth.Login(h.Config.Navidrome.BaseURL, "Invalid username or password. Please try again."))
 		return
 	}
@@ -104,13 +112,26 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Update Navidrome Auth
+		// Upsert Navidrome Auth
+		// Governing: SPEC user-authentication REQ-AUTH-007 — a half-failed first
+		// login can leave a User without a NavidromeAuth edge; create the record
+		// here (encryption hook encrypts the password) so background sync works.
 		if existingNavidromeAuth != nil {
 			_, err = h.Client.NavidromeAuth.UpdateOne(existingNavidromeAuth).
 				SetPassword(password).
 				Save(r.Context())
 			if err != nil {
 				h.Logger.Error("failed to update navidrome auth", "error", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			_, err = h.Client.NavidromeAuth.Create().
+				SetUser(u).
+				SetPassword(password).
+				Save(r.Context())
+			if err != nil {
+				h.Logger.Error("failed to create navidrome auth", "error", err)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
@@ -166,6 +187,8 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	// Governing: SPEC user-authentication REQ "SESSION-002", REQ "SESSION-003", ADR-0028 (CSRF protection: SameSite=Lax)
+	// Governing: ADR-0028 — logout is state-changing and registered POST-only
+	// (cmd/server/main.go) so a cross-site GET cannot terminate the session.
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    "",

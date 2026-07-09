@@ -446,8 +446,10 @@ func main() {
 		r.Get("/auth/login", h.Login)
 		// Apply rate limiting only to POST /login
 		r.With(internalMiddleware.RateLimit(loginLimiter, logger)).Post("/login", h.PostLogin)
-		r.Get("/logout", h.Logout)
-		r.Get("/auth/logout", h.Logout) // Alias for consistency
+		// Governing: ADR-0028 — logout is state-changing, so it is POST-only;
+		// SameSite=Lax does not protect top-level GET navigations from CSRF.
+		r.Post("/logout", h.Logout)
+		r.Post("/auth/logout", h.Logout) // Alias for consistency
 
 		// OAuth callbacks must be public (no session required)
 		// They will validate session internally

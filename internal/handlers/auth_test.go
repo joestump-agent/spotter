@@ -20,6 +20,7 @@ import (
 	"spotter/internal/handlers"
 	"spotter/internal/services"
 
+	"github.com/go-chi/chi/v5"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -343,6 +344,176 @@ func TestPostLogin_Regression_PasswordUpdatedOnRelogin(t *testing.T) {
 	require.NotNil(t, u.Edges.NavidromeAuth, "NavidromeAuth edge must be present")
 	assert.Equal(t, "newpassword", u.Edges.NavidromeAuth.Password,
 		"stored password must be updated on login; stale credential breaks sync after a password reset")
+}
+
+// TestPostLogin_NavidromeAuthCreatedOnRelogin verifies that when an existing
+// user WITHOUT a NavidromeAuth edge logs in, the credential record is created.
+//
+// Regression: a half-failed first login (User row saved, NavidromeAuth create
+// failed) left the account permanently without sync credentials because the
+// existing-user branch only updated NavidromeAuth when the edge was present.
+// Governing: SPEC user-authentication REQ-AUTH-007
+func TestPostLogin_NavidromeAuthCreatedOnRelogin(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"subsonic-response": map[string]interface{}{"status": "ok"},
+		})
+	}))
+	defer ts.Close()
+
+	client := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	jwtManager := auth.NewJWTManager(testJWTSecret)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
+
+	ctx := context.Background()
+
+	// Pre-create the user WITHOUT a NavidromeAuth record, simulating a
+	// half-failed first login.
+	_, err := client.User.Create().
+		SetUsername("testuser").
+		Save(ctx)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("username", "testuser")
+	form.Set("password", "secret123")
+	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+
+	h.PostLogin(w, req)
+
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+
+	// The credential record must now exist so background sync works.
+	u, err := client.User.Query().
+		Where(user.Username("testuser")).
+		WithNavidromeAuth().
+		Only(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, u.Edges.NavidromeAuth,
+		"NavidromeAuth must be created on login when the edge is missing")
+	assert.Equal(t, "secret123", u.Edges.NavidromeAuth.Password,
+		"created credential must hold the just-validated password")
+}
+
+// TestPostLogin_InvalidCredentials_HTMX verifies that a failed HTMX login
+// returns HTTP 200 with the re-rendered login page carrying the error alert.
+//
+// Regression: PostLogin responded 401 + full-page render, but the login form
+// is hx-post with hx-target="body" and htmx 1.9 does not swap non-2xx
+// responses — wrong-password attempts showed nothing. Plain-browser requests
+// keep the 401 pinned by the spec (see TestPostLogin_InvalidCredentials).
+func TestPostLogin_InvalidCredentials_HTMX(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"subsonic-response": map[string]interface{}{
+				"status": "failed",
+				"error": map[string]interface{}{
+					"code":    40,
+					"message": "Wrong username or password",
+				},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	client := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	jwtManager := auth.NewJWTManager(testJWTSecret)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
+
+	form := url.Values{}
+	form.Set("username", "testuser")
+	form.Set("password", "wrongpassword")
+	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+
+	h.PostLogin(w, req)
+
+	resp := w.Result()
+	// htmx 1.9 only swaps 2xx responses, so the error page must come back 200.
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "Invalid username or password",
+		"error alert must be present in the swapped login page")
+	assert.Contains(t, string(body), "Log in with Navidrome",
+		"login form must be re-rendered")
+
+	// No session cookie may be set on failed auth.
+	assert.Empty(t, resp.Cookies(), "no session cookie on failed login")
+
+	// User must not have been created.
+	exists, _ := client.User.Query().Where(user.Username("testuser")).Exist(context.Background())
+	assert.False(t, exists)
+}
+
+// TestLogout_RequiresPOST verifies logout is POST-only, mirroring the route
+// registration in cmd/server/main.go. A cross-site GET must not terminate the
+// session because SameSite=Lax sends the cookie on top-level GET navigations.
+// Governing: ADR-0028
+func TestLogout_RequiresPOST(t *testing.T) {
+	client := setupTestDB(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
+	encryptor, _ := crypto.NewEncryptor(make([]byte, 32))
+	jwtManager := auth.NewJWTManager(testJWTSecret)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
+
+	// Mirror the POST-only registration in cmd/server/main.go.
+	r := chi.NewRouter()
+	r.Post("/logout", h.Logout)
+	r.Post("/auth/logout", h.Logout)
+
+	for _, path := range []string{"/logout", "/auth/logout"} {
+		t.Run("GET "+path+" does not terminate session", func(t *testing.T) {
+			req := httptest.NewRequest("GET", path, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			resp := w.Result()
+			assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+			assert.Empty(t, resp.Cookies(), "GET must not clear the session cookie")
+		})
+
+		t.Run("POST "+path+" clears session and redirects", func(t *testing.T) {
+			req := httptest.NewRequest("POST", path, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			resp := w.Result()
+			assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
+			assert.Equal(t, "/auth/login", resp.Header.Get("Location"))
+
+			cookies := resp.Cookies()
+			require.Len(t, cookies, 1)
+			c := cookies[0]
+			assert.Equal(t, handlers.CookieName, c.Name)
+			assert.Empty(t, c.Value)
+			assert.Negative(t, c.MaxAge, "cookie must be expired")
+			assert.True(t, c.HttpOnly)
+			assert.Equal(t, http.SameSiteLaxMode, c.SameSite,
+				"logout cookie must preserve SameSite=Lax so the browser clears the login cookie")
+		})
+	}
 }
 
 func TestPostLogin_SecureCookieFlag(t *testing.T) {

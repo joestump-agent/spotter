@@ -179,10 +179,13 @@ templ Dashboard(title string, cfg *config.Config, currentPath string) {
 					</nav>
 					<!-- Logout + Version -->
 					<div class="border-t border-base-300">
-						<a href="/logout" class="btn btn-ghost btn-block justify-start gap-3 rounded-none">
-							<span class="icon-[heroicons--arrow-right-on-rectangle] w-5 h-5"></span>
-							<span>Logout</span>
-						</a>
+						<!-- Governing: ADR-0028 — logout is state-changing, so it must POST (SameSite=Lax does not cover GET navigations) -->
+						<form method="POST" action="/logout">
+							<button type="submit" class="btn btn-ghost btn-block justify-start gap-3 rounded-none">
+								<span class="icon-[heroicons--arrow-right-on-rectangle] w-5 h-5"></span>
+								<span>Logout</span>
+							</button>
+						</form>
 						<div class="px-4 pb-3 pt-1 text-xs text-base-content/40 text-center">
 							<div class="flex items-center justify-center gap-1.5 flex-wrap">
 								<a href={ templ.URL(version.Link()) } target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 hover:text-base-content/60 transition-colors" title={ version.Version }>

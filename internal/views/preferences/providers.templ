@@ -139,10 +139,13 @@ templ NavidromeLogoutModal() {
 				<form method="dialog">
 					<button class="btn btn-ghost">Cancel</button>
 				</form>
-				<a href="/logout" class="btn btn-error">
-					<span class="icon-[heroicons--arrow-right-on-rectangle] w-5 h-5"></span>
-					Log Out
-				</a>
+				<!-- Governing: ADR-0028 — logout is state-changing, so it must POST (SameSite=Lax does not cover GET navigations) -->
+				<form method="POST" action="/logout">
+					<button type="submit" class="btn btn-error">
+						<span class="icon-[heroicons--arrow-right-on-rectangle] w-5 h-5"></span>
+						Log Out
+					</button>
+				</form>
 			</div>
 		</div>
 		<form method="dialog" class="modal-backdrop">
