@@ -52,6 +52,8 @@ func (h *Handler) ArtistShow(w http.ResponseWriter, r *http.Request) {
 			artist.HasUserWith(user.ID(u.ID)),
 		).
 		WithImages().
+		// Governing: SPEC-0014 REQ "UI Tag Visual Differentiation"
+		WithTagEntities().
 		Only(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to get artist", "error", err, "id", artistID)

@@ -306,9 +306,15 @@ templ Show(album *ent.Album, tracks []TrackWithListens, stats *AlbumStats, djs [
 									{ album.Edges.Artist.Name }
 								</a>
 							}
-							// TODO(SPEC-0014): Replace with TypedTagBadge after Tag schema PR #255 merges
-							<!-- All Tags -->
-							if allTags := collectAndSortAllTags(album, tracks); len(allTags) > 0 {
+							// Governing: SPEC-0014 REQ "UI Tag Visual Differentiation"
+							<!-- Typed tags (Tag entities); legacy JSON fields as fallback during migration -->
+							if len(album.Edges.TagEntities) > 0 {
+								<div class="flex flex-wrap gap-1.5 mb-3">
+									for _, tv := range components.TagViewsFromEnt(album.Edges.TagEntities) {
+										@components.TypedTagBadge(tv)
+									}
+								</div>
+							} else if allTags := collectAndSortAllTags(album, tracks); len(allTags) > 0 {
 								<div class="flex flex-wrap gap-1.5 mb-3">
 									for _, tag := range allTags {
 										<span class="badge badge-sm badge-primary badge-outline px-2 py-0.5">{ tag }</span>

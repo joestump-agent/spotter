@@ -293,9 +293,15 @@ templ Show(track *ent.Track, playlists []*ent.Playlist, stats *TrackStats, cfg *
 									@components.ExternalLinkBadge("MusicBrainz", fmt.Sprintf("https://musicbrainz.org/recording/%s", *track.MusicbrainzID), "icon-[heroicons--globe-alt]", "badge-warning")
 								}
 							</div>
-							// TODO(SPEC-0014): Replace with TypedTagBadge after Tag schema PR #255 merges
-							<!-- All Tags (Genres, ID3, AI) -->
-							if len(track.Genres) > 0 || len(track.Tags) > 0 || len(track.AiTags) > 0 {
+							// Governing: SPEC-0014 REQ "UI Tag Visual Differentiation"
+							<!-- Typed tags (Tag entities); legacy JSON fields as fallback during migration -->
+							if len(track.Edges.TagEntities) > 0 {
+								<div class="flex flex-wrap gap-1.5 mb-4">
+									for _, tv := range components.TagViewsFromEnt(track.Edges.TagEntities) {
+										@components.TypedTagBadge(tv)
+									}
+								</div>
+							} else if len(track.Genres) > 0 || len(track.Tags) > 0 || len(track.AiTags) > 0 {
 								<div class="flex flex-wrap gap-1.5 mb-4">
 									for _, tagInfo := range processTags(track) {
 										if tagInfo.IsAITag {

@@ -31,6 +31,7 @@ import (
 	"spotter/internal/handlers"
 	"spotter/internal/mailer"
 	internalMiddleware "spotter/internal/middleware"
+	"spotter/internal/migrations"
 	"spotter/internal/notifications"
 	"spotter/internal/providers/lastfm"
 	"spotter/internal/providers/navidrome"
@@ -106,6 +107,17 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = rawDB.Close() }()
+
+	// One-time backfill of legacy JSON tag fields into the Tag entity and
+	// entity_tags table. Runs post-migration (NewClient already ran
+	// Schema.Create) and is guarded per-user so boots after the first are
+	// cheap. Lives here rather than in database.NewClient because
+	// internal/migrations depends on internal/tags -> internal/database.
+	// Governing: SPEC-0014 REQ "Data Migration"
+	if _, err := migrations.BackfillTagsIfNeeded(context.Background(), client, rawDB, logger); err != nil {
+		logger.Error("tag backfill failed", "error", err)
+	}
+
 	// Initialize Event Bus
 	bus := events.NewBus()
 
