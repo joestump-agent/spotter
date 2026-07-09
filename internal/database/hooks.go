@@ -39,8 +39,11 @@ func encryptPasswordHook(encryptor *crypto.Encryptor) ent.Hook {
 			var originalPassword string
 			if password, exists := m.Password(); exists {
 				originalPassword = password
-				// Check if already encrypted (for idempotency)
-				if !crypto.IsEncrypted(password) {
+				// Check if already encrypted (for idempotency).
+				// Governing: ADR-0006 — only skip when the value carries the
+				// enc:v1: marker or verifiably decrypts as legacy ciphertext,
+				// so base64-looking plaintext still gets encrypted.
+				if !encryptor.IsCiphertext(password) {
 					// Encrypt the password
 					encrypted, err := encryptor.Encrypt(password)
 					if err != nil {
@@ -101,15 +104,14 @@ func decryptNavidromeAuth(encryptor *crypto.Encryptor, auth *ent.NavidromeAuth) 
 		return nil
 	}
 
-	// Check if password is encrypted (backward compatibility)
-	if crypto.IsEncrypted(auth.Password) {
-		decrypted, err := encryptor.Decrypt(auth.Password)
-		if err != nil {
-			return fmt.Errorf("failed to decrypt password for user %d: %w", auth.ID, err)
-		}
-		auth.Password = decrypted
+	// Governing: ADR-0006 — accept enc:v1:, legacy base64, and plaintext.
+	// Legacy values that fail to decrypt are returned as plaintext instead of
+	// erroring the whole query (will be encrypted on next update).
+	decrypted, _, err := encryptor.DecryptAny(auth.Password)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt password for user %d: %w", auth.ID, err)
 	}
-	// If not encrypted, leave as-is (will be encrypted on next update)
+	auth.Password = decrypted
 
 	return nil
 }
@@ -125,8 +127,9 @@ func encryptSpotifyAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 			// Encrypt access_token if being set
 			if accessToken, exists := m.AccessToken(); exists {
 				originalAccessToken = accessToken
-				// Check if already encrypted (for idempotency)
-				if !crypto.IsEncrypted(accessToken) {
+				// Check if already encrypted (for idempotency).
+				// Governing: ADR-0006 — see encryptPasswordHook.
+				if !encryptor.IsCiphertext(accessToken) {
 					encrypted, err := encryptor.Encrypt(accessToken)
 					if err != nil {
 						return nil, fmt.Errorf("failed to encrypt access_token: %w", err)
@@ -138,8 +141,9 @@ func encryptSpotifyAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 			// Encrypt refresh_token if being set
 			if refreshToken, exists := m.RefreshToken(); exists {
 				originalRefreshToken = refreshToken
-				// Check if already encrypted (for idempotency)
-				if !crypto.IsEncrypted(refreshToken) {
+				// Check if already encrypted (for idempotency).
+				// Governing: ADR-0006 — see encryptPasswordHook.
+				if !encryptor.IsCiphertext(refreshToken) {
 					encrypted, err := encryptor.Encrypt(refreshToken)
 					if err != nil {
 						return nil, fmt.Errorf("failed to encrypt refresh_token: %w", err)
@@ -204,25 +208,25 @@ func decryptSpotifyAuth(encryptor *crypto.Encryptor, auth *ent.SpotifyAuth) erro
 		return nil
 	}
 
-	// Decrypt access_token if encrypted (backward compatibility)
-	if auth.AccessToken != "" && crypto.IsEncrypted(auth.AccessToken) {
-		decrypted, err := encryptor.Decrypt(auth.AccessToken)
+	// Governing: ADR-0006 — accept enc:v1:, legacy base64, and plaintext.
+	// Legacy values that fail to decrypt are returned as plaintext instead of
+	// erroring the whole query (will be encrypted on next update).
+	if auth.AccessToken != "" {
+		decrypted, _, err := encryptor.DecryptAny(auth.AccessToken)
 		if err != nil {
 			return fmt.Errorf("failed to decrypt access_token for user %d: %w", auth.ID, err)
 		}
 		auth.AccessToken = decrypted
 	}
 
-	// Decrypt refresh_token if encrypted (backward compatibility)
-	if auth.RefreshToken != "" && crypto.IsEncrypted(auth.RefreshToken) {
-		decrypted, err := encryptor.Decrypt(auth.RefreshToken)
+	if auth.RefreshToken != "" {
+		decrypted, _, err := encryptor.DecryptAny(auth.RefreshToken)
 		if err != nil {
 			return fmt.Errorf("failed to decrypt refresh_token for user %d: %w", auth.ID, err)
 		}
 		auth.RefreshToken = decrypted
 	}
 
-	// If not encrypted, leave as-is (will be encrypted on next update)
 	return nil
 }
 
@@ -237,8 +241,9 @@ func encryptLastFMAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 			// Encrypt session_key if being set
 			if sessionKey, exists := m.SessionKey(); exists {
 				originalSessionKey = sessionKey
-				// Check if already encrypted (for idempotency)
-				if !crypto.IsEncrypted(sessionKey) {
+				// Check if already encrypted (for idempotency).
+				// Governing: ADR-0006 — see encryptPasswordHook.
+				if !encryptor.IsCiphertext(sessionKey) {
 					encrypted, err := encryptor.Encrypt(sessionKey)
 					if err != nil {
 						return nil, fmt.Errorf("failed to encrypt session_key: %w", err)
@@ -298,15 +303,14 @@ func decryptLastFMAuth(encryptor *crypto.Encryptor, auth *ent.LastFMAuth) error 
 		return nil
 	}
 
-	// Check if session_key is encrypted (backward compatibility)
-	if crypto.IsEncrypted(auth.SessionKey) {
-		decrypted, err := encryptor.Decrypt(auth.SessionKey)
-		if err != nil {
-			return fmt.Errorf("failed to decrypt session_key for user %d: %w", auth.ID, err)
-		}
-		auth.SessionKey = decrypted
+	// Governing: ADR-0006 — accept enc:v1:, legacy base64, and plaintext.
+	// Legacy values that fail to decrypt are returned as plaintext instead of
+	// erroring the whole query (will be encrypted on next update).
+	decrypted, _, err := encryptor.DecryptAny(auth.SessionKey)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt session_key for user %d: %w", auth.ID, err)
 	}
-	// If not encrypted, leave as-is (will be encrypted on next update)
+	auth.SessionKey = decrypted
 
 	return nil
 }

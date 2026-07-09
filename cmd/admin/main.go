@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/hex"
 	"flag"
@@ -117,14 +118,8 @@ func run(oldKeyHex, newKeyHex, driver, dbDSN string) error {
 
 	if driver == driverSQLite3 {
 		// SQLite-specific: attempt to acquire an exclusive lock to check if the server is running.
-		if _, err := db.Exec("PRAGMA locking_mode=EXCLUSIVE"); err != nil {
-			return fmt.Errorf("database appears to be locked (is the server running?): %w", err)
-		}
-		if _, err := db.Exec("BEGIN EXCLUSIVE"); err != nil {
-			return fmt.Errorf("database is locked (is the server running?): %w", err)
-		}
-		if _, err := db.Exec("ROLLBACK"); err != nil {
-			return fmt.Errorf("failed to release test lock: %w", err)
+		if err := checkSQLiteLock(context.Background(), db); err != nil {
+			return err
 		}
 	} else {
 		// PostgreSQL/MySQL: verify connectivity with a ping.
@@ -170,7 +165,9 @@ func run(oldKeyHex, newKeyHex, driver, dbDSN string) error {
 	}
 
 	// --- REQ "ROT-050": Print summary ---
-	// REQ "ROT-051": NEVER log old or new key values — only print the new key in the env instruction.
+	// Governing: SPEC key-rotation REQ "ROT-051" — NEVER print or log key
+	// values. The operator supplied the new key via --new-key, so a
+	// placeholder is sufficient here.
 	fmt.Println("Key rotation complete.")
 	fmt.Printf("  NavidromeAuth: %d rows re-encrypted\n", counts["navidrome_auths"])
 	fmt.Printf("  SpotifyAuth:   %d rows re-encrypted (access_token + refresh_token)\n", counts["spotify_auths"])
@@ -179,8 +176,42 @@ func run(oldKeyHex, newKeyHex, driver, dbDSN string) error {
 	fmt.Println("  Verification:  PASSED")
 	fmt.Println()
 	fmt.Println("Update your environment variable:")
-	fmt.Printf("  SPOTTER_SECURITY_ENCRYPTION_KEY=%s\n", newKeyHex)
+	fmt.Println("  SPOTTER_SECURITY_ENCRYPTION_KEY=<the --new-key value you provided>")
 
+	return nil
+}
+
+// checkSQLiteLock probes for an exclusive lock on a SQLite database to verify
+// the server is not running. All statements are issued on a single pooled
+// connection — with db.Exec, the PRAGMA, BEGIN EXCLUSIVE, and ROLLBACK could
+// each land on different connections, making the probe meaningless.
+// Governing: SPEC key-rotation REQ "ROT-005", ADR-0023 (multi-database support)
+func checkSQLiteLock(ctx context.Context, db *sql.DB) error {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire database connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	if _, err := conn.ExecContext(ctx, "PRAGMA locking_mode=EXCLUSIVE"); err != nil {
+		return fmt.Errorf("database appears to be locked (is the server running?): %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN EXCLUSIVE"); err != nil {
+		return fmt.Errorf("database is locked (is the server running?): %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+		return fmt.Errorf("failed to release test lock: %w", err)
+	}
+
+	// In EXCLUSIVE locking mode SQLite retains the lock after ROLLBACK. Reset
+	// to NORMAL and touch the database once so the lock is actually released
+	// before this connection returns to the pool.
+	if _, err := conn.ExecContext(ctx, "PRAGMA locking_mode=NORMAL"); err != nil {
+		return fmt.Errorf("failed to reset locking mode: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, "SELECT 1"); err != nil {
+		return fmt.Errorf("failed to release test lock: %w", err)
+	}
 	return nil
 }
 
@@ -203,8 +234,9 @@ func parseHexKey(hexKey string) ([]byte, error) {
 }
 
 // verifyOldKey attempts to decrypt one encrypted field with the old key.
-// Returns (true, nil) if at least one field was found and decrypted successfully.
-// Returns (false, nil) if no encrypted fields exist at all.
+// Returns (true, nil) if at least one encrypted field was found and decrypted
+// successfully. Returns (false, nil) if no encrypted fields exist at all
+// (plaintext values are not encrypted fields and are skipped).
 // Governing: SPEC key-rotation REQ "ROT-004"
 func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (bool, error) {
 	for _, f := range allEncryptedFields {
@@ -224,11 +256,15 @@ func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (bool, error) {
 			_ = rows.Close()
 
 			if val.Valid && val.String != "" {
-				_, err := oldEnc.Decrypt(val.String)
+				// enc:v1: values MUST decrypt with the old key; legacy values
+				// that fail to decrypt are treated as plaintext and skipped.
+				_, wasEncrypted, err := oldEnc.DecryptAny(val.String)
 				if err != nil {
 					return false, fmt.Errorf("old key cannot decrypt %s.%s (row id=%d): %w", f.table, f.column, id, err)
 				}
-				return true, nil
+				if wasEncrypted {
+					return true, nil
+				}
 			}
 		} else {
 			_ = rows.Close()
@@ -287,14 +323,20 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 					continue // REQ "ROT-012": skip null/empty
 				}
 
-				// REQ "ROT-040": Decrypt with old key
-				plaintext, err := oldEnc.Decrypt(vals[i].String)
+				// REQ "ROT-040": Decrypt with old key. Accepts both enc:v1:
+				// and legacy bare-base64 ciphertexts; legacy values that fail
+				// to decrypt are treated as plaintext and left untouched
+				// (they will be encrypted by the server on next write).
+				plaintext, wasEncrypted, err := oldEnc.DecryptAny(vals[i].String)
 				if err != nil {
 					_ = rows.Close()
 					return nil, 0, fmt.Errorf("decryption failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
 				}
+				if !wasEncrypted {
+					continue // plaintext value: nothing to rotate
+				}
 
-				// REQ "ROT-041": Encrypt with new key
+				// REQ "ROT-041": Encrypt with new key (written in enc:v1: format)
 				newCipher, err := newEnc.Encrypt(plaintext)
 				if err != nil {
 					_ = rows.Close()
@@ -347,6 +389,12 @@ func verifyNewKey(db *sql.DB, newEnc *crypto.Encryptor) error {
 				return fmt.Errorf("verification scan failed for %s.%s: %w", f.table, f.column, err)
 			}
 			if !val.Valid || val.String == "" {
+				continue
+			}
+			// Rotated values always carry the enc:v1: marker; values without
+			// it were treated as plaintext, skipped during rotation, and are
+			// not expected to decrypt.
+			if !crypto.IsEncrypted(val.String) {
 				continue
 			}
 			if _, err := newEnc.Decrypt(val.String); err != nil {
