@@ -32,11 +32,14 @@ const (
 
 // Enricher implements the Spotify metadata enricher.
 type Enricher struct {
-	logger     *slog.Logger
-	config     *config.Config
-	user       *ent.User
-	auth       *ent.SpotifyAuth
-	oauth      *oauth2.Config
+	logger *slog.Logger
+	config *config.Config
+	user   *ent.User
+	auth   *ent.SpotifyAuth
+	oauth  *oauth2.Config
+	// db is used to persist refreshed tokens back to SpotifyAuth.
+	// May be nil (e.g. in tests); persistence is then skipped.
+	db         *ent.Client
 	httpClient *http.Client
 
 	// Rate limiting — Governing: ADR-0020 (error handling and resilience)
@@ -51,8 +54,10 @@ var _ enrichers.AlbumEnricher = (*Enricher)(nil)
 var _ enrichers.TrackEnricher = (*Enricher)(nil)
 var _ enrichers.IDMatcher = (*Enricher)(nil)
 
-// New creates a new Spotify enricher factory.
-func New(logger *slog.Logger, cfg *config.Config) enrichers.Factory {
+// New creates a new Spotify enricher factory. The ent client is used to
+// persist refreshed OAuth tokens (encryption is handled by the database hooks
+// registered on the client).
+func New(logger *slog.Logger, cfg *config.Config, db *ent.Client) enrichers.Factory {
 	return func(ctx context.Context, user *ent.User) (enrichers.Enricher, error) {
 		// Check if Spotify is configured
 		if cfg.Spotify.ClientID == "" || cfg.Spotify.ClientSecret == "" {
@@ -69,6 +74,7 @@ func New(logger *slog.Logger, cfg *config.Config) enrichers.Factory {
 			config: cfg,
 			user:   user,
 			auth:   user.Edges.SpotifyAuth,
+			db:     db,
 			oauth: &oauth2.Config{
 				ClientID:     cfg.Spotify.ClientID,
 				ClientSecret: cfg.Spotify.ClientSecret,
@@ -109,9 +115,23 @@ func (e *Enricher) getValidToken(ctx context.Context) (string, error) {
 
 	// Token expired, refresh it
 	e.logger.Debug("refreshing expired Spotify token")
+	return e.refreshAndPersist(ctx)
+}
 
+// Governing: SPEC music-provider-integration REQ-PROV-013 (refreshed tokens persisted to SpotifyAuth)
+// refreshAndPersist refreshes the access token, updates the in-memory auth
+// record, and persists the new token (and any rotated refresh token) to the
+// database. This mirrors internal/providers/spotify; the two packages keep
+// separate OAuth clients, so the small amount of duplication is deliberate.
+func (e *Enricher) refreshAndPersist(ctx context.Context) (string, error) {
 	token := &oauth2.Token{
 		RefreshToken: e.auth.RefreshToken,
+	}
+
+	// Route the refresh request through our HTTP client (timeouts in
+	// production, URL rewriting in tests).
+	if e.httpClient != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, e.httpClient)
 	}
 
 	tokenSource := e.oauth.TokenSource(ctx, token)
@@ -120,14 +140,36 @@ func (e *Enricher) getValidToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to refresh token: %w", err)
 	}
 
-	// Update the auth struct (caller should persist)
 	e.auth.AccessToken = newToken.AccessToken
 	e.auth.Expiry = newToken.Expiry
 	if newToken.RefreshToken != "" {
 		e.auth.RefreshToken = newToken.RefreshToken
 	}
 
+	e.persistAuth(ctx)
+
 	return newToken.AccessToken, nil
+}
+
+// persistAuth writes the current in-memory tokens back to the SpotifyAuth row.
+// Encryption is applied by the hooks registered on the ent client. Persistence
+// failures are logged but not fatal: the in-memory token remains valid for the
+// rest of this run.
+func (e *Enricher) persistAuth(ctx context.Context) {
+	if e.db == nil || e.auth == nil || e.auth.ID == 0 {
+		return
+	}
+
+	err := e.db.SpotifyAuth.UpdateOneID(e.auth.ID).
+		SetAccessToken(e.auth.AccessToken).
+		SetRefreshToken(e.auth.RefreshToken).
+		SetExpiry(e.auth.Expiry).
+		Exec(ctx)
+	if err != nil {
+		e.logger.Warn("failed to persist refreshed Spotify token", "error", err)
+		return
+	}
+	e.logger.Debug("persisted refreshed Spotify token", "auth_id", e.auth.ID)
 }
 
 // rateLimit ensures we don't exceed Spotify API rate limits.
@@ -147,6 +189,9 @@ func (e *Enricher) rateLimit() {
 // Governing: ADR-0020 (error handling and resilience)
 func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, error) {
 	reqURL := fmt.Sprintf("https://api.spotify.com/v1/%s", endpoint)
+
+	// Governing: SPEC error-handling REQ-ERR-002 Scenario 4 (single refresh+retry on mid-operation 401)
+	refreshedAfter401 := false
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		// Fetch token inside the loop so it's refreshed on each retry attempt
@@ -212,6 +257,16 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 		}
 
 		if resp.StatusCode == http.StatusUnauthorized {
+			// Attempt exactly one token refresh + retry before giving up
+			// (the token may have been revoked or expired server-side).
+			if !refreshedAfter401 && attempt < maxRetries {
+				refreshedAfter401 = true
+				e.logger.Debug("Spotify API returned 401, refreshing token and retrying once", "endpoint", endpoint)
+				if _, err := e.refreshAndPersist(ctx); err != nil {
+					return nil, fmt.Errorf("failed to refresh token after 401: %w", err)
+				}
+				continue
+			}
 			return nil, fmt.Errorf("Spotify API unauthorized - token may be invalid")
 		}
 

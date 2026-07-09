@@ -16,6 +16,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
+	spotifyOAuth "golang.org/x/oauth2/spotify"
 )
 
 func TestNew_NoCredentials(t *testing.T) {
@@ -23,7 +25,7 @@ func TestNew_NoCredentials(t *testing.T) {
 	// No Spotify credentials configured
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
+	factory := New(logger, cfg, nil)
 	enricher, err := factory(context.Background(), &ent.User{})
 
 	assert.NoError(t, err)
@@ -36,7 +38,7 @@ func TestNew_NoUserAuth(t *testing.T) {
 	cfg.Spotify.ClientSecret = "test-client-secret"
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
+	factory := New(logger, cfg, nil)
 
 	// User has no SpotifyAuth edge
 	user := &ent.User{
@@ -57,7 +59,7 @@ func TestNew_WithAuth(t *testing.T) {
 	cfg.Spotify.ClientSecret = "test-client-secret"
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
+	factory := New(logger, cfg, nil)
 
 	user := &ent.User{
 		ID: 1,
@@ -86,7 +88,7 @@ func TestGetValidToken_NotExpired(t *testing.T) {
 	cfg.Spotify.ClientSecret = "test-client-secret"
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
+	factory := New(logger, cfg, nil)
 
 	futureExpiry := time.Now().Add(1 * time.Hour)
 	user := &ent.User{
@@ -117,7 +119,7 @@ func TestGetValidToken_Expired(t *testing.T) {
 	cfg.Spotify.ClientSecret = "test-client-secret"
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
+	factory := New(logger, cfg, nil)
 
 	// Token expires in 3 minutes (within 5min buffer)
 	almostExpired := time.Now().Add(3 * time.Minute)
@@ -796,7 +798,7 @@ func TestGetArtistImages_NullSpotifyID(t *testing.T) {
 	cfg.Spotify.ClientSecret = "test-client-secret"
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	factory := New(logger, cfg)
+	factory := New(logger, cfg, nil)
 
 	user := &ent.User{
 		Edges: ent.UserEdges{
@@ -856,7 +858,16 @@ func TestGetAlbumImages_Success(t *testing.T) {
 }
 
 func TestDoRequest_401Unauthorized(t *testing.T) {
+	// Governing: SPEC error-handling REQ-ERR-002 Scenario 4
+	// A 401 now triggers exactly one token refresh + retry before failing.
+	tokenCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/token" {
+			tokenCalls++
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"access_token": "fresh-token", "expires_in": 3600, "token_type": "Bearer"}`))
+			return
+		}
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error": {"status": 401, "message": "The access token expired"}}`))
 	}))
@@ -868,6 +879,7 @@ func TestDoRequest_401Unauthorized(t *testing.T) {
 	_, err := e.doRequest(context.Background(), "artists/test")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unauthorized")
+	assert.Equal(t, 1, tokenCalls, "401 should trigger exactly one refresh attempt")
 }
 
 func TestDoRequest_404NotFound(t *testing.T) {
@@ -1019,6 +1031,11 @@ func createTestEnricher(t *testing.T, apiURL string) enrichers.Enricher {
 		config: cfg,
 		user:   user,
 		auth:   user.Edges.SpotifyAuth,
+		oauth: &oauth2.Config{
+			ClientID:     cfg.Spotify.ClientID,
+			ClientSecret: cfg.Spotify.ClientSecret,
+			Endpoint:     spotifyOAuth.Endpoint,
+		},
 		httpClient: &http.Client{
 			Transport: &testTransport{baseURL: apiURL},
 		},

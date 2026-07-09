@@ -152,7 +152,7 @@ func main() {
 	// Initialize Sync Service (for playlists and listens)
 	syncer := services.NewSyncer(client, cfg, logger, bus, notifier)
 	syncer.Register(navidrome.New(logger, cfg))
-	syncer.Register(spotify.New(logger, cfg))
+	syncer.Register(spotify.New(logger, cfg, client))
 	syncer.Register(lastfm.New(logger, cfg))
 
 	// Initialize Playlist Sync Service (for syncing playlists to Navidrome)
@@ -171,7 +171,7 @@ func main() {
 	registerEnricher(enrichers.TypeLidarr, enricherLidarr.New(logger, cfg, client))
 	registerEnricher(enrichers.TypeMusicBrainz, enricherMusicbrainz.New(logger, cfg))
 	registerEnricher(enrichers.TypeNavidrome, enricherNavidrome.New(logger, cfg))
-	registerEnricher(enrichers.TypeSpotify, enricherSpotify.New(logger, cfg))
+	registerEnricher(enrichers.TypeSpotify, enricherSpotify.New(logger, cfg, client))
 	registerEnricher(enrichers.TypeLastFM, enricherLastfm.New(logger, cfg))
 	registerEnricher(enrichers.TypeFanart, enricherFanart.New(logger, cfg))
 	registerEnricher(enrichers.TypeOpenAI, enricherOpenai.New(logger, cfg))
