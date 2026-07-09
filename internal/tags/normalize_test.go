@@ -1,6 +1,9 @@
 package tags
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalize(t *testing.T) {
 	tests := []struct {
@@ -26,6 +29,34 @@ func TestNormalize(t *testing.T) {
 			got := Normalize(tt.input)
 			if got != tt.want {
 				t.Errorf("Normalize(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// Governing: SPEC-0014 REQ "Tag Normalization"
+func TestDisplayName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "trims whitespace, preserves casing", input: "  Shoegaze  ", want: "Shoegaze"},
+		{name: "collapses internal whitespace", input: "Post   Punk  Revival", want: "Post Punk Revival"},
+		{name: "tabs and newlines", input: "\tDream\n Pop\t", want: "Dream Pop"},
+		{name: "already clean", input: "Folk", want: "Folk"},
+		{name: "empty string", input: "", want: ""},
+		{name: "only whitespace", input: "   ", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DisplayName(tt.input)
+			if got != tt.want {
+				t.Errorf("DisplayName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+			// The normalized key must always be the lowercase of the display name.
+			if norm := Normalize(tt.input); norm != strings.ToLower(got) {
+				t.Errorf("Normalize(%q) = %q, want lowercase of DisplayName %q", tt.input, norm, got)
 			}
 		})
 	}

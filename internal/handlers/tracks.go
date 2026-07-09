@@ -46,6 +46,8 @@ func (h *Handler) TrackShow(w http.ResponseWriter, r *http.Request) {
 		WithAlbum(func(q *ent.AlbumQuery) {
 			q.WithImages()
 		}).
+		// Governing: SPEC-0014 REQ "UI Tag Visual Differentiation"
+		WithTagEntities().
 		Only(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to get track", "error", err, "id", trackID)

@@ -258,9 +258,15 @@ templ Show(artist *ent.Artist, albums []*ent.Album, playlists []PlaylistWithArti
 						<!-- Artist Details -->
 						<div class="flex-1 min-w-0">
 							<h1 class="text-4xl md:text-5xl font-bold mb-2 text-base-content">{ artist.Name }</h1>
-							// TODO(SPEC-0014): Replace with TypedTagBadge after Tag schema PR #255 merges
-							<!-- Genres and AI Tags -->
-							if len(artist.Genres) > 0 || len(artist.AiTags) > 0 {
+							// Governing: SPEC-0014 REQ "UI Tag Visual Differentiation"
+							<!-- Typed tags (Tag entities); legacy JSON fields as fallback during migration -->
+							if len(artist.Edges.TagEntities) > 0 {
+								<div class="flex flex-wrap gap-2 mb-6">
+									for _, tv := range components.TagViewsFromEnt(artist.Edges.TagEntities) {
+										@components.TypedTagBadge(tv)
+									}
+								</div>
+							} else if len(artist.Genres) > 0 || len(artist.AiTags) > 0 {
 								<div class="flex flex-wrap gap-2 mb-6">
 									for i, genre := range artist.Genres {
 										if i < 6 {

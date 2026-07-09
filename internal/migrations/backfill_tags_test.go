@@ -323,3 +323,52 @@ func TestBackfillTags_AllFieldMappings(t *testing.T) {
 		t.Errorf("Errors = %d, want 0", result.Errors)
 	}
 }
+
+// TestBackfillTagsIfNeeded_SkipsUsersWithTags verifies the startup guard:
+// the first run backfills a user with only legacy fields, and subsequent runs
+// skip that user (cheap no-op) because Tag rows now exist.
+// Governing: SPEC-0014 REQ "Data Migration"
+func TestBackfillTagsIfNeeded_SkipsUsersWithTags(t *testing.T) {
+	client, db := setupTestDB(t)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	u := client.User.Create().SetUsername("guarduser").SetTheme("dark").SaveX(ctx)
+	client.Artist.Create().
+		SetName("Slowdive").
+		SetUser(u).
+		SetGenres([]string{"shoegaze"}).
+		SaveX(ctx)
+
+	// First run: user has no Tag rows, so the backfill executes.
+	result, err := BackfillTagsIfNeeded(ctx, client, db, logger)
+	if err != nil {
+		t.Fatalf("BackfillTagsIfNeeded failed: %v", err)
+	}
+	if result.ArtistsProcessed != 1 {
+		t.Errorf("first run ArtistsProcessed = %d, want 1", result.ArtistsProcessed)
+	}
+	tagCount, err := client.Tag.Query().Count(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tagCount != 1 {
+		t.Errorf("tags after first run = %d, want 1", tagCount)
+	}
+
+	// Add another legacy-only artist; the guard must now skip the user
+	// because Tag rows already exist.
+	client.Artist.Create().
+		SetName("Ride").
+		SetUser(u).
+		SetGenres([]string{"britpop"}).
+		SaveX(ctx)
+
+	result, err = BackfillTagsIfNeeded(ctx, client, db, logger)
+	if err != nil {
+		t.Fatalf("BackfillTagsIfNeeded (second run) failed: %v", err)
+	}
+	if result.ArtistsProcessed != 0 {
+		t.Errorf("second run ArtistsProcessed = %d, want 0 (user skipped)", result.ArtistsProcessed)
+	}
+}

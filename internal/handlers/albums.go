@@ -47,6 +47,8 @@ func (h *Handler) AlbumShow(w http.ResponseWriter, r *http.Request) {
 		}).
 		WithImages().
 		WithTracks().
+		// Governing: SPEC-0014 REQ "UI Tag Visual Differentiation"
+		WithTagEntities().
 		Only(r.Context())
 	if err != nil {
 		h.Logger.Error("failed to get album", "error", err, "id", albumID)

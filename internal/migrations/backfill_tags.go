@@ -8,6 +8,7 @@ import (
 
 	"spotter/ent"
 	entartist "spotter/ent/artist"
+	enttag "spotter/ent/tag"
 	"spotter/ent/track"
 	"spotter/ent/user"
 	"spotter/internal/tags"
@@ -19,6 +20,42 @@ type BackfillTagsResult struct {
 	AlbumsProcessed  int
 	TracksProcessed  int
 	Errors           int
+}
+
+// BackfillTagsIfNeeded runs the legacy-field tag backfill only for users that
+// have no Tag rows yet. The full backfill walks every artist, album, and track
+// per user, which is too expensive to repeat on every boot; a per-user
+// "any tags exist" check is a single cheap indexed query and is a reliable
+// completion marker because both the backfill and the enrichment pipeline
+// create Tag rows. Failure mode: a user whose tags were created only by
+// post-deploy enrichment (never backfilled) is skipped — their remaining
+// legacy-only fields still render via the UI fallback path.
+// Governing: SPEC-0014 REQ "Data Migration"
+func BackfillTagsIfNeeded(ctx context.Context, client *ent.Client, db *sql.DB, logger *slog.Logger) (*BackfillTagsResult, error) {
+	users, err := client.User.Query().All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &BackfillTagsResult{}
+	for _, u := range users {
+		hasTags, err := client.Tag.Query().
+			Where(enttag.HasUserWith(user.IDEQ(u.ID))).
+			Exist(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if hasTags {
+			logger.Debug("skipping tag backfill, user already has tags", "user_id", u.ID)
+			continue
+		}
+		backfillUserTags(ctx, client, db, u, logger, result)
+	}
+
+	if result.ArtistsProcessed > 0 || result.AlbumsProcessed > 0 || result.TracksProcessed > 0 {
+		logResult(logger, result)
+	}
+	return result, nil
 }
 
 // BackfillTags reads all legacy JSON tag fields (tags, genres, ai_tags, genre, label)
@@ -34,32 +71,42 @@ func BackfillTags(ctx context.Context, client *ent.Client, db *sql.DB, logger *s
 	}
 
 	for _, u := range users {
-		logger.Info("backfilling tags for user", "user_id", u.ID, "username", u.Username)
-
-		if err := backfillArtistTags(ctx, client, db, u.ID, logger, result); err != nil {
-			logger.Error("error backfilling artist tags", "user_id", u.ID, "error", err)
-			result.Errors++
-		}
-
-		if err := backfillAlbumTags(ctx, client, db, u.ID, logger, result); err != nil {
-			logger.Error("error backfilling album tags", "user_id", u.ID, "error", err)
-			result.Errors++
-		}
-
-		if err := backfillTrackTags(ctx, client, db, u.ID, logger, result); err != nil {
-			logger.Error("error backfilling track tags", "user_id", u.ID, "error", err)
-			result.Errors++
-		}
+		backfillUserTags(ctx, client, db, u, logger, result)
 	}
 
+	logResult(logger, result)
+
+	return result, nil
+}
+
+// backfillUserTags migrates all legacy tag fields for a single user.
+func backfillUserTags(ctx context.Context, client *ent.Client, db *sql.DB, u *ent.User, logger *slog.Logger, result *BackfillTagsResult) {
+	logger.Info("backfilling tags for user", "user_id", u.ID, "username", u.Username)
+
+	if err := backfillArtistTags(ctx, client, db, u.ID, logger, result); err != nil {
+		logger.Error("error backfilling artist tags", "user_id", u.ID, "error", err)
+		result.Errors++
+	}
+
+	if err := backfillAlbumTags(ctx, client, db, u.ID, logger, result); err != nil {
+		logger.Error("error backfilling album tags", "user_id", u.ID, "error", err)
+		result.Errors++
+	}
+
+	if err := backfillTrackTags(ctx, client, db, u.ID, logger, result); err != nil {
+		logger.Error("error backfilling track tags", "user_id", u.ID, "error", err)
+		result.Errors++
+	}
+}
+
+// logResult emits the summary line for a backfill run.
+func logResult(logger *slog.Logger, result *BackfillTagsResult) {
 	logger.Info("tag backfill complete",
 		"artists", result.ArtistsProcessed,
 		"albums", result.AlbumsProcessed,
 		"tracks", result.TracksProcessed,
 		"errors", result.Errors,
 	)
-
-	return result, nil
 }
 
 // backfillArtistTags migrates legacy artist fields: genres -> genre, tags -> id3, ai_tags -> ai
