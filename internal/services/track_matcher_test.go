@@ -515,3 +515,74 @@ func TestTrackMatcher_SourceTrackDataPreserved(t *testing.T) {
 	assert.Equal(t, 180000, results[0].SourceTrack.DurationMs)
 	assert.Equal(t, "https://spotify.com/track/123", results[0].SourceTrack.URL)
 }
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-005 (regex-based noise-suffix stripping)
+func TestTrackMatcher_FeatSuffix(t *testing.T) {
+	client, matcher, user := setupTestTrackMatcher(t, 0.8)
+	ctx := context.Background()
+
+	// Library track has no featured-artist credit
+	createTestTrackWithNavidromeID(t, client, user, "Empire State", "Alicia Keys", "nav-feat-1")
+
+	sourceTracks := []providers.Track{
+		{
+			ID:     "spotify-feat-1",
+			Name:   "Empire State (feat. Jay-Z)",
+			Artist: "Alicia Keys",
+		},
+	}
+
+	results, err := matcher.MatchTracks(ctx, user.ID, sourceTracks)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	assert.Equal(t, "nav-feat-1", results[0].NavidromeTrackID)
+	assert.Equal(t, services.MatchMethodExact, results[0].MatchMethod)
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-005 (regex-based noise-suffix stripping)
+func TestTrackMatcher_FeatSuffix_Variants(t *testing.T) {
+	client, matcher, user := setupTestTrackMatcher(t, 0.8)
+	ctx := context.Background()
+
+	createTestTrackWithNavidromeID(t, client, user, "Song Title", "Main Artist", "nav-feat-2")
+
+	sourceTracks := []providers.Track{
+		{ID: "s1", Name: "Song Title (ft. Someone)", Artist: "Main Artist"},
+		{ID: "s2", Name: "Song Title feat. Someone Else", Artist: "Main Artist"},
+		{ID: "s3", Name: "Song Title [feat. A Third Person]", Artist: "Main Artist"},
+	}
+
+	results, err := matcher.MatchTracks(ctx, user.ID, sourceTracks)
+	require.NoError(t, err)
+	require.Len(t, results, 3)
+
+	for i, r := range results {
+		assert.Equal(t, "nav-feat-2", r.NavidromeTrackID, "source track %d should match", i)
+		assert.Equal(t, services.MatchMethodExact, r.MatchMethod, "source track %d should be an exact match", i)
+	}
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-005 (year-qualified remaster stripping)
+func TestTrackMatcher_YearRemaster(t *testing.T) {
+	client, matcher, user := setupTestTrackMatcher(t, 0.8)
+	ctx := context.Background()
+
+	createTestTrackWithNavidromeID(t, client, user, "Classic Song", "Legacy Artist", "nav-remaster-1")
+
+	sourceTracks := []providers.Track{
+		{ID: "s1", Name: "Classic Song (2011 Remaster)", Artist: "Legacy Artist"},
+		{ID: "s2", Name: "Classic Song (2011 Remastered)", Artist: "Legacy Artist"},
+		{ID: "s3", Name: "Classic Song (Remastered 2011)", Artist: "Legacy Artist"},
+		{ID: "s4", Name: "Classic Song - 2011 Remaster", Artist: "Legacy Artist"},
+	}
+
+	results, err := matcher.MatchTracks(ctx, user.ID, sourceTracks)
+	require.NoError(t, err)
+	require.Len(t, results, 4)
+
+	for i, r := range results {
+		assert.Equal(t, "nav-remaster-1", r.NavidromeTrackID, "source track %d should match", i)
+		assert.Equal(t, services.MatchMethodExact, r.MatchMethod, "source track %d should be an exact match", i)
+	}
+}
