@@ -10,16 +10,19 @@ type ChartDataPoint struct {
 
 // StackedChartData is for creating stacked bar charts.
 type StackedChartData struct {
-	Labels   []string
-	Datasets []ChartDataset
+	// json tags match the camelCase reads in the show.templ inline Chart.js
+	// scripts (chartData.labels, ds.label, ...); without them the payload
+	// shipped PascalCase and the charts never constructed in the browser.
+	Labels   []string       `json:"labels"`
+	Datasets []ChartDataset `json:"datasets"`
 }
 
 // ChartDataset is a single dataset within a chart.
 type ChartDataset struct {
-	Label           string
-	Data            []float64
-	BackgroundColor string
-	BorderColor     string
+	Label           string    `json:"label"`
+	Data            []float64 `json:"data"`
+	BackgroundColor string    `json:"backgroundColor"`
+	BorderColor     string    `json:"borderColor"`
 }
 
 func (d StackedChartData) ToJSON() (string, error) {
