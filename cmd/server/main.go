@@ -148,14 +148,21 @@ func main() {
 	playlistSyncSvc.Register(navidrome.New(logger, cfg))
 
 	// Initialize Metadata Service (for catalog enrichment)
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050 (duplicate registration fails at startup)
 	metadataSvc := services.NewMetadataService(client, rawDB, cfg, logger, bus)
-	metadataSvc.Register(enrichers.TypeLidarr, enricherLidarr.New(logger, cfg, client))
-	metadataSvc.Register(enrichers.TypeMusicBrainz, enricherMusicbrainz.New(logger, cfg))
-	metadataSvc.Register(enrichers.TypeNavidrome, enricherNavidrome.New(logger, cfg))
-	metadataSvc.Register(enrichers.TypeSpotify, enricherSpotify.New(logger, cfg))
-	metadataSvc.Register(enrichers.TypeLastFM, enricherLastfm.New(logger, cfg))
-	metadataSvc.Register(enrichers.TypeFanart, enricherFanart.New(logger, cfg))
-	metadataSvc.Register(enrichers.TypeOpenAI, enricherOpenai.New(logger, cfg))
+	registerEnricher := func(t enrichers.Type, factory enrichers.Factory) {
+		if err := metadataSvc.Register(t, factory); err != nil {
+			logger.Error("failed to register enricher", "type", t, "error", err)
+			os.Exit(1)
+		}
+	}
+	registerEnricher(enrichers.TypeLidarr, enricherLidarr.New(logger, cfg, client))
+	registerEnricher(enrichers.TypeMusicBrainz, enricherMusicbrainz.New(logger, cfg))
+	registerEnricher(enrichers.TypeNavidrome, enricherNavidrome.New(logger, cfg))
+	registerEnricher(enrichers.TypeSpotify, enricherSpotify.New(logger, cfg))
+	registerEnricher(enrichers.TypeLastFM, enricherLastfm.New(logger, cfg))
+	registerEnricher(enrichers.TypeFanart, enricherFanart.New(logger, cfg))
+	registerEnricher(enrichers.TypeOpenAI, enricherOpenai.New(logger, cfg))
 
 	// Initialize Mixtape Generator Service (for AI-powered mixtape generation)
 	mixtapeGenerator := vibes.NewMixtapeGenerator(client, cfg, logger, bus)

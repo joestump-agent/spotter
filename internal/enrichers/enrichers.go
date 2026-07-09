@@ -6,6 +6,7 @@ package enrichers
 
 import (
 	"context"
+	"fmt"
 
 	"spotter/ent"
 	"spotter/internal/tags"
@@ -23,9 +24,6 @@ const (
 	TypeOpenAI      Type = "openai"
 	TypeLidarr      Type = "lidarr"
 )
-
-// Priority defines the order in which enrichers run (lower = earlier).
-type Priority int
 
 // ArtistData contains enrichment data for an artist.
 // Governing: SPEC-0014 REQ "Enricher Integration"
@@ -217,8 +215,16 @@ func NewRegistry() *Registry {
 }
 
 // Register adds a factory for the given enricher type.
-func (r *Registry) Register(t Type, factory Factory) {
+// It returns an error if a factory is already registered for the type,
+// so misconfigured duplicate registrations fail loudly at startup.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050 (dynamic registration via Register),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-051 (registry integrity)
+func (r *Registry) Register(t Type, factory Factory) error {
+	if _, exists := r.factories[t]; exists {
+		return fmt.Errorf("enricher type %q is already registered", t)
+	}
 	r.factories[t] = factory
+	return nil
 }
 
 // Get returns the factory for the given enricher type.
@@ -234,6 +240,57 @@ func (r *Registry) Types() []Type {
 		types = append(types, t)
 	}
 	return types
+}
+
+// List is an ordered collection of instantiated enrichers (config order).
+// Its capability accessors filter the list by specialized interface while
+// preserving order, replacing ad-hoc type assertions at call sites.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050/051 (registry lists enrichers by capability),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-010 (deterministic config-order execution)
+type List []Enricher
+
+// ArtistEnrichers returns the enrichers that implement ArtistEnricher, in config order.
+func (l List) ArtistEnrichers() []ArtistEnricher {
+	var out []ArtistEnricher
+	for _, e := range l {
+		if ae, ok := e.(ArtistEnricher); ok {
+			out = append(out, ae)
+		}
+	}
+	return out
+}
+
+// AlbumEnrichers returns the enrichers that implement AlbumEnricher, in config order.
+func (l List) AlbumEnrichers() []AlbumEnricher {
+	var out []AlbumEnricher
+	for _, e := range l {
+		if ae, ok := e.(AlbumEnricher); ok {
+			out = append(out, ae)
+		}
+	}
+	return out
+}
+
+// TrackEnrichers returns the enrichers that implement TrackEnricher, in config order.
+func (l List) TrackEnrichers() []TrackEnricher {
+	var out []TrackEnricher
+	for _, e := range l {
+		if te, ok := e.(TrackEnricher); ok {
+			out = append(out, te)
+		}
+	}
+	return out
+}
+
+// IDMatchers returns the enrichers that implement IDMatcher, in config order.
+func (l List) IDMatchers() []IDMatcher {
+	var out []IDMatcher
+	for _, e := range l {
+		if m, ok := e.(IDMatcher); ok {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // ParseType converts a string to an enricher Type.

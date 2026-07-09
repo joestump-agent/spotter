@@ -7,9 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,17 +35,21 @@ import (
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-043 (MetadataService coordinates all enrichers for a user),
 // ADR-0015 (type-keyed enricher registry with factory pattern)
 type MetadataService struct {
-	client     *ent.Client
-	db         *sql.DB
-	config     *config.Config
-	logger     *slog.Logger
-	bus        *events.Bus
-	registry   *enrichers.Registry
-	httpClient *http.Client
+	client   *ent.Client
+	db       *sql.DB
+	config   *config.Config
+	logger   *slog.Logger
+	bus      *events.Bus
+	registry *enrichers.Registry
 }
 
 // NewMetadataService creates a new metadata service.
 func NewMetadataService(client *ent.Client, db *sql.DB, cfg *config.Config, logger *slog.Logger, bus *events.Bus) *MetadataService {
+	// Wire the configured max image dimension into the shared image pipeline.
+	// Falls back to the enrichers package default (1024) when unset.
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-031, ADR-0027
+	enrichers.SetMaxImageSize(cfg.Metadata.Images.MaxWidth)
+
 	return &MetadataService{
 		client:   client,
 		db:       db,
@@ -55,15 +57,14 @@ func NewMetadataService(client *ent.Client, db *sql.DB, cfg *config.Config, logg
 		logger:   logger,
 		bus:      bus,
 		registry: enrichers.NewRegistry(),
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
 	}
 }
 
-// Register adds a new enricher factory to the service.
-func (s *MetadataService) Register(t enrichers.Type, factory enrichers.Factory) {
-	s.registry.Register(t, factory)
+// Register adds a new enricher factory to the service. It returns an error
+// if an enricher of the same type is already registered.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050 (dynamic registration)
+func (s *MetadataService) Register(t enrichers.Type, factory enrichers.Factory) error {
+	return s.registry.Register(t, factory)
 }
 
 // GetEnricherFactory returns the factory for the given enricher type, if registered.
@@ -505,9 +506,9 @@ func (s *MetadataService) getOrCreateTrack(ctx context.Context, art *ent.Artist,
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-010 (deterministic ascending priority order),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-011 (MusicBrainz runs first via DefaultOrder/config),
 // ADR-0015 (factory instantiation per-user, nil return = enricher skipped)
-func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) ([]enrichers.Enricher, error) {
+func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) (enrichers.List, error) {
 	order := s.config.MetadataEnricherOrder()
-	var active []enrichers.Enricher
+	var active enrichers.List
 
 	for _, name := range order {
 		t, ok := enrichers.ParseType(name)
@@ -632,25 +633,30 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
-func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *ent.Artist, enricherList []enrichers.Enricher) error {
+func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *ent.Artist, enricherList enrichers.List) error {
 	s.logger.Debug("enriching artist", "name", art.Name)
 
 	update := s.client.Artist.UpdateOne(art)
+	// cur is a working copy tracking both the entity's stored values and the
+	// values already claimed by earlier enrichers in this pass, so later
+	// enrichers cannot overwrite what an earlier one set (first in config
+	// order wins).
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-020
+	cur := *art
+	// externalIDsSet tracks whether any external-ID setter was applied so a
+	// unique-constraint failure can be retried without them.
+	externalIDsSet := false
 	var allTags []string
 	var allGenres []string
 	var allTypedTags []tags.TypedTag
 	enrichersUsed := []string{}
 
-	for _, e := range enricherList {
-		artistEnricher, ok := e.(enrichers.ArtistEnricher)
-		if !ok {
-			continue
-		}
-
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050/051 (capability accessors replace ad-hoc type assertions)
+	for _, artistEnricher := range enricherList.ArtistEnrichers() {
 		data, err := artistEnricher.EnrichArtist(ctx, art)
 		if err != nil {
 			s.logger.Warn("enricher failed for artist",
-				"enricher", e.Name(),
+				"enricher", artistEnricher.Name(),
 				"artist", art.Name,
 				"error", err)
 			continue
@@ -659,39 +665,50 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 			continue
 		}
 
-		enrichersUsed = append(enrichersUsed, e.Name())
+		enrichersUsed = append(enrichersUsed, artistEnricher.Name())
 
 		// Apply enrichment data (Artist has string fields, not *string)
-		if data.MusicBrainzID != "" && art.MusicbrainzID == "" {
+		if data.MusicBrainzID != "" && cur.MusicbrainzID == "" {
 			update = update.SetMusicbrainzID(data.MusicBrainzID)
+			cur.MusicbrainzID = data.MusicBrainzID
+			externalIDsSet = true
 		}
-		if data.SpotifyID != "" && art.SpotifyID == "" {
+		if data.SpotifyID != "" && cur.SpotifyID == "" {
 			update = update.SetSpotifyID(data.SpotifyID)
+			cur.SpotifyID = data.SpotifyID
+			externalIDsSet = true
 		}
-		if data.NavidromeID != "" && art.NavidromeID == "" {
+		if data.NavidromeID != "" && cur.NavidromeID == "" {
 			update = update.SetNavidromeID(data.NavidromeID)
+			cur.NavidromeID = data.NavidromeID
 		}
-		if data.LidarrID != "" && art.LidarrID == "" {
+		if data.LidarrID != "" && cur.LidarrID == "" {
 			update = update.SetLidarrID(data.LidarrID)
+			cur.LidarrID = data.LidarrID
 		}
 		// Governing: SPEC-0017 REQ "Queue Entity Schema", ADR-0029
 		if data.LidarrStatus != "" {
 			update = update.SetLidarrStatus(data.LidarrStatus)
 		}
-		if data.LastFMURL != "" && art.LastfmURL == "" {
+		if data.LastFMURL != "" && cur.LastfmURL == "" {
 			update = update.SetLastfmURL(data.LastFMURL)
+			cur.LastfmURL = data.LastFMURL
 		}
-		if data.SortName != "" && art.SortName == "" {
+		if data.SortName != "" && cur.SortName == "" {
 			update = update.SetSortName(data.SortName)
+			cur.SortName = data.SortName
 		}
-		if data.Bio != "" && art.Bio == "" {
+		if data.Bio != "" && cur.Bio == "" {
 			update = update.SetBio(data.Bio)
+			cur.Bio = data.Bio
 		}
-		if data.Popularity != nil && art.Popularity == nil {
+		if data.Popularity != nil && cur.Popularity == nil {
 			update = update.SetPopularity(*data.Popularity)
+			cur.Popularity = data.Popularity
 		}
-		if data.FollowerCount != nil && art.FollowerCount == nil {
+		if data.FollowerCount != nil && cur.FollowerCount == nil {
 			update = update.SetFollowerCount(*data.FollowerCount)
+			cur.FollowerCount = data.FollowerCount
 		}
 
 		// Merge tags and genres
@@ -718,7 +735,7 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 		images, err := artistEnricher.GetArtistImages(ctx, art)
 		if err != nil {
 			s.logger.Warn("failed to get artist images",
-				"enricher", e.Name(),
+				"enricher", artistEnricher.Name(),
 				"artist", art.Name,
 				"error", err)
 		} else {
@@ -740,6 +757,19 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 	update = update.SetLastEnrichedAt(time.Now())
 
 	_, err := update.Save(ctx)
+	if err != nil && ent.IsConstraintError(err) && externalIDsSet {
+		// A unique-constraint failure on external IDs (per-user unique
+		// musicbrainz_id/spotify_id) must not discard the whole update,
+		// including SetLastEnrichedAt. Drop the external-ID setters and
+		// retry the rest of the update.
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results preserved)
+		s.logger.Warn("external ID conflicts with another artist, retrying update without external IDs",
+			"artist", art.Name, "error", err)
+		mutation := update.Mutation()
+		mutation.ResetMusicbrainzID()
+		mutation.ResetSpotifyID()
+		_, err = update.Save(ctx)
+	}
 	if err != nil {
 		return err
 	}
@@ -937,16 +967,12 @@ func (s *MetadataService) SyncAllArtistImages(ctx context.Context, u *ent.User) 
 	syncedCount := 0
 	for _, art := range artists {
 		imagesFound := false
-		for _, e := range enricherList {
-			artistEnricher, ok := e.(enrichers.ArtistEnricher)
-			if !ok {
-				continue
-			}
-
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050/051 (capability accessors replace ad-hoc type assertions)
+		for _, artistEnricher := range enricherList.ArtistEnrichers() {
 			images, err := artistEnricher.GetArtistImages(ctx, art)
 			if err != nil {
 				s.logger.Warn("failed to get artist images",
-					"enricher", e.Name(),
+					"enricher", artistEnricher.Name(),
 					"artist", art.Name,
 					"error", err)
 				continue
@@ -996,16 +1022,12 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 	syncedCount := 0
 	for _, alb := range albums {
 		imagesFound := false
-		for _, e := range enricherList {
-			albumEnricher, ok := e.(enrichers.AlbumEnricher)
-			if !ok {
-				continue
-			}
-
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050/051 (capability accessors replace ad-hoc type assertions)
+		for _, albumEnricher := range enricherList.AlbumEnrichers() {
 			images, err := albumEnricher.GetAlbumImages(ctx, alb)
 			if err != nil {
 				s.logger.Warn("failed to get album images",
-					"enricher", e.Name(),
+					"enricher", albumEnricher.Name(),
 					"album", alb.Name,
 					"error", err)
 				continue
@@ -1034,24 +1056,25 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
-func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent.Album, enricherList []enrichers.Enricher) error {
+func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent.Album, enricherList enrichers.List) error {
 	s.logger.Debug("enriching album", "name", alb.Name)
 
 	update := s.client.Album.UpdateOne(alb)
+	// cur is a working copy tracking both the entity's stored values and the
+	// values already claimed by earlier enrichers in this pass (first in
+	// config order wins).
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-020
+	cur := *alb
 	var allTags []string
 	var allTypedTags []tags.TypedTag
 	enrichersUsed := []string{}
 
-	for _, e := range enricherList {
-		albumEnricher, ok := e.(enrichers.AlbumEnricher)
-		if !ok {
-			continue
-		}
-
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050/051 (capability accessors replace ad-hoc type assertions)
+	for _, albumEnricher := range enricherList.AlbumEnrichers() {
 		data, err := albumEnricher.EnrichAlbum(ctx, alb)
 		if err != nil {
 			s.logger.Warn("enricher failed for album",
-				"enricher", e.Name(),
+				"enricher", albumEnricher.Name(),
 				"album", alb.Name,
 				"error", err)
 			continue
@@ -1060,42 +1083,52 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 			continue
 		}
 
-		enrichersUsed = append(enrichersUsed, e.Name())
+		enrichersUsed = append(enrichersUsed, albumEnricher.Name())
 
 		// Apply enrichment data (Album has string fields, not *string)
-		if data.MusicBrainzID != "" && alb.MusicbrainzID == "" {
+		if data.MusicBrainzID != "" && cur.MusicbrainzID == "" {
 			update = update.SetMusicbrainzID(data.MusicBrainzID)
+			cur.MusicbrainzID = data.MusicBrainzID
 		}
-		if data.SpotifyID != "" && alb.SpotifyID == "" {
+		if data.SpotifyID != "" && cur.SpotifyID == "" {
 			update = update.SetSpotifyID(data.SpotifyID)
+			cur.SpotifyID = data.SpotifyID
 		}
-		if data.LidarrID != "" && alb.LidarrID == "" {
+		if data.LidarrID != "" && cur.LidarrID == "" {
 			update = update.SetLidarrID(data.LidarrID)
+			cur.LidarrID = data.LidarrID
 		}
 		// Governing: SPEC-0017 REQ "Queue Entity Schema", ADR-0029
 		if data.LidarrStatus != "" {
 			update = update.SetLidarrStatus(data.LidarrStatus)
 		}
-		if data.ReleaseDate != "" && alb.ReleaseDate == "" {
+		if data.ReleaseDate != "" && cur.ReleaseDate == "" {
 			update = update.SetReleaseDate(data.ReleaseDate)
+			cur.ReleaseDate = data.ReleaseDate
 		}
-		if data.Year > 0 && alb.Year == 0 {
+		if data.Year > 0 && cur.Year == 0 {
 			update = update.SetYear(data.Year)
+			cur.Year = data.Year
 		}
-		if data.Genre != "" && alb.Genre == "" {
+		if data.Genre != "" && cur.Genre == "" {
 			update = update.SetGenre(data.Genre)
+			cur.Genre = data.Genre
 		}
-		if data.AlbumType != "" && alb.AlbumType == "" {
+		if data.AlbumType != "" && cur.AlbumType == "" {
 			update = update.SetAlbumType(data.AlbumType)
+			cur.AlbumType = data.AlbumType
 		}
-		if data.Label != "" && alb.Label == "" {
+		if data.Label != "" && cur.Label == "" {
 			update = update.SetLabel(data.Label)
+			cur.Label = data.Label
 		}
-		if data.TotalTracks > 0 && alb.TotalTracks == 0 {
+		if data.TotalTracks > 0 && cur.TotalTracks == 0 {
 			update = update.SetTotalTracks(data.TotalTracks)
+			cur.TotalTracks = data.TotalTracks
 		}
-		if data.Popularity > 0 && alb.Popularity == 0 {
+		if data.Popularity > 0 && cur.Popularity == 0 {
 			update = update.SetPopularity(data.Popularity)
+			cur.Popularity = data.Popularity
 		}
 
 		allTags = append(allTags, data.Tags...)
@@ -1140,7 +1173,7 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 		images, err := albumEnricher.GetAlbumImages(ctx, alb)
 		if err != nil {
 			s.logger.Warn("failed to get album images",
-				"enricher", e.Name(),
+				"enricher", albumEnricher.Name(),
 				"album", alb.Name,
 				"error", err)
 		} else {
@@ -1337,25 +1370,26 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
-func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.Track, enricherList []enrichers.Enricher) error {
+func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.Track, enricherList enrichers.List) error {
 	s.logger.Debug("enriching track", "name", t.Name)
 
 	update := s.client.Track.UpdateOne(t)
+	// cur is a working copy tracking both the entity's stored values and the
+	// values already claimed by earlier enrichers in this pass (first in
+	// config order wins).
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-020
+	cur := *t
 	var allTags []string
 	var allGenres []string
 	var allTypedTags []tags.TypedTag
 	enrichersUsed := []string{}
 
-	for _, e := range enricherList {
-		trackEnricher, ok := e.(enrichers.TrackEnricher)
-		if !ok {
-			continue
-		}
-
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050/051 (capability accessors replace ad-hoc type assertions)
+	for _, trackEnricher := range enricherList.TrackEnrichers() {
 		data, err := trackEnricher.EnrichTrack(ctx, t)
 		if err != nil {
 			s.logger.Warn("enricher failed for track",
-				"enricher", e.Name(),
+				"enricher", trackEnricher.Name(),
 				"track", t.Name,
 				"error", err)
 			continue
@@ -1364,65 +1398,83 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 			continue
 		}
 
-		enrichersUsed = append(enrichersUsed, e.Name())
+		enrichersUsed = append(enrichersUsed, trackEnricher.Name())
 
 		// Apply enrichment data (Track has *string fields due to Nillable())
-		if data.MusicBrainzID != "" && (t.MusicbrainzID == nil || *t.MusicbrainzID == "") {
+		if data.MusicBrainzID != "" && (cur.MusicbrainzID == nil || *cur.MusicbrainzID == "") {
 			update = update.SetMusicbrainzID(data.MusicBrainzID)
+			cur.MusicbrainzID = &data.MusicBrainzID
 		}
-		if data.SpotifyID != "" && (t.SpotifyID == nil || *t.SpotifyID == "") {
+		if data.SpotifyID != "" && (cur.SpotifyID == nil || *cur.SpotifyID == "") {
 			update = update.SetSpotifyID(data.SpotifyID)
+			cur.SpotifyID = &data.SpotifyID
 		}
-		if data.NavidromeID != "" && (t.NavidromeID == nil || *t.NavidromeID == "") {
+		if data.NavidromeID != "" && (cur.NavidromeID == nil || *cur.NavidromeID == "") {
 			update = update.SetNavidromeID(data.NavidromeID)
+			cur.NavidromeID = &data.NavidromeID
 		}
-		if data.LidarrID != "" && (t.LidarrID == nil || *t.LidarrID == "") {
+		if data.LidarrID != "" && (cur.LidarrID == nil || *cur.LidarrID == "") {
 			update = update.SetLidarrID(data.LidarrID)
+			cur.LidarrID = &data.LidarrID
 		}
 		if data.LidarrStatus != "" {
 			update = update.SetLidarrStatus(data.LidarrStatus)
 		}
-		if data.ISRC != "" && (t.Isrc == nil || *t.Isrc == "") {
+		if data.ISRC != "" && (cur.Isrc == nil || *cur.Isrc == "") {
 			update = update.SetIsrc(data.ISRC)
+			cur.Isrc = &data.ISRC
 		}
-		if data.DurationMs > 0 && (t.DurationMs == nil || *t.DurationMs == 0) {
+		if data.DurationMs > 0 && (cur.DurationMs == nil || *cur.DurationMs == 0) {
 			update = update.SetDurationMs(data.DurationMs)
+			cur.DurationMs = &data.DurationMs
 		}
-		if data.TrackNumber > 0 && (t.TrackNumber == nil || *t.TrackNumber == 0) {
+		if data.TrackNumber > 0 && (cur.TrackNumber == nil || *cur.TrackNumber == 0) {
 			update = update.SetTrackNumber(data.TrackNumber)
+			cur.TrackNumber = &data.TrackNumber
 		}
-		if data.DiscNumber > 0 && (t.DiscNumber == nil || *t.DiscNumber == 0) {
+		if data.DiscNumber > 0 && (cur.DiscNumber == nil || *cur.DiscNumber == 0) {
 			update = update.SetDiscNumber(data.DiscNumber)
+			cur.DiscNumber = &data.DiscNumber
 		}
-		if data.BPM != nil && t.Bpm == nil {
+		if data.BPM != nil && cur.Bpm == nil {
 			update = update.SetBpm(*data.BPM)
+			cur.Bpm = data.BPM
 		}
-		if data.MusicalKey != "" && (t.MusicalKey == nil || *t.MusicalKey == "") {
+		if data.MusicalKey != "" && (cur.MusicalKey == nil || *cur.MusicalKey == "") {
 			update = update.SetMusicalKey(data.MusicalKey)
+			cur.MusicalKey = &data.MusicalKey
 		}
-		if data.Energy != nil && t.Energy == nil {
+		if data.Energy != nil && cur.Energy == nil {
 			update = update.SetEnergy(*data.Energy)
+			cur.Energy = data.Energy
 		}
-		if data.Danceability != nil && t.Danceability == nil {
+		if data.Danceability != nil && cur.Danceability == nil {
 			update = update.SetDanceability(*data.Danceability)
+			cur.Danceability = data.Danceability
 		}
-		if data.Valence != nil && t.Valence == nil {
+		if data.Valence != nil && cur.Valence == nil {
 			update = update.SetValence(*data.Valence)
+			cur.Valence = data.Valence
 		}
-		if data.Acousticness != nil && t.Acousticness == nil {
+		if data.Acousticness != nil && cur.Acousticness == nil {
 			update = update.SetAcousticness(*data.Acousticness)
+			cur.Acousticness = data.Acousticness
 		}
-		if data.Instrumentalness != nil && t.Instrumentalness == nil {
+		if data.Instrumentalness != nil && cur.Instrumentalness == nil {
 			update = update.SetInstrumentalness(*data.Instrumentalness)
+			cur.Instrumentalness = data.Instrumentalness
 		}
-		if data.Popularity != nil && t.Popularity == nil {
+		if data.Popularity != nil && cur.Popularity == nil {
 			update = update.SetPopularity(*data.Popularity)
+			cur.Popularity = data.Popularity
 		}
-		if data.SpotifyURL != "" && (t.SpotifyURL == nil || *t.SpotifyURL == "") {
+		if data.SpotifyURL != "" && (cur.SpotifyURL == nil || *cur.SpotifyURL == "") {
 			update = update.SetSpotifyURL(data.SpotifyURL)
+			cur.SpotifyURL = &data.SpotifyURL
 		}
-		if data.MusicBrainzURL != "" && (t.MusicbrainzURL == nil || *t.MusicbrainzURL == "") {
+		if data.MusicBrainzURL != "" && (cur.MusicbrainzURL == nil || *cur.MusicbrainzURL == "") {
 			update = update.SetMusicbrainzURL(data.MusicBrainzURL)
+			cur.MusicbrainzURL = &data.MusicBrainzURL
 		}
 
 		allTags = append(allTags, data.Tags...)
@@ -1598,9 +1650,12 @@ func (s *MetadataService) downloadArtistImage(ctx context.Context, u *ent.User, 
 		return err
 	}
 
-	// Determine filename using artist ID and image type (e.g., 123-hero.png)
-	ext := getImageExtension(img.URL)
-	filename := fmt.Sprintf("%d-%s%s", img.Edges.Artist.ID, img.ImageType.String(), ext)
+	// Determine filename using artist ID, image type, and a short URL hash
+	// (e.g., 123-thumbnail-a1b2c3d4e5f6.png) so multiple images of the same
+	// type never collide. Existing rows keep their stored local_path; only
+	// new downloads use this naming.
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (unique local paths per image)
+	filename := enrichers.ImageFileName(img.Edges.Artist.ID, img.ImageType.String(), img.URL)
 	localPath := filepath.Join(artistDir, filename)
 
 	// Check if file already exists on disk
@@ -1612,8 +1667,10 @@ func (s *MetadataService) downloadArtistImage(ctx context.Context, u *ent.User, 
 		return err
 	}
 
-	// Download image
-	if err := s.downloadFile(ctx, img.URL, localPath); err != nil {
+	// Download via the shared image pipeline so resize, PNG conversion, and
+	// temp-file/rename semantics apply on this path too.
+	// Governing: ADR-0027 (image storage: local filesystem)
+	if _, err := enrichers.DownloadAndSaveImage(ctx, img.URL, localPath, s.logger); err != nil {
 		return err
 	}
 
@@ -1649,9 +1706,12 @@ func (s *MetadataService) downloadAlbumImage(ctx context.Context, u *ent.User, i
 		return err
 	}
 
-	// Determine filename using album ID and image type (e.g., 456-cover.png)
-	ext := getImageExtension(img.URL)
-	filename := fmt.Sprintf("%d-%s%s", img.Edges.Album.ID, img.ImageType.String(), ext)
+	// Determine filename using album ID, image type, and a short URL hash
+	// (e.g., 456-cover_front-a1b2c3d4e5f6.png) so multiple images of the same
+	// type never collide. Existing rows keep their stored local_path; only
+	// new downloads use this naming.
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (unique local paths per image)
+	filename := enrichers.ImageFileName(img.Edges.Album.ID, img.ImageType.String(), img.URL)
 	localPath := filepath.Join(albumDir, filename)
 
 	// Check if file already exists on disk
@@ -1663,8 +1723,10 @@ func (s *MetadataService) downloadAlbumImage(ctx context.Context, u *ent.User, i
 		return err
 	}
 
-	// Download image
-	if err := s.downloadFile(ctx, img.URL, localPath); err != nil {
+	// Download via the shared image pipeline so resize, PNG conversion, and
+	// temp-file/rename semantics apply on this path too.
+	// Governing: ADR-0027 (image storage: local filesystem)
+	if _, err := enrichers.DownloadAndSaveImage(ctx, img.URL, localPath, s.logger); err != nil {
 		return err
 	}
 
@@ -1686,33 +1748,6 @@ func (s *MetadataService) downloadAlbumImage(ctx context.Context, u *ent.User, i
 		})
 
 	return nil
-}
-
-// downloadFile downloads a file from a URL to a local path.
-func (s *MetadataService) downloadFile(ctx context.Context, url, localPath string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	file, err := os.Create(localPath)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-
-	_, err = io.Copy(file, resp.Body)
-	return err
 }
 
 // EnrichNewListens enriches catalog entries for newly synced listens.
@@ -1921,19 +1956,4 @@ func uniqueStrings(s []string) []string {
 		}
 	}
 	return result
-}
-
-// getImageExtension extracts the file extension from a URL.
-func getImageExtension(url string) string {
-	// Try to get extension from URL
-	if idx := strings.LastIndex(url, "."); idx != -1 {
-		ext := strings.ToLower(url[idx:])
-		if idx := strings.Index(ext, "?"); idx != -1 {
-			ext = ext[:idx]
-		}
-		if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" {
-			return ext
-		}
-	}
-	return ".jpg" // Default to jpg
 }

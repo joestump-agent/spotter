@@ -389,7 +389,7 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 	// not wrapped in a getCoverArt call (which expects internal Navidrome entity IDs).
 	if directURL := info.SubsonicResponse.ArtistInfo.LargeImageURL; directURL != "" {
 		localPath := fmt.Sprintf("data/images/artists/%d_navidrome_large.png", artist.ID)
-		_, err := enrichers.DownloadAndSaveImage(directURL, localPath, e.logger)
+		_, err := enrichers.DownloadAndSaveImage(ctx, directURL, localPath, e.logger)
 		if err != nil {
 			e.logger.Warn("failed to download navidrome image", "url", directURL, "error", err)
 		} else {
@@ -405,7 +405,7 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 
 	if directURL := info.SubsonicResponse.ArtistInfo.MediumImageURL; directURL != "" && directURL != info.SubsonicResponse.ArtistInfo.LargeImageURL {
 		localPath := fmt.Sprintf("data/images/artists/%d_navidrome_medium.png", artist.ID)
-		_, err := enrichers.DownloadAndSaveImage(directURL, localPath, e.logger)
+		_, err := enrichers.DownloadAndSaveImage(ctx, directURL, localPath, e.logger)
 		if err != nil {
 			e.logger.Warn("failed to download navidrome image", "url", directURL, "error", err)
 		} else {
@@ -420,7 +420,7 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 
 	if directURL := info.SubsonicResponse.ArtistInfo.SmallImageURL; directURL != "" && directURL != info.SubsonicResponse.ArtistInfo.MediumImageURL {
 		localPath := fmt.Sprintf("data/images/artists/%d_navidrome_small.png", artist.ID)
-		_, err := enrichers.DownloadAndSaveImage(directURL, localPath, e.logger)
+		_, err := enrichers.DownloadAndSaveImage(ctx, directURL, localPath, e.logger)
 		if err != nil {
 			e.logger.Warn("failed to download navidrome image", "url", directURL, "error", err)
 		} else {
@@ -571,7 +571,7 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 		cleanURL := fmt.Sprintf("%s/rest/getCoverArt?id=%s", e.config.Navidrome.BaseURL, coverArt)
 
 		localPath := fmt.Sprintf("data/images/albums/%d_navidrome.png", album.ID)
-		_, err := enrichers.DownloadAndSaveImage(coverURL, localPath, e.logger)
+		_, err := enrichers.DownloadAndSaveImage(ctx, coverURL, localPath, e.logger)
 		if err != nil {
 			// DownloadAndSaveImage embeds the URL in its errors; redact the
 			// credentialed URL before logging.
