@@ -72,3 +72,6 @@ Thumbs.db
 
 # Claude
 .claude/settings.local.json
+
+# SDD worktree base dir (local agent working state)
+.claude/worktrees/
