@@ -970,6 +970,10 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 			if track.URL != "" {
 				update.SetURL(track.URL)
 			}
+			// Governing: SPEC music-provider-integration REQ-PROV-022 (ISRC persisted for tier-1 matching, ADR-0014)
+			if track.ISRC != "" {
+				update.SetIsrc(track.ISRC)
+			}
 
 			if err := update.Exec(ctx); err != nil {
 				s.logger.Warn("failed to update playlist track", "error", err, "track", track.Name)
@@ -995,6 +999,10 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 			}
 			if track.URL != "" {
 				builder.SetURL(track.URL)
+			}
+			// Governing: SPEC music-provider-integration REQ-PROV-022 (ISRC persisted for tier-1 matching, ADR-0014)
+			if track.ISRC != "" {
+				builder.SetIsrc(track.ISRC)
 			}
 
 			if _, err := builder.Save(ctx); err != nil {
