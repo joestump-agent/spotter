@@ -21,13 +21,26 @@ type Notifier interface {
 }
 
 // NoopNotifier is used when SMTP is not configured.
-type NoopNotifier struct{}
-
-func NewNoopNotifier() *NoopNotifier {
-	return &NoopNotifier{}
+type NoopNotifier struct {
+	logger *slog.Logger
 }
 
-func (n *NoopNotifier) NotifyIfNeeded(_ context.Context, _ *ent.User, _ string, _ error) error {
+func NewNoopNotifier(logger *slog.Logger) *NoopNotifier {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &NoopNotifier{logger: logger}
+}
+
+// NotifyIfNeeded is a no-op, but logs at debug level so operators can see
+// that a notification was skipped because SMTP is disabled.
+// Governing: SPEC-0015 REQ "SMTP Configuration"
+func (n *NoopNotifier) NotifyIfNeeded(_ context.Context, u *ent.User, provider string, _ error) error {
+	args := []any{"provider", provider}
+	if u != nil {
+		args = append(args, "user_id", u.ID)
+	}
+	n.logger.Debug("smtp disabled, skipping notification", args...)
 	return nil
 }
 

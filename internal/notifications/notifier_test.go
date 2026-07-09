@@ -1,10 +1,12 @@
 package notifications
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,15 +43,30 @@ func (m *mockMailer) Send(to, subject, body string) error {
 func (m *mockMailer) IsConfigured() bool { return true }
 
 func TestNoopNotifier_NotifyIfNeeded(t *testing.T) {
-	n := NewNoopNotifier()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	n := NewNoopNotifier(logger)
 	err := n.NotifyIfNeeded(context.Background(), nil, "navidrome", fmt.Errorf("test error"))
 	if err != nil {
 		t.Errorf("NoopNotifier.NotifyIfNeeded should return nil, got %v", err)
 	}
 }
 
+// Governing: SPEC-0015 REQ "SMTP Configuration" — skipped notifications are logged at debug level
+func TestNoopNotifier_LogsDebugWhenSkipping(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	n := NewNoopNotifier(logger)
+
+	if err := n.NotifyIfNeeded(context.Background(), nil, "spotify", fmt.Errorf("test error")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "smtp disabled, skipping notification") {
+		t.Errorf("expected debug log about skipped notification, got: %q", buf.String())
+	}
+}
+
 func TestNoopNotifier_ClearCooldown(t *testing.T) {
-	n := NewNoopNotifier()
+	n := NewNoopNotifier(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	err := n.ClearCooldown(context.Background(), 1, "navidrome")
 	if err != nil {
 		t.Errorf("NoopNotifier.ClearCooldown should return nil, got %v", err)

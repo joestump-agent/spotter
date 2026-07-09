@@ -129,10 +129,11 @@ func main() {
 	// Initialize Notifier (DBNotifier if SMTP configured, NoopNotifier otherwise)
 	var notifier services.SyncNotifier
 	if mailClient.IsConfigured() {
-		notifier = notifications.NewDBNotifier(client, mailClient, cfg.Notifications.FailureCooldownDays, cfg.Navidrome.BaseURL, logger)
+		// Governing: SPEC-0015 REQ "Email Content" — email links point at this Spotter instance
+		notifier = notifications.NewDBNotifier(client, mailClient, cfg.Notifications.FailureCooldownDays, cfg.SpotterBaseURL(), logger)
 		logger.Info("notification service initialized", "cooldown_days", cfg.Notifications.FailureCooldownDays)
 	} else {
-		notifier = notifications.NewNoopNotifier()
+		notifier = notifications.NewNoopNotifier(logger)
 		logger.Info("notification service disabled (smtp not configured)")
 	}
 

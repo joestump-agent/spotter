@@ -398,3 +398,40 @@ func TestConfig_LidarrFullyConfigured(t *testing.T) {
 	assert.Equal(t, "http://localhost:8686", cfg.Lidarr.BaseURL)
 	assert.Equal(t, "test-api-key", cfg.Lidarr.APIKey)
 }
+
+// Governing: SPEC-0015 REQ "Email Content" — email links point at the Spotter instance
+func TestSpotterBaseURL_ExplicitConfig(t *testing.T) {
+	cfg := &Config{}
+	cfg.Server.BaseURL = "https://spotter.example.com/"
+	cfg.Server.Host = "0.0.0.0"
+	cfg.Server.Port = "8080"
+
+	// Explicit base URL wins; trailing slash is trimmed.
+	assert.Equal(t, "https://spotter.example.com", cfg.SpotterBaseURL())
+}
+
+// Governing: SPEC-0015 REQ "Email Content" — best-effort fallback from host/port
+func TestSpotterBaseURL_Fallback(t *testing.T) {
+	cfg := &Config{}
+	cfg.Server.Host = "0.0.0.0"
+	cfg.Server.Port = "8080"
+
+	// Listen hosts like 0.0.0.0/localhost are used as-is in the fallback.
+	assert.Equal(t, "http://0.0.0.0:8080", cfg.SpotterBaseURL())
+
+	cfg.Server.Host = "localhost"
+	assert.Equal(t, "http://localhost:8080", cfg.SpotterBaseURL())
+}
+
+func TestSpotterBaseURL_EnvVar(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
+	t.Setenv("SPOTTER_SECURITY_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("SPOTTER_SECURITY_JWT_SECRET", "test-jwt-secret-at-least-32-chars")
+	t.Setenv("SPOTTER_SERVER_BASE_URL", "https://spotter.example.com")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "https://spotter.example.com", cfg.Server.BaseURL)
+	assert.Equal(t, "https://spotter.example.com", cfg.SpotterBaseURL())
+}
