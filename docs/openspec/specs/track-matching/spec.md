@@ -66,7 +66,11 @@ Out of scope: Playlist sync write-back to Navidrome (see playlist-sync-navidrome
 
 **REQ-TM-040** — Normalization MUST convert the input string to lowercase.
 
-**REQ-TM-041** — Normalization MUST strip common version suffixes including but not limited to: `(remastered)`, `(deluxe)`, `(live)`, `(acoustic)`, `(remix)`, `(radio edit)`, `(bonus track)`, `(explicit)`, `(clean)`, and their bracket equivalents, as well as dash-separated variants (e.g., `- remastered`).
+**REQ-TM-041** — Normalization MUST strip common noise suffixes including but not limited to: `(remastered)`, `(deluxe)`, `(live)`, `(acoustic)`, `(remix)`, `(radio edit)`, `(bonus track)`, `(explicit)`, `(clean)`, and their bracket equivalents, as well as dash-separated variants (e.g., `- remastered`). In addition, normalization MUST strip variable-content suffixes via pattern matching:
+- Featured-artist credits: `(feat. X)`, `[ft. X]`, and trailing `feat./ft./featuring X` forms
+- Year-qualified remasters: `(YYYY Remaster)`, `(YYYY Remastered)`, `(Remastered YYYY)`, and `- YYYY Remaster`
+
+This aligns with SPEC playlist-sync-navidrome REQ-PLSYNC-005, which governs the same `normalizeForMatch` implementation.
 
 **REQ-TM-042** — Normalization MUST remove punctuation and collapse consecutive whitespace into a single space. Only Unicode letters and numbers MUST be preserved.
 

@@ -149,8 +149,9 @@ upsert, not by database triggers.
 The `Tag` entity SHALL support a self-referential many-to-many `related_tags` edge for
 expressing semantic similarity between tags (e.g., "shoegaze" is related to "dream pop").
 
-Tag relationships SHALL be undirected — if tag A is related to tag B, adding the relationship
-from A SHALL also make B queryable as related to A.
+Tag relationships SHOULD present as undirected to consumers — if tag A is related to tag B,
+B SHOULD be queryable as related to A. The storage edge MAY be directional; symmetry MAY be
+provided at query time (querying both edge directions) rather than by writing reciprocal rows.
 
 Tag relationships are OPTIONAL and MAY be populated manually or via future automated tooling.
 They are not required to be populated during initial migration.

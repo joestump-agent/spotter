@@ -87,7 +87,7 @@ type Track struct {
 
 **REQ-PROV-030** — The Spotify provider MUST implement `HistoryFetcher`, `PlaylistManager`, and `Authenticator`.
 
-**REQ-PROV-031** — The Spotify provider MUST use the OAuth2 PKCE flow via `golang.org/x/oauth2`. The redirect URI MUST be configurable via `spotify.redirect_uri`.
+**REQ-PROV-031** — The Spotify provider MUST use the OAuth2 authorization-code flow via `golang.org/x/oauth2`, with the client secret held server-side. PKCE is NOT required: Spotter is a self-hosted confidential client that can keep a client secret, and the state-cookie CSRF protection (SPEC user-authentication) covers the authorization redirect. The redirect URI MUST be configurable via `spotify.redirect_uri`.
 
 **REQ-PROV-032** — The Spotify provider MUST automatically refresh expired access tokens using the stored refresh token before making API calls.
 
