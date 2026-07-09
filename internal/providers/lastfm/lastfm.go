@@ -344,7 +344,8 @@ func (p *Provider) doRequest(ctx context.Context, method string, params map[stri
 		if resp.StatusCode == http.StatusOK {
 			if result != nil {
 				if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-					return err
+					// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+					return fmt.Errorf("failed to decode last.fm response: %w: %w", providers.ErrMalformedResponse, err)
 				}
 			}
 			return nil

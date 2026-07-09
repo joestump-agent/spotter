@@ -214,7 +214,8 @@ func (p *Provider) fetchUserProfile(ctx context.Context, accessToken string) (*s
 
 	var user spotifyUser
 	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
-		return nil, err
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return nil, fmt.Errorf("failed to decode profile response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	return &user, nil
@@ -289,7 +290,8 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 
 	var result recentlyPlayedResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return err
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return fmt.Errorf("failed to decode recently-played response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	tracks := make([]providers.Track, 0, len(result.Items))
@@ -398,7 +400,8 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 			if err := resp.Body.Close(); err != nil {
 				p.logger.Warn("failed to close response body", "error", err)
 			}
-			return nil, err
+			// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+			return nil, fmt.Errorf("failed to decode playlists response: %w: %w", providers.ErrMalformedResponse, err)
 		}
 		_ = resp.Body.Close()
 

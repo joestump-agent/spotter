@@ -115,6 +115,10 @@ type Config struct {
 		ReadTimeout       string `mapstructure:"read_timeout"`        // Duration string for read timeout (default: "30s")
 		WriteTimeout      string `mapstructure:"write_timeout"`       // Duration string for write timeout (default: "60s")
 		IdleTimeout       string `mapstructure:"idle_timeout"`        // Duration string for idle timeout (default: "120s")
+		// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-TMO-001, REQ-TMO-005
+		ShutdownTimeout string `mapstructure:"shutdown_timeout"` // Duration string for graceful shutdown budget (default: "30s")
+		// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-SEM-002
+		MaxConcurrentJobs int `mapstructure:"max_concurrent_jobs"` // Background job semaphore capacity (default: 10)
 	} `mapstructure:"server"`
 	Navidrome struct {
 		BaseURL string `mapstructure:"base_url"`
@@ -293,6 +297,9 @@ func Load() (*Config, error) {
 	v.SetDefault("server.read_timeout", "30s")
 	v.SetDefault("server.write_timeout", "60s")
 	v.SetDefault("server.idle_timeout", "120s")
+	// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-TMO-001, REQ-SEM-002
+	v.SetDefault("server.shutdown_timeout", "30s")
+	v.SetDefault("server.max_concurrent_jobs", 10)
 	v.SetDefault("sync.interval", "5m")
 	// Governing: SPEC listen-playlist-sync REQ-SYNC-020 (default initial history lookback of 30 days)
 	v.SetDefault("sync.history_lookback", "720h")

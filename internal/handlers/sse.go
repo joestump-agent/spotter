@@ -45,10 +45,19 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 			var buf bytes.Buffer
 
 			switch event.Type {
+			// Governing: SPEC event-bus-sse REQ-BUS-011 (recent-listen carries RecentListenPayload)
 			case events.EventTypeRecentListen:
-				if listen, ok := event.Payload.(*ent.Listen); ok {
+				if payload, ok := event.Payload.(events.RecentListenPayload); ok {
 					row := components.TrackTableRow{
-						Listen:        listen,
+						Listen: &ent.Listen{
+							ID:         payload.ListenID,
+							TrackName:  payload.TrackName,
+							ArtistName: payload.ArtistName,
+							AlbumName:  payload.AlbumName,
+							Source:     payload.Source,
+							PlayedAt:   payload.PlayedAt,
+							URL:        payload.URL,
+						},
 						LidarrBaseURL: h.Config.Lidarr.BaseURL,
 					}
 					if err := components.TrackTableRowRender(row, []string{"source", "played_at", "track", "artist", "album"}, 0).Render(ctx, &buf); err != nil {

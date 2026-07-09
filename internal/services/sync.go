@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"spotter/ent"
@@ -58,6 +59,39 @@ func (s *Syncer) Register(factory providers.Factory) {
 	s.factories = append(s.factories, factory)
 }
 
+// ClearProviderBackoff resets the backoff state (including the fatal flag) for
+// a user's provider so it is retried on the next sync tick. Handlers call this
+// when the user takes corrective action (reconnects or disconnects a provider).
+// Governing: SPEC error-handling REQ-STATE-004 (fatal flag cleared only on user action)
+func (s *Syncer) ClearProviderBackoff(userID int, providerType providers.Type) {
+	s.backoff.ClearFatal(BackoffKey{UserID: userID, ProviderType: providerType})
+}
+
+// providerSyncStats accumulates per-provider values across the history and
+// playlist phases of a single Sync run for metric.sync emission.
+// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
+type providerSyncStats struct {
+	listensSynced   int
+	playlistsSynced int
+	duration        time.Duration
+	failed          bool
+	errs            []string
+}
+
+// syncStatsFor returns the stats entry for a provider, creating it on first
+// use. It returns nil when stats collection is disabled (nil map).
+func syncStatsFor(stats map[providers.Type]*providerSyncStats, t providers.Type) *providerSyncStats {
+	if stats == nil {
+		return nil
+	}
+	st, ok := stats[t]
+	if !ok {
+		st = &providerSyncStats{}
+		stats[t] = st
+	}
+	return st
+}
+
 // Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
 // Governing: SPEC graceful-shutdown REQ-REC-004 (ctx propagated to DB ops; cancellation leaves DB consistent)
 // Governing: SPEC listen-playlist-sync REQ-SYNC-010 (full sync: providers -> history -> playlists)
@@ -68,44 +102,43 @@ func (s *Syncer) Register(factory providers.Factory) {
 // Governing: SPEC observability REQ-BG-001 (callers count real per-user errors)
 func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 	s.logger.Info("starting full sync", "username", u.Username)
-	syncStart := time.Now()
 
 	refreshedUser, activeProviders, err := s.getActiveProviders(ctx, u)
 	if err != nil {
 		return err
 	}
 
-	var listensSynced, playlistsSynced int
-	syncSuccess := true
-	var syncErr string
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
+	// (per-provider listens, playlists, duration, and success in metric.sync)
+	stats := make(map[providers.Type]*providerSyncStats)
 
 	// 1. History
-	var histErr error
-	listensSynced, histErr = s.syncHistory(ctx, refreshedUser, activeProviders)
+	_, histErr := s.syncHistory(ctx, refreshedUser, activeProviders, stats)
 	if histErr != nil {
 		s.logger.Error("failed to sync history", "username", refreshedUser.Username, "error", histErr)
-		syncSuccess = false
-		syncErr = histErr.Error()
 	}
 
 	// 2. Playlists
-	var plErr error
-	playlistsSynced, plErr = s.syncPlaylists(ctx, refreshedUser, activeProviders)
+	_, plErr := s.syncPlaylists(ctx, refreshedUser, activeProviders, stats)
 	if plErr != nil {
 		s.logger.Error("failed to sync playlists", "username", refreshedUser.Username, "error", plErr)
-		syncSuccess = false
-		syncErr = plErr.Error()
 	}
 
-	// Emit metric.sync for each active provider
+	// Emit metric.sync with the real per-provider values collected above.
+	// Providers skipped entirely (e.g. in a backoff window) have no stats
+	// entry and emit no event.
 	for _, p := range activeProviders {
+		st, ok := stats[p.Type()]
+		if !ok {
+			continue
+		}
 		s.logger.Info("metric.sync",
 			"provider", string(p.Type()),
-			"listens_synced", listensSynced,
-			"playlists_synced", playlistsSynced,
-			"duration_ms", time.Since(syncStart).Milliseconds(),
-			"success", syncSuccess,
-			"error", syncErr)
+			"listens_synced", st.listensSynced,
+			"playlists_synced", st.playlistsSynced,
+			"duration_ms", st.duration.Milliseconds(),
+			"success", !st.failed,
+			"error", strings.Join(st.errs, "; "))
 	}
 
 	s.logger.Info("full sync completed", "username", refreshedUser.Username)
@@ -137,12 +170,12 @@ func (s *Syncer) SyncProvider(ctx context.Context, u *ent.User, providerType pro
 	}
 
 	// 1. History
-	if _, err := s.syncHistory(ctx, refreshedUser, targetProviders); err != nil {
+	if _, err := s.syncHistory(ctx, refreshedUser, targetProviders, nil); err != nil {
 		s.logger.Error("failed to sync history", "username", refreshedUser.Username, "provider", providerType, "error", err)
 	}
 
 	// 2. Playlists
-	if _, err := s.syncPlaylists(ctx, refreshedUser, targetProviders); err != nil {
+	if _, err := s.syncPlaylists(ctx, refreshedUser, targetProviders, nil); err != nil {
 		s.logger.Error("failed to sync playlists", "username", refreshedUser.Username, "provider", providerType, "error", err)
 	}
 
@@ -156,7 +189,7 @@ func (s *Syncer) SyncRecentListens(ctx context.Context, u *ent.User) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.syncHistory(ctx, refreshedUser, activeProviders)
+	_, err = s.syncHistory(ctx, refreshedUser, activeProviders, nil)
 	return err
 }
 
@@ -166,7 +199,7 @@ func (s *Syncer) SyncPlaylists(ctx context.Context, u *ent.User) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.syncPlaylists(ctx, refreshedUser, activeProviders)
+	_, err = s.syncPlaylists(ctx, refreshedUser, activeProviders, nil)
 	return err
 }
 
@@ -221,7 +254,7 @@ func (s *Syncer) logEvent(ctx context.Context, u *ent.User, eventType syncevent.
 // Governing: SPEC listen-playlist-sync REQ-SYNC-020 (since timestamp from last listen)
 // Governing: SPEC listen-playlist-sync REQ-SYNC-022 (per-track errors logged, sync continues)
 // Governing: SPEC listen-playlist-sync REQ-SYNC-023 (notification published on new listens)
-func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders []providers.Provider) (int, error) {
+func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders []providers.Provider, stats map[providers.Type]*providerSyncStats) (int, error) {
 	allAdded := 0
 	for _, provider := range activeProviders {
 		// Check if provider supports history fetching
@@ -240,15 +273,13 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			continue
 		}
 
+		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
+		providerStart := time.Now()
+
 		// Send sync starting notification
-		s.bus.Publish(u.ID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Syncing Listens",
-				Message:  fmt.Sprintf("Fetching recent listens from %s...", providerName),
-				IconType: "info",
-			},
-		})
+		// Governing: SPEC event-bus-sse REQ-BUS-012 (convenience Publish* methods)
+		s.bus.PublishNotification(u.ID, "Syncing Listens",
+			fmt.Sprintf("Fetching recent listens from %s...", providerName), "info")
 
 		// Log sync started event
 		s.logEvent(ctx, u, syncevent.EventTypeSyncStarted, providerName, fmt.Sprintf("Started syncing listens from %s", providerName), nil)
@@ -301,6 +332,12 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 		})
 
 		if err != nil {
+			// Governing: SPEC observability REQ "BG-003" (per-provider failure recorded)
+			if st := syncStatsFor(stats, provider.Type()); st != nil {
+				st.duration += time.Since(providerStart)
+				st.failed = true
+				st.errs = append(st.errs, err.Error())
+			}
 			// Classify error and record backoff state
 			// Governing: SPEC error-handling REQ-ERR-001 through REQ-ERR-004
 			errClass := ClassifyError(err)
@@ -337,16 +374,17 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			}
 		}
 
+		// Governing: SPEC observability REQ "BG-003" (per-provider listens and duration)
+		if st := syncStatsFor(stats, provider.Type()); st != nil {
+			st.listensSynced += totalAdded
+			st.duration += time.Since(providerStart)
+		}
+
 		allAdded += totalAdded
 		if totalAdded > 0 {
-			s.bus.Publish(u.ID, events.Event{
-				Type: events.EventTypeNotification,
-				Payload: events.NotificationPayload{
-					Title:    "New Listens Synced",
-					Message:  fmt.Sprintf("Imported %d tracks from %s", totalAdded, provider.Type()),
-					IconType: "success",
-				},
-			})
+			// Governing: SPEC event-bus-sse REQ-BUS-012 (convenience Publish* methods)
+			s.bus.PublishNotification(u.ID, "New Listens Synced",
+				fmt.Sprintf("Imported %d tracks from %s", totalAdded, provider.Type()), "success")
 		}
 
 		if totalFound > 0 {
@@ -370,7 +408,7 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 }
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-030 (fetch playlists from each PlaylistManager provider)
-func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders []providers.Provider) (int, error) {
+func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders []providers.Provider, stats map[providers.Type]*providerSyncStats) (int, error) {
 	allAdded := 0
 	for _, provider := range activeProviders {
 		manager, ok := provider.(providers.PlaylistManager)
@@ -388,15 +426,13 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 			continue
 		}
 
+		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
+		providerStart := time.Now()
+
 		// Send sync starting notification
-		s.bus.Publish(u.ID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Syncing Playlists",
-				Message:  fmt.Sprintf("Fetching playlists from %s...", providerName),
-				IconType: "info",
-			},
-		})
+		// Governing: SPEC event-bus-sse REQ-BUS-012 (convenience Publish* methods)
+		s.bus.PublishNotification(u.ID, "Syncing Playlists",
+			fmt.Sprintf("Fetching playlists from %s...", providerName), "info")
 
 		// Log sync started event
 		s.logEvent(ctx, u, syncevent.EventTypeSyncStarted, providerName, fmt.Sprintf("Started syncing playlists from %s", providerName), nil)
@@ -404,6 +440,12 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 		s.logger.Info("syncing playlists", "provider", provider.Type(), "username", u.Username)
 		playlists, err := manager.GetPlaylists(ctx)
 		if err != nil {
+			// Governing: SPEC observability REQ "BG-003" (per-provider failure recorded)
+			if st := syncStatsFor(stats, provider.Type()); st != nil {
+				st.duration += time.Since(providerStart)
+				st.failed = true
+				st.errs = append(st.errs, err.Error())
+			}
 			// Classify error and record backoff state
 			// Governing: SPEC error-handling REQ-ERR-001 through REQ-ERR-004
 			errClass := ClassifyError(err)
@@ -441,22 +483,19 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 		}
 		s.logger.Info("fetched playlists", "provider", provider.Type(), "count", len(playlists))
 
+		playlistsAdded := 0
 		if len(playlists) > 0 {
 			added, skipped, err := s.persistPlaylists(ctx, u, provider.Type(), playlists)
 			if err != nil {
 				s.logger.Error("failed to persist playlists", "error", err)
 			}
 			allAdded += added
+			playlistsAdded = added
 
 			if added > 0 {
-				s.bus.Publish(u.ID, events.Event{
-					Type: events.EventTypeNotification,
-					Payload: events.NotificationPayload{
-						Title:    "Playlists Synced",
-						Message:  fmt.Sprintf("Imported %d playlists from %s", added, provider.Type()),
-						IconType: "success",
-					},
-				})
+				// Governing: SPEC event-bus-sse REQ-BUS-012 (convenience Publish* methods)
+				s.bus.PublishNotification(u.ID, "Playlists Synced",
+					fmt.Sprintf("Imported %d playlists from %s", added, provider.Type()), "success")
 			}
 
 			// Log sync completed event
@@ -476,6 +515,12 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 		if err := s.updateLastSyncedAt(ctx, u, provider.Type()); err != nil {
 			s.logger.Warn("failed to update last_synced_at", "provider", provider.Type(), "error", err)
 		}
+
+		// Governing: SPEC observability REQ "BG-003" (per-provider playlists and duration)
+		if st := syncStatsFor(stats, provider.Type()); st != nil {
+			st.playlistsSynced += playlistsAdded
+			st.duration += time.Since(providerStart)
+		}
 	}
 	return allAdded, nil
 }
@@ -492,14 +537,8 @@ func (s *Syncer) publishFatalNotification(userID int, key BackoffKey, providerNa
 	title := fmt.Sprintf("%s Connection Failed", providerName)
 	message := fmt.Sprintf("Error from %s: %v. Please check your connection in Preferences.", providerName, err)
 
-	s.bus.Publish(userID, events.Event{
-		Type: events.EventTypeNotification,
-		Payload: events.NotificationPayload{
-			Title:    title,
-			Message:  message,
-			IconType: "error",
-		},
-	})
+	// Governing: SPEC event-bus-sse REQ-BUS-012 (convenience Publish* methods)
+	s.bus.PublishNotification(userID, title, message, "error")
 
 	s.backoff.MarkNotified(key)
 }
@@ -597,9 +636,16 @@ func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source provide
 				fmt.Sprintf("Added: %s by %s", track.Name, track.Artist),
 				map[string]interface{}{"track": track.Name, "artist": track.Artist, "album": track.Album})
 
-			s.bus.Publish(u.ID, events.Event{
-				Type:    events.EventTypeRecentListen,
-				Payload: l,
+			// Governing: SPEC event-bus-sse REQ-BUS-011 (recent-listen carries RecentListenPayload),
+			// REQ-BUS-012 (convenience Publish* methods)
+			s.bus.PublishRecentListen(u.ID, events.RecentListenPayload{
+				ListenID:   l.ID,
+				TrackName:  l.TrackName,
+				ArtistName: l.ArtistName,
+				AlbumName:  l.AlbumName,
+				Source:     l.Source,
+				PlayedAt:   l.PlayedAt,
+				URL:        l.URL,
 			})
 		}
 	}
@@ -987,14 +1033,8 @@ func (s *Syncer) persistPlaylistTracks(ctx context.Context, playlistID int, trac
 		s.logEvent(ctx, pl.Edges.User, syncevent.EventTypeTrackAdded, providerName, message,
 			map[string]interface{}{"playlist_name": pl.Name, "track_count": totalCount, "added": addedCount, "updated": updatedCount, "deleted": deletedCount})
 
-		s.bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Playlist Tracks Synced",
-				Message:  message,
-				IconType: "success",
-			},
-		})
+		// Governing: SPEC event-bus-sse REQ-BUS-012 (convenience Publish* methods)
+		s.bus.PublishNotification(userID, "Playlist Tracks Synced", message, "success")
 	}
 
 	return nil

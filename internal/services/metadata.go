@@ -551,10 +551,52 @@ func (s *MetadataService) getActiveEnrichers(ctx context.Context, u *ent.User) (
 	return active, nil
 }
 
+// enricherPassStats accumulates per-enricher counters across one entity-type
+// enrichment pass so metric.enricher can report real per-enricher values.
+// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
+type enricherPassStats struct {
+	entities int
+	errors   int
+	duration time.Duration
+}
+
+// enricherStatsFor returns the stats entry for an enricher type, creating it
+// on first use. It returns nil when stats collection is disabled (nil map).
+func enricherStatsFor(stats map[enrichers.Type]*enricherPassStats, t enrichers.Type) *enricherPassStats {
+	if stats == nil {
+		return nil
+	}
+	st, ok := stats[t]
+	if !ok {
+		st = &enricherPassStats{}
+		stats[t] = st
+	}
+	return st
+}
+
+// emitEnricherMetrics emits one metric.enricher event per enricher that ran in
+// the completed entity-type pass, using the enricher's registered type name.
+// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
+func (s *MetadataService) emitEnricherMetrics(entityType, entityPlural string, stats map[enrichers.Type]*enricherPassStats) {
+	for t, st := range stats {
+		success := st.errors == 0
+		var errMsg string
+		if !success {
+			errMsg = fmt.Sprintf("%d of %d %s failed enrichment", st.errors, st.entities, entityPlural)
+		}
+		s.logger.Info("metric.enricher",
+			"enricher", string(t),
+			"entity_type", entityType,
+			"entities_processed", st.entities,
+			"duration_ms", st.duration.Milliseconds(),
+			"success", success,
+			"error", errMsg)
+	}
+}
+
 // Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
 // Governing: SPEC graceful-shutdown REQ-REC-003 (metadata enrichment tracks per-entity state via LastEnrichedAt)
 func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, error) {
-	enrichStart := time.Now()
 	s.logger.Info("enriching artists", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
@@ -603,28 +645,19 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 			"has_images", len(art.Edges.Images))
 	}
 
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
+	// (one metric.enricher event per enricher for this artist pass)
+	stats := make(map[enrichers.Type]*enricherPassStats)
 	enrichedCount := 0
 	for _, art := range artists {
-		if err := s.enrichArtist(ctx, u, art, enricherList); err != nil {
+		if err := s.enrichArtist(ctx, u, art, enricherList, stats); err != nil {
 			s.logger.Warn("failed to enrich artist", "artist", art.Name, "error", err)
 			continue
 		}
 		enrichedCount++
 	}
 
-	enrichSuccess := true
-	var enrichErr string
-	if enrichedCount < len(artists) && len(artists) > 0 {
-		enrichSuccess = false
-		enrichErr = fmt.Sprintf("%d of %d artists failed enrichment", len(artists)-enrichedCount, len(artists))
-	}
-	s.logger.Info("metric.enricher",
-		"enricher", "artists",
-		"entity_type", "artist",
-		"entities_processed", len(artists),
-		"duration_ms", time.Since(enrichStart).Milliseconds(),
-		"success", enrichSuccess,
-		"error", enrichErr)
+	s.emitEnricherMetrics("artist", "artists", stats)
 
 	return enrichedCount, nil
 }
@@ -633,7 +666,7 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
-func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *ent.Artist, enricherList enrichers.List) error {
+func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *ent.Artist, enricherList enrichers.List, stats map[enrichers.Type]*enricherPassStats) error {
 	s.logger.Debug("enriching artist", "name", art.Name)
 
 	update := s.client.Artist.UpdateOne(art)
@@ -653,8 +686,18 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 
 	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050/051 (capability accessors replace ad-hoc type assertions)
 	for _, artistEnricher := range enricherList.ArtistEnrichers() {
+		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
+		enricherStart := time.Now()
 		data, err := artistEnricher.EnrichArtist(ctx, art)
+		st := enricherStatsFor(stats, artistEnricher.Type())
+		if st != nil {
+			st.entities++
+			st.duration += time.Since(enricherStart)
+		}
 		if err != nil {
+			if st != nil {
+				st.errors++
+			}
 			s.logger.Warn("enricher failed for artist",
 				"enricher", artistEnricher.Name(),
 				"artist", art.Name,
@@ -872,7 +915,6 @@ func (s *MetadataService) saveArtistImages(ctx context.Context, art *ent.Artist,
 // Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
 // EnrichAlbums runs enrichment on all albums that need it.
 func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, error) {
-	enrichStart := time.Now()
 	s.logger.Info("enriching albums", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
@@ -918,28 +960,19 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 			"has_images", len(alb.Edges.Images))
 	}
 
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
+	// (one metric.enricher event per enricher for this album pass)
+	stats := make(map[enrichers.Type]*enricherPassStats)
 	enrichedCount := 0
 	for _, alb := range albums {
-		if err := s.enrichAlbum(ctx, u, alb, enricherList); err != nil {
+		if err := s.enrichAlbum(ctx, u, alb, enricherList, stats); err != nil {
 			s.logger.Warn("failed to enrich album", "album", alb.Name, "error", err)
 			continue
 		}
 		enrichedCount++
 	}
 
-	enrichSuccess := true
-	var enrichErr string
-	if enrichedCount < len(albums) && len(albums) > 0 {
-		enrichSuccess = false
-		enrichErr = fmt.Sprintf("%d of %d albums failed enrichment", len(albums)-enrichedCount, len(albums))
-	}
-	s.logger.Info("metric.enricher",
-		"enricher", "albums",
-		"entity_type", "album",
-		"entities_processed", len(albums),
-		"duration_ms", time.Since(enrichStart).Milliseconds(),
-		"success", enrichSuccess,
-		"error", enrichErr)
+	s.emitEnricherMetrics("album", "albums", stats)
 
 	return enrichedCount, nil
 }
@@ -1056,7 +1089,7 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
-func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent.Album, enricherList enrichers.List) error {
+func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent.Album, enricherList enrichers.List, stats map[enrichers.Type]*enricherPassStats) error {
 	s.logger.Debug("enriching album", "name", alb.Name)
 
 	update := s.client.Album.UpdateOne(alb)
@@ -1071,8 +1104,18 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 
 	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050/051 (capability accessors replace ad-hoc type assertions)
 	for _, albumEnricher := range enricherList.AlbumEnrichers() {
+		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
+		enricherStart := time.Now()
 		data, err := albumEnricher.EnrichAlbum(ctx, alb)
+		st := enricherStatsFor(stats, albumEnricher.Type())
+		if st != nil {
+			st.entities++
+			st.duration += time.Since(enricherStart)
+		}
 		if err != nil {
+			if st != nil {
+				st.errors++
+			}
 			s.logger.Warn("enricher failed for album",
 				"enricher", albumEnricher.Name(),
 				"album", alb.Name,
@@ -1295,7 +1338,6 @@ func (s *MetadataService) saveAlbumImages(ctx context.Context, alb *ent.Album, i
 // Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
 // EnrichTracks runs enrichment on all tracks that need it.
 func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, error) {
-	enrichStart := time.Now()
 	s.logger.Info("enriching tracks", "username", u.Username)
 
 	enricherList, err := s.getActiveEnrichers(ctx, u)
@@ -1340,28 +1382,19 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 
 	s.logger.Info("found tracks to enrich", "count", len(userTracks))
 
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
+	// (one metric.enricher event per enricher for this track pass)
+	stats := make(map[enrichers.Type]*enricherPassStats)
 	enrichedCount := 0
 	for _, t := range userTracks {
-		if err := s.enrichTrack(ctx, u, t, enricherList); err != nil {
+		if err := s.enrichTrack(ctx, u, t, enricherList, stats); err != nil {
 			s.logger.Warn("failed to enrich track", "track", t.Name, "error", err)
 			continue
 		}
 		enrichedCount++
 	}
 
-	enrichSuccess := true
-	var enrichErr string
-	if enrichedCount < len(userTracks) && len(userTracks) > 0 {
-		enrichSuccess = false
-		enrichErr = fmt.Sprintf("%d of %d tracks failed enrichment", len(userTracks)-enrichedCount, len(userTracks))
-	}
-	s.logger.Info("metric.enricher",
-		"enricher", "tracks",
-		"entity_type", "track",
-		"entities_processed", len(userTracks),
-		"duration_ms", time.Since(enrichStart).Milliseconds(),
-		"success", enrichSuccess,
-		"error", enrichErr)
+	s.emitEnricherMetrics("track", "tracks", stats)
 
 	return enrichedCount, nil
 }
@@ -1370,7 +1403,7 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
-func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.Track, enricherList enrichers.List) error {
+func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.Track, enricherList enrichers.List, stats map[enrichers.Type]*enricherPassStats) error {
 	s.logger.Debug("enriching track", "name", t.Name)
 
 	update := s.client.Track.UpdateOne(t)
@@ -1386,8 +1419,18 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 
 	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-050/051 (capability accessors replace ad-hoc type assertions)
 	for _, trackEnricher := range enricherList.TrackEnrichers() {
+		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
+		enricherStart := time.Now()
 		data, err := trackEnricher.EnrichTrack(ctx, t)
+		st := enricherStatsFor(stats, trackEnricher.Type())
+		if st != nil {
+			st.entities++
+			st.duration += time.Since(enricherStart)
+		}
 		if err != nil {
+			if st != nil {
+				st.errors++
+			}
 			s.logger.Warn("enricher failed for track",
 				"enricher", trackEnricher.Name(),
 				"track", t.Name,

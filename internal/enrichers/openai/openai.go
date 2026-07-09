@@ -236,8 +236,9 @@ func (e *Enricher) loadTemplates() error {
 	return nil
 }
 
-// callOpenAI makes a request to the OpenAI API.
-func (e *Enricher) callOpenAI(ctx context.Context, prompt string, images []string) (string, error) {
+// callOpenAI makes a request to the OpenAI API. The operation identifies the
+// AI use case ("artist_bio", "album_review", "track_review") for metric.llm.
+func (e *Enricher) callOpenAI(ctx context.Context, operation, prompt string, images []string) (string, error) {
 	model := e.config.OpenAI.Model
 	if model == "" {
 		model = defaultModel
@@ -285,11 +286,33 @@ func (e *Enricher) callOpenAI(ctx context.Context, prompt string, images []strin
 		},
 	}
 
+	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "LLM-001", REQ "LLM-002", REQ "LLM-003"
+	llmStart := time.Now()
 	resp, err := e.llm.Chat(ctx, req)
+	llmDuration := time.Since(llmStart).Milliseconds()
 	if err != nil {
 		e.logger.Error("OpenAI request failed", "error", err)
+		e.logger.Info("metric.llm",
+			"model", model,
+			"operation", operation,
+			"tokens_used", 0,
+			"duration_ms", llmDuration,
+			"success", false,
+			"error", err.Error())
 		return "", fmt.Errorf("request failed: %w", err)
 	}
+
+	tokensUsed := 0
+	if resp.Usage != nil {
+		tokensUsed = resp.Usage.TotalTokens
+	}
+	e.logger.Info("metric.llm",
+		"model", model,
+		"operation", operation,
+		"tokens_used", tokensUsed,
+		"duration_ms", llmDuration,
+		"success", true,
+		"error", "")
 
 	return resp.Choices[0].Message.Content, nil
 }
@@ -467,7 +490,7 @@ func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enric
 	e.logger.Info("calling OpenAI API for artist", "artist", artist.Name, "image_count", len(images))
 
 	// Call OpenAI
-	response, err := e.callOpenAI(ctx, prompt, images)
+	response, err := e.callOpenAI(ctx, "artist_bio", prompt, images)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
 	}
@@ -609,7 +632,7 @@ func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enricher
 	}
 
 	// Call OpenAI
-	response, err := e.callOpenAI(ctx, prompt, images)
+	response, err := e.callOpenAI(ctx, "album_review", prompt, images)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
 	}
@@ -765,7 +788,7 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 	}
 
 	// Call OpenAI (no images for tracks)
-	response, err := e.callOpenAI(ctx, prompt, nil)
+	response, err := e.callOpenAI(ctx, "track_review", prompt, nil)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
 	}

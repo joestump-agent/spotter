@@ -3,10 +3,18 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"spotter/ent"
 )
+
+// ErrMalformedResponse marks a provider response body that could not be
+// parsed. Providers wrap decode errors with this sentinel so the shared error
+// classifier treats them as fatal (an unparseable body indicates an API
+// contract change that will not succeed on retry).
+// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+var ErrMalformedResponse = errors.New("malformed provider response")
 
 // Type identifies the source of the data (e.g., "spotify", "navidrome").
 type Type string

@@ -126,6 +126,16 @@ func TestClassifyError_5xxRetriable(t *testing.T) {
 	assert.Equal(t, services.ErrorClassRetriable, services.ClassifyError(err))
 }
 
+// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+func TestClassifyError_MalformedResponseIsFatal(t *testing.T) {
+	err := fmt.Errorf("failed to decode response: %w: %w",
+		providers.ErrMalformedResponse, errors.New("invalid character '<' looking for beginning of value"))
+	assert.Equal(t, services.ErrorClassFatal, services.ClassifyError(err))
+
+	wrapped := fmt.Errorf("spotify sync failed: %w", err)
+	assert.Equal(t, services.ErrorClassFatal, services.ClassifyError(wrapped))
+}
+
 func TestErrorClassString(t *testing.T) {
 	assert.Equal(t, "retriable", services.ErrorClassRetriable.String())
 	assert.Equal(t, "fatal", services.ErrorClassFatal.String())
@@ -151,32 +161,45 @@ func TestCalculateBackoff_ExponentialGrowth(t *testing.T) {
 	}
 }
 
+// Governing: SPEC error-handling REQ-BACK-001 (first failure delay ~30s: 22.5s-37.5s with jitter)
 func TestCalculateBackoff_FirstFailure(t *testing.T) {
-	// First failure: base = 30s * 2^1 = 60s, with jitter [45s, 75s]
+	// First failure: base = 30s * 2^(1-1) = 30s, with jitter [22.5s, 37.5s]
 	for i := 0; i < 10; i++ {
 		delay := services.CalculateBackoff(1)
-		assert.GreaterOrEqual(t, delay, 45*time.Second, "first failure delay should be >= 45s (60s * 0.75)")
-		assert.LessOrEqual(t, delay, 75*time.Second, "first failure delay should be <= 75s (60s * 1.25)")
+		assert.GreaterOrEqual(t, delay, 22500*time.Millisecond, "first failure delay should be >= 22.5s (30s * 0.75)")
+		assert.LessOrEqual(t, delay, 37500*time.Millisecond, "first failure delay should be <= 37.5s (30s * 1.25)")
+	}
+}
+
+// Governing: SPEC error-handling REQ-BACK-001 (delays double: ~60s after second failure)
+func TestCalculateBackoff_SecondFailure(t *testing.T) {
+	// Second failure: base = 30s * 2^(2-1) = 60s, with jitter [45s, 75s]
+	for i := 0; i < 10; i++ {
+		delay := services.CalculateBackoff(2)
+		assert.GreaterOrEqual(t, delay, 45*time.Second, "second failure delay should be >= 45s (60s * 0.75)")
+		assert.LessOrEqual(t, delay, 75*time.Second, "second failure delay should be <= 75s (60s * 1.25)")
 	}
 }
 
 func TestCalculateBackoff_ZeroFailures(t *testing.T) {
-	// Zero consecutive failures: base = 30s * 2^0 = 30s, with jitter [22.5s, 37.5s]
+	// consecutiveFailures starts at 1 for the first failure; values below 1 are
+	// clamped, so the delay is the first-failure delay: [22.5s, 37.5s]
 	for i := 0; i < 10; i++ {
 		delay := services.CalculateBackoff(0)
-		assert.GreaterOrEqual(t, delay, time.Duration(float64(22500)*float64(time.Millisecond)))
-		assert.LessOrEqual(t, delay, time.Duration(float64(37500)*float64(time.Millisecond)))
+		assert.GreaterOrEqual(t, delay, 22500*time.Millisecond)
+		assert.LessOrEqual(t, delay, 37500*time.Millisecond)
 	}
 }
 
+// Governing: SPEC error-handling REQ-BACK-002 (jitter applied before the cap;
+// delay never exceeds 30 minutes)
 func TestCalculateBackoff_MaxDelayCap(t *testing.T) {
-	// At very high failure counts, delay should be capped at 30 minutes
+	// At very high failure counts, delay should be capped at exactly 30 minutes
+	// because jitter is applied before the cap.
 	for i := 0; i < 10; i++ {
 		delay := services.CalculateBackoff(100)
-		// Max delay with max jitter: 30m * 1.25 = 37.5m
-		assert.LessOrEqual(t, delay, 38*time.Minute, "delay should not exceed max with jitter")
-		// Min delay with min jitter: 30m * 0.75 = 22.5m
-		assert.GreaterOrEqual(t, delay, 22*time.Minute, "delay at max should be around 30m * jitter")
+		assert.LessOrEqual(t, delay, 30*time.Minute, "delay must never exceed maxDelay")
+		assert.Equal(t, 30*time.Minute, delay, "delay at max should be capped at exactly 30m")
 	}
 }
 

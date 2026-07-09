@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -191,20 +190,20 @@ func main() {
 
 	// Governing: SPEC graceful-shutdown REQ-TMO-001 (30s default shutdown budget)
 	// Governing: SPEC graceful-shutdown REQ-TMO-005 (configurable shutdown timeout)
-	shutdownTimeout := 30 * time.Second
-	if s := os.Getenv("SPOTTER_SHUTDOWN_TIMEOUT"); s != "" {
-		if d, err := time.ParseDuration(s); err == nil {
-			shutdownTimeout = d
-		}
+	// Governing: ADR-0009 (Viper configuration: server.shutdown_timeout)
+	shutdownTimeout, err := time.ParseDuration(cfg.Server.ShutdownTimeout)
+	if err != nil {
+		logger.Error("invalid server.shutdown_timeout, using default 30s", "error", err, "value", cfg.Server.ShutdownTimeout)
+		shutdownTimeout = 30 * time.Second
 	}
 
 	// Governing: SPEC graceful-shutdown REQ-SEM-001 through REQ-SEM-004 (bounded concurrency semaphore)
 	// Governing: SPEC graceful-shutdown REQ-SEM-002 (configurable semaphore capacity, default 10)
-	maxJobs := 10
-	if s := os.Getenv("SPOTTER_MAX_CONCURRENT_JOBS"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			maxJobs = n
-		}
+	// Governing: ADR-0009 (Viper configuration: server.max_concurrent_jobs)
+	maxJobs := cfg.Server.MaxConcurrentJobs
+	if maxJobs <= 0 {
+		logger.Error("invalid server.max_concurrent_jobs, using default 10", "value", cfg.Server.MaxConcurrentJobs)
+		maxJobs = 10
 	}
 	sem := make(chan struct{}, maxJobs)
 
@@ -295,10 +294,11 @@ func main() {
 		defer wg.Done()
 		ticker := time.NewTicker(syncInterval)
 		defer ticker.Stop()
-		// Governing: SPEC graceful-shutdown REQ-CTX-001 (select on ctx.Done vs ticker.C)
+		// Governing: SPEC graceful-shutdown REQ-CTX-001 (select on ctx.Done vs ticker.C, log shutdown)
 		for {
 			select {
 			case <-ctx.Done():
+				logger.Info("loop shutting down", "loop", "sync")
 				return
 			case <-ticker.C:
 				// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041,
@@ -339,6 +339,8 @@ func main() {
 			// Initial delay to let the app start up
 			select {
 			case <-ctx.Done():
+				// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
+				logger.Info("loop shutting down", "loop", "metadata")
 				return
 			case <-time.After(30 * time.Second):
 			}
@@ -348,13 +350,14 @@ func main() {
 
 			ticker := time.NewTicker(metadataInterval)
 			defer ticker.Stop()
-			// Governing: SPEC graceful-shutdown REQ-CTX-001 (select on ctx.Done vs ticker.C)
+			// Governing: SPEC graceful-shutdown REQ-CTX-001 (select on ctx.Done vs ticker.C, log shutdown)
 			// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041 (syncMetadataForUsers
 			// fans out per-user work without blocking this loop; the shared InFlightGuard
 			// skips users whose previous enrichment run is still active)
 			for {
 				select {
 				case <-ctx.Done():
+					logger.Info("loop shutting down", "loop", "metadata")
 					return
 				case <-ticker.C:
 					syncMetadataForUsers()
@@ -380,16 +383,19 @@ func main() {
 		// Initial delay to let the app start up
 		select {
 		case <-ctx.Done():
+			// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
+			logger.Info("loop shutting down", "loop", "playlist_sync")
 			return
 		case <-time.After(1 * time.Minute):
 		}
 
 		ticker := time.NewTicker(playlistSyncInterval)
 		defer ticker.Stop()
-		// Governing: SPEC graceful-shutdown REQ-CTX-001 (select on ctx.Done vs ticker.C)
+		// Governing: SPEC graceful-shutdown REQ-CTX-001 (select on ctx.Done vs ticker.C, log shutdown)
 		for {
 			select {
 			case <-ctx.Done():
+				logger.Info("loop shutting down", "loop", "playlist_sync")
 				return
 			case <-ticker.C:
 				// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041,
