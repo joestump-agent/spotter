@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -127,6 +128,10 @@ type Config struct {
 	} `mapstructure:"lidarr"`
 	Sync struct {
 		Interval string `mapstructure:"interval"`
+		// Governing: SPEC listen-playlist-sync REQ-SYNC-020
+		// HistoryLookback bounds how far back the first history sync reaches when a
+		// user has no existing listens (duration string, e.g. "720h").
+		HistoryLookback string `mapstructure:"history_lookback"`
 	} `mapstructure:"sync"`
 	Theme struct {
 		Available string `mapstructure:"available"` // Comma-separated list of DaisyUI theme names
@@ -206,6 +211,21 @@ func (c *Config) MetadataEnricherOrder() []string {
 	return result
 }
 
+// Governing: SPEC listen-playlist-sync REQ-SYNC-020
+// HistoryLookbackDuration returns sync.history_lookback parsed as a duration.
+// Falls back to 720h (30 days) when unset or invalid.
+func (c *Config) HistoryLookbackDuration() time.Duration {
+	const defaultLookback = 720 * time.Hour
+	if c.Sync.HistoryLookback == "" {
+		return defaultLookback
+	}
+	d, err := time.ParseDuration(c.Sync.HistoryLookback)
+	if err != nil || d <= 0 {
+		return defaultLookback
+	}
+	return d
+}
+
 // IsOpenAIEnabled returns true if OpenAI API key is configured.
 func (c *Config) IsOpenAIEnabled() bool {
 	return c.OpenAI.APIKey != ""
@@ -274,6 +294,8 @@ func Load() (*Config, error) {
 	v.SetDefault("server.write_timeout", "60s")
 	v.SetDefault("server.idle_timeout", "120s")
 	v.SetDefault("sync.interval", "5m")
+	// Governing: SPEC listen-playlist-sync REQ-SYNC-020 (default initial history lookback of 30 days)
+	v.SetDefault("sync.history_lookback", "720h")
 	v.SetDefault("theme.available", "light,dark,cupcake")
 	v.SetDefault("theme.default", "dark")
 	v.SetDefault("database.driver", "sqlite3")
@@ -313,7 +335,8 @@ func Load() (*Config, error) {
 	// Playlist sync defaults
 	v.SetDefault("playlist_sync.sync_interval", "1h")
 	v.SetDefault("playlist_sync.delete_on_unsync", false)
-	v.SetDefault("playlist_sync.min_match_confidence", 0.8)
+	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-003, ADR-0014 (default fuzzy match threshold 0.7)
+	v.SetDefault("playlist_sync.min_match_confidence", 0.7)
 	v.SetDefault("playlist_sync.include_unmatched_tracks", false)
 
 	// Vibes (mixtape generation) defaults

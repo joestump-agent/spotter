@@ -58,12 +58,16 @@ func (h *Handler) Playlists(w http.ResponseWriter, r *http.Request) {
 		Select(playlist.FieldNavidromePlaylistID).
 		Strings(r.Context())
 
-	visibilityFilter := playlist.HasUserWith(user.ID(u.ID))
+	// Governing: SPEC listen-playlist-sync REQ-SYNC-032 (inactive playlists are hidden from the listing)
+	visibilityFilter := playlist.And(
+		playlist.HasUserWith(user.ID(u.ID)),
+		playlist.IsActive(true),
+	)
 	var baseFilter func(*ent.PlaylistQuery) *ent.PlaylistQuery
 	if len(managedNavidromeIDs) > 0 {
 		baseFilter = func(q *ent.PlaylistQuery) *ent.PlaylistQuery {
 			return q.Where(
-				playlist.HasUserWith(user.ID(u.ID)),
+				visibilityFilter,
 				playlist.Not(
 					playlist.And(
 						playlist.Source(string(providers.TypeNavidrome)),

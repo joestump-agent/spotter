@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,6 +30,39 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, "dark", cfg.Theme.Default)
 	assert.Equal(t, []string{"light", "dark", "cupcake"}, cfg.AvailableThemes())
 	assert.Equal(t, "text", cfg.Log.Format)
+	// Governing: SPEC listen-playlist-sync REQ-SYNC-020 (default initial history lookback of 30 days)
+	assert.Equal(t, "720h", cfg.Sync.HistoryLookback)
+	assert.Equal(t, 720*time.Hour, cfg.HistoryLookbackDuration())
+	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-003, ADR-0014 (default fuzzy match threshold 0.7)
+	assert.Equal(t, 0.7, cfg.PlaylistSync.MinMatchConfidence)
+}
+
+// Governing: SPEC listen-playlist-sync REQ-SYNC-020 (sync.history_lookback config key)
+func TestHistoryLookbackConfig(t *testing.T) {
+	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
+	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
+	t.Setenv("SPOTTER_LIDARR_BASE_URL", "http://localhost:8686")
+	t.Setenv("SPOTTER_LIDARR_API_KEY", "test-api-key")
+	t.Setenv("SPOTTER_SECURITY_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("SPOTTER_SECURITY_JWT_SECRET", "test-jwt-secret-at-least-32-chars")
+	t.Setenv("SPOTTER_SYNC_HISTORY_LOOKBACK", "48h")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "48h", cfg.Sync.HistoryLookback)
+	assert.Equal(t, 48*time.Hour, cfg.HistoryLookbackDuration())
+}
+
+// Governing: SPEC listen-playlist-sync REQ-SYNC-020 (invalid lookback falls back to 720h)
+func TestHistoryLookbackDuration_Fallback(t *testing.T) {
+	var cfg Config
+	assert.Equal(t, 720*time.Hour, cfg.HistoryLookbackDuration(), "empty value falls back to 720h")
+
+	cfg.Sync.HistoryLookback = "not-a-duration"
+	assert.Equal(t, 720*time.Hour, cfg.HistoryLookbackDuration(), "invalid value falls back to 720h")
+
+	cfg.Sync.HistoryLookback = "-24h"
+	assert.Equal(t, 720*time.Hour, cfg.HistoryLookbackDuration(), "non-positive value falls back to 720h")
 }
 
 func TestLogFormatConfig(t *testing.T) {

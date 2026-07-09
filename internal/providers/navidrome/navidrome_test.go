@@ -956,3 +956,55 @@ func TestAuth_ExpiredToken(t *testing.T) {
 	// Test demonstrates JWT token handling for internal API
 	// Actual token refresh would happen automatically on 401 responses
 }
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-031 — UpdatePlaylistTracks must
+// abort when the current playlist contents cannot be read, otherwise a transient
+// failure would be treated as "no current tracks" and every track appended again.
+func TestUpdatePlaylistTracks_AbortsWhenCurrentTracksUnreadable(t *testing.T) {
+	updateCalled := false
+
+	// Mock Navidrome server where getPlaylist fails but updatePlaylist would succeed.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.URL.Path == "/rest/getPlaylist.view" {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		if r.URL.Path == "/rest/updatePlaylist.view" {
+			updateCalled = true
+			io.WriteString(w, `{"subsonic-response": {"status": "ok"}}`)
+			return
+		}
+
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = ts.URL
+
+	user := &ent.User{
+		Username: "testuser",
+		Edges: ent.UserEdges{
+			NavidromeAuth: &ent.NavidromeAuth{
+				Password: "password123",
+			},
+		},
+	}
+
+	factory := navidrome.New(logger, cfg)
+	provider, err := factory(context.Background(), user)
+	assert.NoError(t, err)
+
+	syncer, ok := provider.(providers.PlaylistSyncer)
+	assert.True(t, ok)
+
+	err = syncer.UpdatePlaylistTracks(context.Background(), "existing-playlist", []providers.Track{
+		{ID: "new-track-1", Name: "New Song 1", Artist: "New Artist"},
+	})
+	assert.Error(t, err, "update must abort when current tracks cannot be read")
+	assert.False(t, updateCalled, "updatePlaylist must not be called after a failed getPlaylist read")
+}

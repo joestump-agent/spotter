@@ -74,6 +74,17 @@ func (Playlist) Fields() []ent.Field {
 		field.Int("matched_track_count").
 			Default(0).
 			Comment("Number of tracks successfully matched in Navidrome"),
+		// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-021 (persist unmatched count and match rate)
+		field.Int("unmatched_track_count").
+			Default(0).
+			Comment("Number of tracks that could not be matched in Navidrome during the last sync"),
+		field.Float("match_rate").
+			Default(0).
+			Comment("Fraction of tracks matched in Navidrome during the last sync (0.0-1.0)"),
+		// Governing: SPEC listen-playlist-sync REQ-SYNC-032 (playlists no longer returned by a provider are deactivated)
+		field.Bool("is_active").
+			Default(true).
+			Comment("False when the playlist is no longer returned by its source provider"),
 		field.Time("created_at").
 			Default(time.Now),
 		field.Time("updated_at").

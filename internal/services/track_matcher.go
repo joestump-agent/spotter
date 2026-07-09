@@ -4,6 +4,7 @@ package services
 import (
 	"context"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -302,10 +303,32 @@ func (m *TrackMatcher) findBestFuzzyMatch(source providers.Track, candidates []*
 	return bestMatch, bestScore
 }
 
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-005 (regex-based noise-suffix stripping)
+// Precompiled patterns for noise suffixes that vary too much for a fixed-suffix list.
+// Applied after lowercasing, so patterns only need to handle lowercase input.
+var (
+	// "(feat. X)" / "[ft. X]" parenthesized featured-artist credits.
+	featParenRe = regexp.MustCompile(`\s*[(\[](?:feat|ft|featuring)\.?\s+[^)\]]*[)\]]\s*$`)
+	// Trailing "feat. X" / "ft. X" without parentheses. The dot is required here to
+	// avoid stripping legitimate title words such as "ft" in band or song names.
+	featBareRe = regexp.MustCompile(`\s+(?:feat\.|ft\.|featuring)\s+.*$`)
+	// Year-qualified remaster forms: "(2011 Remaster)", "[1999 Remastered]",
+	// "(Remastered 2011)", "- 2011 Remaster".
+	yearRemasterRe = regexp.MustCompile(`\s*(?:-\s*)?[(\[]?\s*(?:\d{4}\s+remaster(?:ed)?|remaster(?:ed)?\s+\d{4})\s*[)\]]?\s*$`)
+)
+
 // normalizeForMatch normalizes a string for comparison.
 func normalizeForMatch(s string) string {
 	// Convert to lowercase
 	s = strings.ToLower(s)
+
+	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-005
+	// Strip variable noise suffixes (featured-artist credits, year-qualified
+	// remasters) with precompiled regexes; the fixed-suffix list below handles
+	// the remaining deterministic forms.
+	s = yearRemasterRe.ReplaceAllString(s, "")
+	s = featParenRe.ReplaceAllString(s, "")
+	s = featBareRe.ReplaceAllString(s, "")
 
 	// Remove common suffixes that indicate versions
 	suffixes := []string{
