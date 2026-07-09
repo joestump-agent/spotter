@@ -137,9 +137,12 @@ func (Track) Edges() []ent.Edge {
 // Indexes of the Track.
 func (Track) Indexes() []ent.Index {
 	return []ent.Index{
-		// Track name + artist should be unique (approximately)
+		// Governing: SPEC metadata-enrichment-pipeline (catalog uniqueness) — a track is
+		// identified by (artist, name); duplicates are merged pre-migration by
+		// database.DedupeTracks and creation races are handled in getOrCreateTrack.
 		index.Fields("name").
-			Edges("artist"),
+			Edges("artist").
+			Unique(),
 		// External IDs for quick lookups
 		index.Fields("musicbrainz_id"),
 		index.Fields("spotify_id"),

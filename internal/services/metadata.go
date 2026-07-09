@@ -456,19 +456,21 @@ func (s *MetadataService) getOrCreateAlbum(ctx context.Context, u *ent.User, art
 }
 
 // getOrCreateTrack finds or creates a track in the catalog.
+// Tracks are unique per (artist, name) — see the unique index in
+// ent/schema/track.go — so an album mismatch must not create a duplicate.
+// Governing: SPEC metadata-enrichment-pipeline (catalog uniqueness), SPEC graceful-shutdown REQ-REC-003
 func (s *MetadataService) getOrCreateTrack(ctx context.Context, art *ent.Artist, alb *ent.Album, name string) (*ent.Track, bool, error) {
-	// Build query
-	query := s.client.Track.Query().
-		Where(
-			track.Name(name),
-			track.HasArtistWith(artist.ID(art.ID)),
-		)
-
-	if alb != nil {
-		query = query.Where(track.HasAlbumWith(album.ID(alb.ID)))
+	// lookup finds the track by (artist, name), the unique identity.
+	lookup := func() (*ent.Track, error) {
+		return s.client.Track.Query().
+			Where(
+				track.Name(name),
+				track.HasArtistWith(artist.ID(art.ID)),
+			).
+			Only(ctx)
 	}
 
-	existing, err := query.Only(ctx)
+	existing, err := lookup()
 	if err == nil {
 		return existing, false, nil
 	}
@@ -487,6 +489,13 @@ func (s *MetadataService) getOrCreateTrack(ctx context.Context, art *ent.Artist,
 
 	newTrack, err := create.Save(ctx)
 	if err != nil {
+		// A concurrent creator may have won the race on the unique
+		// (artist, name) index; re-query and return the existing row.
+		if ent.IsConstraintError(err) {
+			if existing, qErr := lookup(); qErr == nil {
+				return existing, false, nil
+			}
+		}
 		return nil, false, err
 	}
 	return newTrack, true, nil
@@ -1827,13 +1836,21 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 				).
 				Only(ctx)
 			if err == nil {
-				query := s.client.Track.Query().
-					Where(
-						track.Name(l.TrackName),
-						track.HasArtistWith(artist.ID(art.ID)),
-					)
+				// Tracks are unique per (artist, name) — see ent/schema/track.go —
+				// so prefer the album-scoped match but fall back to the
+				// (artist, name) identity when the album edge differs or is unset.
+				// Governing: SPEC metadata-enrichment-pipeline (catalog uniqueness)
+				baseQuery := func() *ent.TrackQuery {
+					return s.client.Track.Query().
+						Where(
+							track.Name(l.TrackName),
+							track.HasArtistWith(artist.ID(art.ID)),
+						)
+				}
+				query := baseQuery()
 
 				// If we have an album name, also match on that for more precision
+				albumFiltered := false
 				if l.AlbumName != "" {
 					alb, albErr := s.client.Album.Query().
 						Where(
@@ -1844,10 +1861,15 @@ func (s *MetadataService) MatchListens(ctx context.Context, u *ent.User) (int, e
 						Only(ctx)
 					if albErr == nil {
 						query = query.Where(track.HasAlbumWith(album.ID(alb.ID)))
+						albumFiltered = true
 					}
 				}
 
 				trk, err := query.Only(ctx)
+				if err != nil && albumFiltered {
+					// Fall back to the unique (artist, name) identity.
+					trk, err = baseQuery().Only(ctx)
+				}
 				if err == nil {
 					// Check if already linked
 					hasTrack, err := s.client.Listen.Query().

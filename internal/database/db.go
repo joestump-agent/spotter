@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	"spotter/ent"
 	"spotter/internal/crypto"
@@ -27,8 +28,26 @@ func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client,
 		RegisterEncryptionHooks(client, encryptor)
 	}
 
-	// Governing: SPEC-0016 REQ "Schema Migration", ADR-0004 (Ent ORM handles DDL for all dialects)
 	ctx := context.Background()
+
+	// Open a raw database connection for custom migrations that run outside Ent.
+	db, err := sql.Open(driverToStdlib(driver), source)
+	if err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("failed opening raw db for custom migrations: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	// Governing: SPEC metadata-enrichment-pipeline (catalog uniqueness)
+	// Merge duplicate (artist, name) Track rows BEFORE Schema.Create so the
+	// unique index on tracks (name, artist_tracks) can be created over
+	// pre-existing data.
+	if _, err := DedupeTracks(ctx, driver, db, slog.Default()); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("failed deduplicating tracks before migration: %v", err)
+	}
+
+	// Governing: SPEC-0016 REQ "Schema Migration", ADR-0004 (Ent ORM handles DDL for all dialects)
 	if err := client.Schema.Create(ctx); err != nil {
 		// Attempt to close the client on schema creation failure
 		_ = client.Close()
@@ -36,13 +55,6 @@ func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client,
 	}
 
 	// Governing: SPEC-0014 REQ "Denormalized Entity Tags Table"
-	// Open a raw database connection for the entity_tags custom migration.
-	db, err := sql.Open(driverToStdlib(driver), source)
-	if err != nil {
-		_ = client.Close()
-		return nil, fmt.Errorf("failed opening raw db for entity_tags migration: %v", err)
-	}
-	defer func() { _ = db.Close() }()
 	if err := CreateEntityTagsTable(ctx, driver, db); err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("failed creating entity_tags table: %v", err)
