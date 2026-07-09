@@ -84,6 +84,7 @@ statistics (which are unavailable for unsubmitted albums).
 
 - **WHEN** `EnrichAlbum()` calls `findAlbum()` and the album is not found
 - **AND** the album has a non-empty `musicbrainz_id`
+- **AND** the album's artist has a non-empty `musicbrainz_id` (Lidarr album submission resolves the parent artist by MBID; the enricher SHALL load the artist edge if it is not already loaded rather than skipping)
 - **THEN** the enricher SHALL insert a `LidarrQueue` row with `entity_type=album`
 - **AND** the enricher SHALL NOT make a POST request to Lidarr's `/api/v1/album` endpoint
 
@@ -179,6 +180,11 @@ Where:
 - `jitter` = random duration in `[0, base)`
 
 A failed item SHALL be retried when `retry_at <= now` during the submitter's next wake cycle.
+
+Errors classified as permanent (HTTP 4xx validation rejections that cannot succeed on retry,
+e.g. "artist not found in Lidarr" for an album whose parent cannot be resolved) MAY fast-fail:
+the submitter SHALL set `attempts` to the cap and leave `retry_at` unset so the item is never
+automatically retried. Transient errors (5xx, network) MUST follow the backoff ladder.
 
 The system MUST cap maximum attempts at 10. After 10 failed attempts, the item MUST remain
 in `status=failed` and MUST NOT be automatically retried. The user MAY manually retry via a
