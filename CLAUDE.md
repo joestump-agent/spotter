@@ -26,6 +26,25 @@ This project uses the [SDD plugin](https://github.com/joestump/claude-plugin-sdd
 
 Run `/sdd:prime [topic]` at the start of a session to load relevant ADRs and specs into context.
 
+### SDD Configuration
+
+#### Tracker
+- **Type**: github
+- **Owner**: joestump-agent
+- **Repo**: spotter
+
+#### Branch Conventions
+- **Enabled**: true
+- **Prefix**: feature
+- **Epic Prefix**: epic
+- **Slug Max Length**: 50
+
+#### PR Conventions
+- **Enabled**: true
+- **Close Keyword**: Closes
+- **Ref Keyword**: Part of
+- **Include Spec Reference**: true
+
 ### Governing Comments
 
 When implementing code governed by ADRs or specs, leave comments referencing the governing artifacts:
