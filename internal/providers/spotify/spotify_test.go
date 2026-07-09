@@ -29,7 +29,7 @@ func TestNewFactory(t *testing.T) {
 			// No SpotifyAuth edge
 		}
 
-		factory := spotify.New(logger, cfg)
+		factory := spotify.New(logger, cfg, nil)
 		provider, err := factory(context.Background(), user)
 		assert.NoError(t, err)
 		assert.Nil(t, provider)
@@ -47,7 +47,7 @@ func TestNewFactory(t *testing.T) {
 			},
 		}
 
-		factory := spotify.New(logger, cfg)
+		factory := spotify.New(logger, cfg, nil)
 		provider, err := factory(context.Background(), user)
 		assert.NoError(t, err)
 		assert.NotNil(t, provider)
@@ -120,7 +120,7 @@ func TestCreatePlaylist(t *testing.T) {
 		},
 	}
 
-	factory := spotify.New(logger, cfg)
+	factory := spotify.New(logger, cfg, nil)
 	provider, err := factory(context.Background(), user)
 	require.NoError(t, err)
 	require.NotNil(t, provider)
@@ -149,7 +149,7 @@ func TestProviderImplementsInterfaces(t *testing.T) {
 		},
 	}
 
-	factory := spotify.New(logger, cfg)
+	factory := spotify.New(logger, cfg, nil)
 	provider, err := factory(context.Background(), user)
 	require.NoError(t, err)
 	require.NotNil(t, provider)
@@ -528,7 +528,7 @@ func TestGetRecentListens_EmptyHistory(t *testing.T) {
 		},
 	}
 
-	factory := spotify.New(logger, cfg)
+	factory := spotify.New(logger, cfg, nil)
 	provider, err := factory(context.Background(), user)
 	require.NoError(t, err)
 
@@ -565,7 +565,7 @@ func TestGetRecentListens_RateLimited(t *testing.T) {
 		},
 	}
 
-	factory := spotify.New(logger, cfg)
+	factory := spotify.New(logger, cfg, nil)
 	provider, err := factory(context.Background(), user)
 	require.NoError(t, err)
 
