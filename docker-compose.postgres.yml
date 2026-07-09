@@ -1,4 +1,4 @@
-# Governing: SPEC-0014 REQ "Docker Compose Examples", ADR-0023
+# Governing: SPEC-0016 REQ "Docker Compose Examples", ADR-0023
 # Spotter + PostgreSQL deployment example
 # Usage: docker compose -f docker-compose.postgres.yml up
 version: "3.9"

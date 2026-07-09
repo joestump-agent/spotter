@@ -1,5 +1,5 @@
 ---
-id: SPEC-0014
+id: SPEC-0016
 status: accepted
 date: 2026-02-22
 authors: joestump
@@ -9,7 +9,7 @@ governing-adrs:
   - ADR-0009 (Viper configuration)
 ---
 
-# SPEC-0014: Multi-Database Support
+# SPEC-0016: Multi-Database Support
 
 ## Overview
 

@@ -63,7 +63,7 @@ case <-ticker.C:
 
 **REQ-WG-003** — After the root context is cancelled and all three loops have returned, the main function MUST call `wg.Wait()` to block until all in-flight per-user goroutines have completed.
 
-**REQ-WG-004** — The WaitGroup MUST NOT be used to track the ticker loop goroutines themselves — only the per-user work goroutines they spawn. The loops exit via `ctx.Done()` and are tracked separately (e.g., via a second WaitGroup or explicit goroutine count).
+**REQ-WG-004** — The shared WaitGroup MAY track both the ticker loop goroutines and the per-user work goroutines they spawn. Loops MUST exit promptly on `ctx.Done()` so their WaitGroup entries do not delay the drain; per-user goroutines MUST be registered before spawn and released on completion.
 
 ### Timeout Budget
 
@@ -77,13 +77,15 @@ time.AfterFunc(30*time.Second, func() {
 })
 ```
 
-**REQ-TMO-003** — The shutdown sequence MUST allocate the timeout budget as follows:
+**REQ-TMO-003** — The shutdown sequence MUST proceed in this order, sharing the single overall timeout budget (default 30 seconds) via one deadline context:
 1. Background loop exit: immediate (loops exit on next `select` iteration)
-2. In-flight goroutine drain (`wg.Wait()`): up to 25 seconds
-3. HTTP server shutdown: up to 5 seconds (using a context with 5-second deadline)
-4. Database close: synchronous, no timeout (SQLite close is fast)
+2. HTTP server shutdown (`srv.Shutdown(ctx)`): stops accepting new requests and drains in-flight HTTP requests
+3. In-flight background goroutine drain (`wg.Wait()`), bounded by the same deadline context
+4. Database close: synchronous, no timeout (close is fast on all supported drivers)
 
-**REQ-TMO-004** — If `wg.Wait()` has not returned within 25 seconds, the application SHOULD log the number of still-running goroutines (if trackable) and proceed to HTTP shutdown anyway.
+Rationale: shutting the HTTP server first prevents new work from being enqueued while background goroutines drain. A single shared budget is simpler than fixed per-phase sub-budgets and matches the implementation (see design.md § Shutdown Sequence).
+
+**REQ-TMO-004** — If `wg.Wait()` has not returned before the shutdown deadline, the application SHOULD log the number of still-running goroutines (if trackable) and proceed to HTTP shutdown anyway.
 
 **REQ-TMO-005** — The timeout budget of 30 seconds SHOULD be configurable via an environment variable (e.g., `SPOTTER_SHUTDOWN_TIMEOUT`) with 30 seconds as the default.
 

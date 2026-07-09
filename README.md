@@ -54,7 +54,7 @@ Spotter supports multiple database backends. SQLite is the default and requires 
 | PostgreSQL | `postgres` | `host=localhost port=5432 dbname=spotter user=spotter password=secret sslmode=disable` |
 | MariaDB / MySQL | `mysql` | `user:pass@tcp(localhost:3306)/spotter?parseTime=true&charset=utf8mb4` |
 
-> **Note:** PostgreSQL and MySQL drivers require CGO to be enabled at build time. The official Docker image includes all three drivers.
+> **Note:** The PostgreSQL and MySQL drivers are pure Go; only the SQLite driver (`mattn/go-sqlite3`) requires CGO to be enabled at build time. The official Docker image includes all three drivers.
 
 ### Docker Compose Examples
 

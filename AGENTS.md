@@ -281,7 +281,7 @@
 - **ORM**: [Ent](https://entgo.io/) (Code generation based)
 - **Router**: [Chi](https://github.com/go-chi/chi) v5
 - **Templating**: [Templ](https://github.com/a-h/templ)
-- **Database**: SQLite (via `mattn/go-sqlite3`)
+- **Database**: SQLite (default, via `mattn/go-sqlite3`), PostgreSQL (`lib/pq`), or MariaDB/MySQL (`go-sql-driver/mysql`) — see ADR-0023 / SPEC-0016
 - **Logging**: `log/slog`
 - **Config**: Viper
 - **UI Icons**: [Hero Icons](http://heroicons.com)
