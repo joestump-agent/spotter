@@ -11,6 +11,7 @@ import (
 
 	"spotter/ent/user"
 	"spotter/internal/events"
+	"spotter/internal/providers"
 	"spotter/internal/providers/lastfm"
 )
 
@@ -193,6 +194,12 @@ func (h *Handler) LastFMCallback(w http.ResponseWriter, r *http.Request) {
 		if err := h.Notifier.ClearCooldown(r.Context(), u.ID, "lastfm"); err != nil {
 			h.Logger.Error("failed to clear lastfm notification cooldown", "error", err)
 		}
+	}
+
+	// Governing: SPEC error-handling REQ-STATE-004 — reconnecting via OAuth is the
+	// user's corrective action, so clear any fatal backoff state for Last.fm.
+	if h.Syncer != nil {
+		h.Syncer.ClearProviderBackoff(u.ID, providers.TypeLastFM)
 	}
 
 	h.Logger.Info("successfully connected Last.fm account",

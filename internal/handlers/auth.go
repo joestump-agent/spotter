@@ -14,6 +14,7 @@ import (
 
 	"spotter/ent"
 	"spotter/ent/user"
+	"spotter/internal/providers"
 	"spotter/internal/vibes"
 	"spotter/internal/views/auth"
 )
@@ -143,6 +144,12 @@ func (h *Handler) PostLogin(w http.ResponseWriter, r *http.Request) {
 		if err := h.Notifier.ClearCooldown(r.Context(), u.ID, "navidrome"); err != nil {
 			h.Logger.Error("failed to clear navidrome notification cooldown", "error", err)
 		}
+	}
+
+	// Governing: SPEC error-handling REQ-STATE-004 — a successful re-login is the
+	// user's corrective action, so clear any fatal backoff state for Navidrome.
+	if h.Syncer != nil {
+		h.Syncer.ClearProviderBackoff(u.ID, providers.TypeNavidrome)
 	}
 
 	// Trigger initial sync

@@ -217,6 +217,21 @@ func (m *TrackMatcher) MatchTracks(ctx context.Context, userID int, tracks []pro
 					"matched", true,
 					"confidence", confidence,
 					"duration_ms", time.Since(trackMatchStart).Milliseconds())
+			} else {
+				// The fuzzy match cleared the threshold but the library track has
+				// no NavidromeID, so the track remains unmatched.
+				// REQ "MATCH-003": all strategies failed, emit strategy="fuzzy", matched=false, confidence=0.0
+				matchStats[MatchMethodNone]++
+
+				m.Logger.Debug("fuzzy match found but library track has no navidrome_id",
+					"source_artist", sourceTrack.Artist,
+					"source_title", sourceTrack.Name,
+					"confidence", confidence)
+				m.Logger.Info("metric.track_match",
+					"strategy", "fuzzy",
+					"matched", false,
+					"confidence", 0.0,
+					"duration_ms", time.Since(trackMatchStart).Milliseconds())
 			}
 		} else {
 			matchStats[MatchMethodNone]++

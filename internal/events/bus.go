@@ -3,6 +3,7 @@ package events
 
 import (
 	"sync"
+	"time"
 )
 
 // Governing: SPEC event-bus-sse REQ-BUS-011 (EventType string constants)
@@ -42,6 +43,18 @@ type NotificationPayload struct {
 	Title    string
 	Message  string
 	IconType string // "success", "error", "warning", "info"
+}
+
+// RecentListenPayload is sent by the Syncer when a new listen is imported.
+// Governing: SPEC event-bus-sse REQ-BUS-011 (recent-listen payload), REQ-BUS-012 (typed payload structs)
+type RecentListenPayload struct {
+	ListenID   int
+	TrackName  string
+	ArtistName string
+	AlbumName  string
+	Source     string
+	PlayedAt   time.Time
+	URL        string
 }
 
 // MixtapeCreatedPayload is sent when a new mixtape is created.
@@ -202,6 +215,15 @@ func (b *Bus) PublishNotification(userID int, title, message, iconType string) {
 			Message:  message,
 			IconType: iconType,
 		},
+	})
+}
+
+// PublishRecentListen is a convenience method to publish a recent-listen event.
+// Governing: SPEC event-bus-sse REQ-BUS-012 (convenience Publish* methods)
+func (b *Bus) PublishRecentListen(userID int, payload RecentListenPayload) {
+	b.Publish(userID, Event{
+		Type:    EventTypeRecentListen,
+		Payload: payload,
 	})
 }
 

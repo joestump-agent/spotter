@@ -69,7 +69,7 @@ func TestEnrichArtist_FirstEnricherWins(t *testing.T) {
 		},
 	}
 
-	err = svc.enrichArtist(ctx, u, art, enrichers.List{first, second})
+	err = svc.enrichArtist(ctx, u, art, enrichers.List{first, second}, nil)
 	require.NoError(t, err)
 
 	got, err := svc.client.Artist.Get(ctx, art.ID)
@@ -113,7 +113,7 @@ func TestEnrichArtist_ExternalIDConflictKeepsRestOfUpdate(t *testing.T) {
 		},
 	}
 
-	err = svc.enrichArtist(ctx, u, art, enrichers.List{e})
+	err = svc.enrichArtist(ctx, u, art, enrichers.List{e}, nil)
 	require.NoError(t, err, "constraint failure on external ID should be retried, not bubble up")
 
 	got, err := svc.client.Artist.Get(ctx, art.ID)

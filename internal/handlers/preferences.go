@@ -187,6 +187,12 @@ func (h *Handler) DisconnectSpotify(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.Logger.Info("disconnected user from Spotify", "username", u.Username)
+
+		// Governing: SPEC error-handling REQ-STATE-004 — disconnecting is the user's
+		// corrective action; clear stale fatal state so a later reconnect syncs again.
+		if h.Syncer != nil {
+			h.Syncer.ClearProviderBackoff(u.ID, providers.TypeSpotify)
+		}
 	}
 
 	w.Header().Set("HX-Redirect", "/preferences/providers")
@@ -215,6 +221,12 @@ func (h *Handler) DisconnectLastFM(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.Logger.Info("disconnected user from Last.fm", "username", u.Username)
+
+		// Governing: SPEC error-handling REQ-STATE-004 — disconnecting is the user's
+		// corrective action; clear stale fatal state so a later reconnect syncs again.
+		if h.Syncer != nil {
+			h.Syncer.ClearProviderBackoff(u.ID, providers.TypeLastFM)
+		}
 	}
 
 	w.Header().Set("HX-Redirect", "/preferences/providers")

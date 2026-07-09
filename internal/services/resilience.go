@@ -70,6 +70,13 @@ func ClassifyError(err error) ErrorClass {
 		return classifyHTTPStatus(httpErr.StatusCode)
 	}
 
+	// Unparseable response bodies indicate an API contract change and won't
+	// succeed on retry.
+	// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+	if errors.Is(err, providers.ErrMalformedResponse) {
+		return ErrorClassFatal
+	}
+
 	// Check for network-level errors (timeout, connection refused, DNS)
 	// Governing: SPEC error-handling REQ-ERR-002 (network timeout, connection refused, DNS failure)
 	var netErr net.Error
@@ -208,16 +215,22 @@ const (
 )
 
 // CalculateBackoff computes the next retry delay using exponential backoff with jitter.
-// delay = min(30s * 2^consecutiveFailures, 30m) * jitter[0.75, 1.25]
+// delay = min(30s * 2^(consecutiveFailures-1) * jitter[0.75, 1.25], 30m)
+// The ladder starts at ~30s for the first failure, and jitter is applied
+// before the cap so the delay never exceeds maxDelay.
 // Governing: SPEC error-handling REQ-BACK-001, REQ-BACK-002, REQ-BACK-003
 func CalculateBackoff(consecutiveFailures int) time.Duration {
-	delay := float64(backoffBaseDelay) * math.Pow(2, float64(consecutiveFailures))
-	if delay > float64(backoffMaxDelay) {
-		delay = float64(backoffMaxDelay)
+	// consecutiveFailures starts at 1 for the first failure.
+	if consecutiveFailures < 1 {
+		consecutiveFailures = 1
 	}
 	// Apply jitter: random value in [0.75, 1.25]
 	jitter := 0.75 + rand.Float64()*0.5
-	return time.Duration(delay * jitter)
+	delay := float64(backoffBaseDelay) * math.Pow(2, float64(consecutiveFailures-1)) * jitter
+	if delay > float64(backoffMaxDelay) {
+		delay = float64(backoffMaxDelay)
+	}
+	return time.Duration(delay)
 }
 
 // RecordFailure updates backoff state for a provider failure.

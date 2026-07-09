@@ -135,7 +135,8 @@ func (p *Provider) authenticateInternalAPI(ctx context.Context) error {
 		Token string `json:"token"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
-		return fmt.Errorf("failed to decode login response: %w", err)
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return fmt.Errorf("failed to decode login response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	p.jwtToken = loginResp.Token
@@ -201,7 +202,8 @@ func (p *Provider) getRecentlyPlayedFromInternalAPI(ctx context.Context, since t
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&songs); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return nil, fmt.Errorf("failed to decode response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	var tracks []providers.Track
@@ -317,7 +319,8 @@ func (p *Provider) getNowPlayingFromSubsonic(ctx context.Context, since time.Tim
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return nil, fmt.Errorf("failed to decode response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	if result.SubsonicResponse.Status == statusFailed {
@@ -429,7 +432,8 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return nil, fmt.Errorf("failed to decode response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	if result.SubsonicResponse.Status == statusFailed {
@@ -539,7 +543,8 @@ func (p *Provider) getPlaylistTracks(ctx context.Context, playlistID string) (tr
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, 0, 0, fmt.Errorf("failed to decode playlist details response: %w", err)
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return nil, 0, 0, fmt.Errorf("failed to decode playlist details response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	if result.SubsonicResponse.Status != "ok" {
@@ -672,7 +677,8 @@ func (p *Provider) SyncPlaylist(ctx context.Context, playlist providers.SyncPlay
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return "", fmt.Errorf("failed to decode response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	if result.SubsonicResponse.Status == statusFailed {
@@ -747,7 +753,8 @@ func (p *Provider) updatePlaylistMetadata(ctx context.Context, playlistID, name,
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return fmt.Errorf("failed to decode response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	if result.SubsonicResponse.Status == statusFailed {
@@ -822,7 +829,8 @@ func (p *Provider) DeletePlaylist(ctx context.Context, remotePlaylistID string) 
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return fmt.Errorf("failed to decode response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	if result.SubsonicResponse.Status == statusFailed {
@@ -944,7 +952,8 @@ func (p *Provider) UpdatePlaylistTracks(ctx context.Context, remotePlaylistID st
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+		// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+		return fmt.Errorf("failed to decode response: %w: %w", providers.ErrMalformedResponse, err)
 	}
 
 	if result.SubsonicResponse.Status == statusFailed {
