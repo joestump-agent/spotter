@@ -108,8 +108,14 @@ type Config struct {
 		Source string `mapstructure:"source"`
 	} `mapstructure:"database"`
 	Server struct {
-		Port              string `mapstructure:"port"`
-		Host              string `mapstructure:"host"`
+		Port string `mapstructure:"port"`
+		Host string `mapstructure:"host"`
+		// Governing: SPEC-0015 REQ "Email Content"
+		// BaseURL is the externally reachable base URL of this Spotter
+		// instance, used for links in outbound email (e.g. sync-failure
+		// notifications). When empty, a best-effort fallback of
+		// "http://{server.host}:{server.port}" is used — see SpotterBaseURL().
+		BaseURL           string `mapstructure:"base_url"`
 		ReadHeaderTimeout string `mapstructure:"read_header_timeout"` // Duration string for read header timeout (default: "10s")
 		ReadTimeout       string `mapstructure:"read_timeout"`        // Duration string for read timeout (default: "30s")
 		WriteTimeout      string `mapstructure:"write_timeout"`       // Duration string for write timeout (default: "60s")
@@ -171,6 +177,21 @@ type Config struct {
 			PromptsDirectory string `mapstructure:"prompts_directory"` // Directory containing prompt templates
 		} `mapstructure:"ai"`
 	} `mapstructure:"metadata"`
+}
+
+// SpotterBaseURL returns the externally reachable base URL of this Spotter
+// instance, used for links embedded in outbound email. It prefers the
+// explicit server.base_url (SPOTTER_SERVER_BASE_URL) config value; when that
+// is empty it derives a best-effort fallback of
+// "http://{server.host}:{server.port}". Listen hosts such as "localhost" or
+// "0.0.0.0" are used as-is — operators should set server.base_url when the
+// instance is reached via a different external address.
+// Governing: SPEC-0015 REQ "Email Content"
+func (c *Config) SpotterBaseURL() string {
+	if c.Server.BaseURL != "" {
+		return strings.TrimRight(c.Server.BaseURL, "/")
+	}
+	return fmt.Sprintf("http://%s:%s", c.Server.Host, c.Server.Port)
 }
 
 // AvailableThemes returns the list of available themes parsed from the comma-separated config.
@@ -269,6 +290,8 @@ func Load() (*Config, error) {
 	v.SetDefault("security.auth_rate_limit", 10)  // Login attempts per minute per IP
 	v.SetDefault("server.port", "8080")
 	v.SetDefault("server.host", "0.0.0.0")
+	// Governing: SPEC-0015 REQ "Email Content" — external base URL for email links
+	v.SetDefault("server.base_url", "")
 	v.SetDefault("server.read_header_timeout", "10s")
 	v.SetDefault("server.read_timeout", "30s")
 	v.SetDefault("server.write_timeout", "60s")

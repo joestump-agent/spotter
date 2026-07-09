@@ -132,6 +132,13 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 	submittedCount := 0
 	skippedCount := 0
 
+	// Hot-loop guard: items whose status UPDATE failed after a submission
+	// attempt are excluded from re-selection for the remainder of this tick.
+	// Otherwise a persistently failing UPDATE leaves the row eligible and the
+	// loop would re-query and resubmit the same item in a tight loop.
+	// Governing: SPEC-0017 REQ "Background Submitter Goroutine"
+	var skipIDs []int
+
 	for {
 		// Check for cancellation
 		select {
@@ -143,7 +150,7 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 		// Query for eligible items: status=queued OR (status=failed AND retry_at <= now AND attempts < maxAttempts)
 		// Governing: SPEC-0017 REQ "Background Submitter Goroutine"
 		now := time.Now()
-		items, err := s.db.LidarrQueue.Query().
+		query := s.db.LidarrQueue.Query().
 			Where(
 				lidarrqueue.Or(
 					lidarrqueue.StatusEQ(lidarrqueue.StatusQueued),
@@ -153,7 +160,11 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 						lidarrqueue.AttemptsLT(maxAttempts),
 					),
 				),
-			).
+			)
+		if len(skipIDs) > 0 {
+			query = query.Where(lidarrqueue.IDNotIn(skipIDs...))
+		}
+		items, err := query.
 			// Artists before albums ("artist" > "album" lexicographically, so descending puts artists first)
 			// Governing: SPEC-0017 REQ "Background Submitter Goroutine"
 			Order(
@@ -224,6 +235,9 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 
 			// Detect permanently-failed submissions that will never succeed on retry.
 			// These are set to maxAttempts so they won't be retried.
+			// Governing: SPEC-0017 REQ "Backoff Strategy" — sanctioned deviation:
+			// permanent errors fast-fail by jumping attempts to the cap instead of
+			// walking the backoff schedule (spec amendment pending).
 			permanent := isPermanentLidarrError(errMsg)
 			if permanent {
 				newAttempts = maxAttempts
@@ -250,6 +264,9 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 
 			if err := update.Exec(ctx); err != nil {
 				s.logger.Error("failed to update queue item after failure", "error", err, "item_id", item.ID)
+				// The row may still be eligible (status unchanged) — skip it
+				// for the rest of this tick to avoid a resubmission hot loop.
+				skipIDs = append(skipIDs, item.ID)
 			}
 			skippedCount++
 			// Continue to next item rather than stopping
@@ -271,6 +288,9 @@ func (s *LidarrSubmitter) tick(ctx context.Context) {
 			SetStatus(lidarrqueue.StatusSubmitted).
 			Exec(ctx); err != nil {
 			s.logger.Error("failed to update queue item after success", "error", err, "item_id", item.ID)
+			// The row is still status=queued — skip it for the rest of this
+			// tick so the loop does not re-query and resubmit it.
+			skipIDs = append(skipIDs, item.ID)
 		}
 
 		// Update the entity's lidarr_id and lidarr_status

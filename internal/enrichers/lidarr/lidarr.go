@@ -203,31 +203,56 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 // it inserts a LidarrQueue row instead of calling addAlbum() directly.
 // Governing: SPEC-0017 REQ "Enricher Decoupling", ADR-0029
 func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enrichers.AlbumData, error) {
+	// Load the artist edge if the caller did not eager-load it — the artist
+	// is needed both for the Lidarr album lookup and for the enqueue
+	// precondition below, and an album with a valid MBID must not be
+	// silently skipped just because the edge is missing.
+	// Governing: SPEC-0017 REQ "Enricher Decoupling"
+	if album.Edges.Artist == nil && e.db != nil {
+		if loaded, err := e.db.Album.QueryArtist(album).Only(ctx); err != nil {
+			e.logger.Warn("failed to load artist for album", "error", err, "album", album.Name)
+		} else {
+			album.Edges.Artist = loaded
+		}
+	}
+
 	lAlbum, err := e.findAlbum(ctx, album)
 	if err != nil {
 		return nil, err
 	}
 
 	if lAlbum == nil {
-		// Governing: SPEC-0017 REQ "Enricher Decoupling" — enqueue instead of addAlbum()
-		if album.Edges.Artist != nil && album.Edges.Artist.MusicbrainzID != "" && album.MusicbrainzID != "" {
-			// Ensure artist is also enqueued (or already in Lidarr)
-			_, err := e.EnrichArtist(ctx, album.Edges.Artist)
-			if err != nil {
-				e.logger.Warn("could not ensure artist exists in lidarr", "error", err)
-			}
-
-			if err := e.enqueueEntity(ctx, lidarrqueue.EntityTypeAlbum, album.ID, album.MusicbrainzID); err != nil {
-				e.logger.Error("failed to enqueue album for lidarr submission", "error", err, "album", album.Name)
-				return nil, nil
-			}
-
-			return &enrichers.AlbumData{
-				MusicBrainzID: album.MusicbrainzID,
-				LidarrStatus:  "queued",
-			}, nil
+		// Governing: SPEC-0017 REQ "Enricher Decoupling" — enqueue instead of addAlbum().
+		// The precondition is a non-empty ALBUM musicbrainz_id; albums without
+		// one cannot be submitted to Lidarr.
+		if album.MusicbrainzID == "" {
+			return nil, nil
 		}
-		return nil, nil
+
+		// The submitter resolves the parent artist in Lidarr by artist MBID
+		// when building the album payload (see lidarr_submitter.go
+		// submitAlbum/fetchArtistByMBID), so an artist MBID is genuinely
+		// required — skip only in that case.
+		// Governing: SPEC-0017 REQ "Enricher Decoupling"
+		artist := album.Edges.Artist
+		if artist == nil || artist.MusicbrainzID == "" {
+			return nil, nil
+		}
+
+		// Ensure artist is also enqueued (or already in Lidarr)
+		if _, err := e.EnrichArtist(ctx, artist); err != nil {
+			e.logger.Warn("could not ensure artist exists in lidarr", "error", err)
+		}
+
+		if err := e.enqueueEntity(ctx, lidarrqueue.EntityTypeAlbum, album.ID, album.MusicbrainzID); err != nil {
+			e.logger.Error("failed to enqueue album for lidarr submission", "error", err, "album", album.Name)
+			return nil, nil
+		}
+
+		return &enrichers.AlbumData{
+			MusicBrainzID: album.MusicbrainzID,
+			LidarrStatus:  "queued",
+		}, nil
 	}
 
 	if album.LidarrID == "" {
