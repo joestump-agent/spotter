@@ -18,6 +18,7 @@ import (
 
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/httputil"
 	"spotter/internal/providers"
 )
 
@@ -58,7 +59,7 @@ func New(logger *slog.Logger, cfg *config.Config) providers.Factory {
 			user:       user,
 			auth:       user.Edges.LastfmAuth,
 			baseURL:    defaultAPIBaseURL,
-			httpClient: http.DefaultClient,
+			httpClient: newHTTPClient(),
 		}, nil
 	}
 }
@@ -75,9 +76,17 @@ func NewAuthenticator(logger *slog.Logger, cfg *config.Config) providers.Authent
 			logger:     l,
 			config:     cfg,
 			baseURL:    defaultAPIBaseURL,
-			httpClient: http.DefaultClient,
+			httpClient: newHTTPClient(),
 		}
 	}
+}
+
+// newHTTPClient returns the configured HTTP client used for Last.fm API
+// requests. A dedicated client (rather than http.DefaultClient) ensures a
+// request timeout is always applied.
+// Governing: ADR-0020 (error handling and resilience), SPEC error-handling REQ-ERR-002 (network timeout retriable)
+func newHTTPClient() *http.Client {
+	return &http.Client{Timeout: 30 * time.Second}
 }
 
 // WithBaseURL sets a custom base URL (used for testing).
@@ -295,19 +304,17 @@ func (p *Provider) signParams(params map[string]string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func (p *Provider) doRequest(ctx context.Context, method string, params map[string]string, result interface{}) error {
-	data := url.Values{}
-	for k, v := range params {
-		data.Set(k, v)
-	}
-
+// buildRequest constructs a fresh Last.fm API request. A new request (and
+// body) is built for every attempt: reusing a request across retries would
+// re-send an already-consumed POST body.
+func (p *Provider) buildRequest(ctx context.Context, method string, data url.Values) (*http.Request, error) {
 	var req *http.Request
 	var err error
 
 	if method == "POST" {
 		req, err = http.NewRequestWithContext(ctx, "POST", p.baseURL, strings.NewReader(data.Encode()))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	} else {
@@ -315,48 +322,101 @@ func (p *Provider) doRequest(ctx context.Context, method string, params map[stri
 		reqURL := p.baseURL + "?" + data.Encode()
 		req, err = http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	// Retry logic for 500 errors
+	// Governing: AGENTS.md "External API Etiquette" (descriptive User-Agent)
+	req.Header.Set("User-Agent", httputil.UserAgent)
+	return req, nil
+}
+
+// closeBody closes a response body, logging (not returning) any error.
+func (p *Provider) closeBody(resp *http.Response) {
+	if err := resp.Body.Close(); err != nil {
+		p.logger.Warn("failed to close response body", "error", err)
+	}
+}
+
+// doRequest performs a Last.fm API request, retrying transient failures
+// (network errors, 5xx) with exponential backoff and 429 responses using the
+// server-provided Retry-After delay.
+// Governing: ADR-0020 (error handling and resilience), SPEC error-handling REQ-ERR-002 (429/5xx retriable)
+func (p *Provider) doRequest(ctx context.Context, method string, params map[string]string, result interface{}) error {
+	data := url.Values{}
+	for k, v := range params {
+		data.Set(k, v)
+	}
+
 	maxRetries := 3
 	var lastErr error
 
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
-			// Exponential backoff: 1s, 2s, 4s
-			time.Sleep(time.Duration(1<<uint(i-1)) * time.Second)
 			p.logger.Info("retrying last.fm request", "attempt", i+1)
 		}
+
+		// Build a fresh request per attempt so retried POSTs carry a full
+		// body (a consumed body must never be reused).
+		req, err := p.buildRequest(ctx, method, data)
+		if err != nil {
+			return err
+		}
+
+		lastAttempt := i == maxRetries-1
 
 		resp, err := p.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
+			// Exponential backoff: 1s, 2s
+			if !lastAttempt {
+				if backoffErr := httputil.Sleep(ctx, time.Duration(1<<uint(i))*time.Second); backoffErr != nil {
+					return backoffErr
+				}
+			}
 			continue
 		}
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				p.logger.Warn("failed to close response body", "error", err)
-			}
-		}()
 
 		if resp.StatusCode == http.StatusOK {
+			var decodeErr error
 			if result != nil {
-				if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-					// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
-					return fmt.Errorf("failed to decode last.fm response: %w: %w", providers.ErrMalformedResponse, err)
-				}
+				decodeErr = json.NewDecoder(resp.Body).Decode(result)
+			}
+			p.closeBody(resp)
+			if decodeErr != nil {
+				// Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
+				return fmt.Errorf("failed to decode last.fm response: %w: %w", providers.ErrMalformedResponse, decodeErr)
 			}
 			return nil
 		}
 
-		// Try to read body for error details
+		// Try to read body for error details, then close it promptly —
+		// deferring closes inside the loop would stack them until return.
 		body, _ := io.ReadAll(resp.Body)
+		retryAfter := httputil.RetryAfter(resp)
+		p.closeBody(resp)
 		lastErr = fmt.Errorf("last.fm api returned status %d: %s", resp.StatusCode, string(body))
 
-		// If not a 500 error, don't retry
-		if resp.StatusCode < 500 {
+		switch {
+		case resp.StatusCode == http.StatusTooManyRequests:
+			// Rate limited: honor Retry-After before the next attempt.
+			if !lastAttempt {
+				p.logger.Warn("last.fm api rate limited, retrying",
+					"attempt", i+1,
+					"retry_after", retryAfter)
+				if sleepErr := httputil.Sleep(ctx, retryAfter); sleepErr != nil {
+					return sleepErr
+				}
+			}
+		case resp.StatusCode >= 500:
+			// Exponential backoff: 1s, 2s
+			if !lastAttempt {
+				if backoffErr := httputil.Sleep(ctx, time.Duration(1<<uint(i))*time.Second); backoffErr != nil {
+					return backoffErr
+				}
+			}
+		default:
+			// Other non-retriable errors: don't retry
 			return lastErr
 		}
 	}

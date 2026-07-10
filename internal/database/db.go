@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"spotter/ent"
 	"spotter/internal/crypto"
@@ -17,34 +18,47 @@ import (
 
 const driverPostgres = "postgres"
 
-func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client, error) {
+// NewClient opens an Ent client for driver/source, registers encryption hooks
+// when an encryptor is provided, and runs schema migrations. The provided ctx
+// bounds the migration work; logger receives structured connection and
+// migration events (falls back to slog.Default when nil).
+// Governing: ADR-0010 (slog structured logging)
+func NewClient(ctx context.Context, driver, source string, encryptor *crypto.Encryptor, logger *slog.Logger) (*ent.Client, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	client, err := ent.Open(driver, source)
 	if err != nil {
-		return nil, fmt.Errorf("failed opening connection to %s: %v", driver, err)
+		return nil, fmt.Errorf("failed opening connection to %s: %w", driver, err)
 	}
+	logger.Info("database handle opened", "driver", driver)
 
 	// Register encryption/decryption hooks if encryptor is provided
 	if encryptor != nil {
-		RegisterEncryptionHooks(client, encryptor)
+		RegisterEncryptionHooks(client, encryptor, logger)
+		logger.Debug("encryption hooks registered")
 	}
-
-	ctx := context.Background()
 
 	// Open a raw database connection for custom migrations that run outside Ent.
 	db, err := sql.Open(driverToStdlib(driver), source)
 	if err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("failed opening raw db for custom migrations: %v", err)
+		return nil, fmt.Errorf("failed opening raw db for custom migrations: %w", err)
 	}
-	defer func() { _ = db.Close() }()
+	defer func() {
+		if cerr := db.Close(); cerr != nil {
+			logger.Warn("failed closing raw migration db", "error", cerr)
+		}
+	}()
 
 	// Governing: SPEC metadata-enrichment-pipeline (catalog uniqueness)
 	// Merge duplicate (artist, name) Track rows BEFORE Schema.Create so the
 	// unique index on tracks (name, artist_tracks) can be created over
 	// pre-existing data.
-	if _, err := DedupeTracks(ctx, driver, db, slog.Default()); err != nil {
+	if _, err := DedupeTracks(ctx, driver, db, logger); err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("failed deduplicating tracks before migration: %v", err)
+		return nil, fmt.Errorf("failed deduplicating tracks before migration: %w", err)
 	}
 
 	// Add and backfill created_at/updated_at on pre-existing auth tables
@@ -57,17 +71,21 @@ func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client,
 	}
 
 	// Governing: SPEC-0016 REQ "Schema Migration", ADR-0004 (Ent ORM handles DDL for all dialects)
+	logger.Info("running schema migration", "driver", driver)
+	migrationStart := time.Now()
 	if err := client.Schema.Create(ctx); err != nil {
 		// Attempt to close the client on schema creation failure
 		_ = client.Close()
-		return nil, fmt.Errorf("failed creating schema resources: %v", err)
+		return nil, fmt.Errorf("failed creating schema resources: %w", err)
 	}
+	logger.Info("schema migration complete", "driver", driver, "duration", time.Since(migrationStart))
 
 	// Governing: SPEC-0014 REQ "Denormalized Entity Tags Table"
 	if err := CreateEntityTagsTable(ctx, driver, db); err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("failed creating entity_tags table: %v", err)
+		return nil, fmt.Errorf("failed creating entity_tags table: %w", err)
 	}
+	logger.Debug("entity_tags table ensured")
 
 	return client, nil
 }

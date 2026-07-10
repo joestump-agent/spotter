@@ -14,6 +14,7 @@ import (
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	"spotter/internal/httputil"
 	tagsutil "spotter/internal/tags"
 )
 
@@ -82,7 +83,8 @@ func (e *Enricher) doRequest(ctx context.Context, method string, params url.Valu
 	}
 
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Spotter/1.0.0")
+	// Governing: AGENTS.md "External API Etiquette" (descriptive User-Agent)
+	req.Header.Set("User-Agent", httputil.UserAgent)
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
