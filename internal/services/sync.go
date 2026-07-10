@@ -346,6 +346,10 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 			count, skipped, err := s.persistListens(ctx, u, provider.Type(), tracks)
 			if err != nil {
+				// Forward-looking: persistListens currently handles per-item DB
+				// failures internally (Warn + continue) and always returns nil,
+				// so this branch only fires once the persist layer aggregates
+				// and returns real errors.
 				s.logger.Error("failed to persist listens batch", "error", err)
 				return err
 			}
@@ -532,9 +536,13 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 			added, skipped, err := s.persistPlaylists(ctx, u, provider.Type(), playlists)
 			if err != nil {
 				s.logger.Error("failed to persist playlists", "error", err)
-				// Persistence failures are real sync failures too: record them
-				// in the per-provider stats and the aggregated error instead
-				// of logging a "completed" event.
+				// Forward-looking: persistPlaylists currently handles per-item
+				// DB failures internally (Warn + continue) and always returns
+				// nil, so this branch only fires once the persist layer
+				// aggregates and returns real errors. When it does, persistence
+				// failures are real sync failures: record them in the
+				// per-provider stats and the aggregated error instead of
+				// logging a "completed" event.
 				// Governing: ADR-0020, SPEC observability REQ "BG-003"
 				if st := syncStatsFor(stats, provider.Type()); st != nil {
 					st.failed = true
