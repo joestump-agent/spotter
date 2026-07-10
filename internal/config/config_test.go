@@ -357,6 +357,79 @@ func TestMetadataEnricherOrderExcludesLidarrWhenUnconfigured(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, cfg.MetadataEnricherOrder(), "lidarr")
 	})
+
+	t.Run("order of only lidarr yields empty order when unconfigured", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_METADATA_ORDER", "lidarr")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		// Enrichment becomes a no-op; MetadataEnricherOrder logs a WARN for this.
+		assert.Empty(t, cfg.MetadataEnricherOrder())
+	})
+}
+
+// Governing: ADR-0009 (Viper configuration), ADR-0023 (multi-database support), SPEC key-rotation
+// LoadDatabase must work standalone — with ONLY database env vars set — so
+// `spotter-admin rotate-key` does not require full server configuration.
+func TestLoadDatabase(t *testing.T) {
+	// clearServerEnv blanks all full-server required vars to prove LoadDatabase
+	// does not need them (and to shield against values leaking from the shell).
+	clearServerEnv := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "")
+		t.Setenv("SPOTTER_OPENAI_API_KEY", "")
+		t.Setenv("SPOTTER_SECURITY_ENCRYPTION_KEY", "")
+		t.Setenv("SPOTTER_SECURITY_JWT_SECRET", "")
+		t.Setenv("SPOTTER_LIDARR_BASE_URL", "")
+		t.Setenv("SPOTTER_LIDARR_API_KEY", "")
+	}
+
+	t.Run("standalone with no server config", func(t *testing.T) {
+		clearServerEnv(t)
+		t.Setenv("SPOTTER_DATABASE_DRIVER", "sqlite3")
+		t.Setenv("SPOTTER_DATABASE_SOURCE", "file:rotate.db?_fk=1")
+
+		// Full Load must fail without server config...
+		_, err := Load()
+		require.Error(t, err)
+
+		// ...but LoadDatabase succeeds with database vars alone.
+		cfg, err := LoadDatabase()
+		require.NoError(t, err)
+		assert.Equal(t, "sqlite3", cfg.Database.Driver)
+		assert.Equal(t, "file:rotate.db?_fk=1", cfg.Database.Source)
+	})
+
+	t.Run("defaults when nothing set", func(t *testing.T) {
+		clearServerEnv(t)
+		t.Setenv("SPOTTER_DATABASE_DRIVER", "")
+		t.Setenv("SPOTTER_DATABASE_SOURCE", "")
+
+		cfg, err := LoadDatabase()
+		require.NoError(t, err)
+		assert.Equal(t, "sqlite3", cfg.Database.Driver)
+		assert.Equal(t, "file:spotter.db?cache=shared&_fk=1", cfg.Database.Source)
+	})
+
+	t.Run("driver-specific default source", func(t *testing.T) {
+		clearServerEnv(t)
+		t.Setenv("SPOTTER_DATABASE_DRIVER", "postgres")
+		t.Setenv("SPOTTER_DATABASE_SOURCE", "")
+
+		cfg, err := LoadDatabase()
+		require.NoError(t, err)
+		assert.Equal(t, "host=localhost port=5432 dbname=spotter sslmode=disable", cfg.Database.Source)
+	})
+
+	t.Run("invalid driver rejected", func(t *testing.T) {
+		clearServerEnv(t)
+		t.Setenv("SPOTTER_DATABASE_DRIVER", "cockroachdb")
+
+		_, err := LoadDatabase()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported database driver")
+	})
 }
 
 // Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-TMO-005
@@ -383,6 +456,24 @@ func TestShutdownTimeout(t *testing.T) {
 	t.Run("invalid falls back to default", func(t *testing.T) {
 		setRequiredEnvVars(t)
 		t.Setenv("SPOTTER_SHUTDOWN_TIMEOUT", "not-a-duration")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 30*time.Second, cfg.GetShutdownTimeout())
+	})
+
+	t.Run("negative falls back to default", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SHUTDOWN_TIMEOUT", "-5s")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 30*time.Second, cfg.GetShutdownTimeout())
+	})
+
+	t.Run("zero falls back to default", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SHUTDOWN_TIMEOUT", "0s")
 
 		cfg, err := Load()
 		require.NoError(t, err)
@@ -418,6 +509,26 @@ func TestMaxConcurrentJobs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 10, cfg.GetMaxConcurrentJobs())
 	})
+
+	t.Run("negative falls back to default", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_MAX_CONCURRENT_JOBS", "-3")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 10, cfg.GetMaxConcurrentJobs())
+	})
+
+	// Governing: ADR-0009 (fail fast with clear error messages)
+	t.Run("non-numeric returns clear validation error", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_MAX_CONCURRENT_JOBS", "lots")
+
+		_, err := Load()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "max_concurrent_jobs must be an integer")
+		assert.Contains(t, err.Error(), `"lots"`)
+	})
 }
 
 // Governing: ADR-0026, SPEC-0015 (public base URL used in sync-failure email links)
@@ -434,6 +545,15 @@ func TestServerBaseURL(t *testing.T) {
 	t.Run("env override", func(t *testing.T) {
 		setRequiredEnvVars(t)
 		t.Setenv("SPOTTER_SERVER_BASE_URL", "https://spotter.example.com")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, "https://spotter.example.com", cfg.Server.BaseURL)
+	})
+
+	t.Run("trailing slashes are trimmed", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SERVER_BASE_URL", "https://spotter.example.com//")
 
 		cfg, err := Load()
 		require.NoError(t, err)
@@ -465,6 +585,15 @@ func TestSyncHistoryLookback(t *testing.T) {
 	t.Run("invalid falls back to default", func(t *testing.T) {
 		setRequiredEnvVars(t)
 		t.Setenv("SPOTTER_SYNC_HISTORY_LOOKBACK", "one-fortnight")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 720*time.Hour, cfg.GetSyncHistoryLookback())
+	})
+
+	t.Run("negative falls back to default", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SYNC_HISTORY_LOOKBACK", "-240h")
 
 		cfg, err := Load()
 		require.NoError(t, err)

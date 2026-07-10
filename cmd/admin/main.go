@@ -49,14 +49,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Governing: ADR-0023 (multi-database support), ADR-0009 (Viper configuration)
-	// Determine database driver and DSN via config.Load() — the same Viper-backed
-	// loader the server uses (SPOTTER_DATABASE_DRIVER / SPOTTER_DATABASE_SOURCE),
-	// including driver validation and driver-specific default sources. The --db
-	// flag still overrides the configured DSN.
-	cfg, err := config.Load()
+	// Governing: ADR-0023 (multi-database support), ADR-0009 (Viper configuration), SPEC key-rotation
+	// Determine database driver and DSN via config.LoadDatabase() — the same
+	// Viper-backed loader the server uses (SPOTTER_DATABASE_DRIVER /
+	// SPOTTER_DATABASE_SOURCE), including driver validation and driver-specific
+	// default sources, but scoped to database config only so rotate-key can run
+	// standalone without full server configuration (SPEC key-rotation Scenario 1).
+	// The --db flag still overrides the configured DSN.
+	cfg, err := config.LoadDatabase()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to load config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: failed to load database config: %v\n", err)
 		os.Exit(1)
 	}
 	driver := cfg.Database.Driver

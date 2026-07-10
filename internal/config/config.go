@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -119,9 +120,16 @@ type Config struct {
 	} `mapstructure:"server"`
 	// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-TMO-005 (configurable shutdown timeout)
 	// ShutdownTimeout is the graceful shutdown budget (SPOTTER_SHUTDOWN_TIMEOUT, default "30s").
+	// CONSTRAINT: this key is deliberately top-level (not namespaced under server.*)
+	// because the env var name SPOTTER_SHUTDOWN_TIMEOUT predates config consolidation
+	// (SPEC graceful-shutdown REQ-TMO-005 names it) and must keep working; with the
+	// dot-to-underscore replacer, only a top-level "shutdown_timeout" key maps to it.
 	ShutdownTimeout string `mapstructure:"shutdown_timeout"`
 	// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-SEM-002 (configurable semaphore capacity)
 	// MaxConcurrentJobs bounds concurrent per-user background jobs (SPOTTER_MAX_CONCURRENT_JOBS, default 10).
+	// CONSTRAINT: top-level for the same reason as ShutdownTimeout — the published
+	// env var name SPOTTER_MAX_CONCURRENT_JOBS (SPEC graceful-shutdown REQ-SEM-002)
+	// must remain stable.
 	MaxConcurrentJobs int `mapstructure:"max_concurrent_jobs"`
 	Navidrome         struct {
 		BaseURL string `mapstructure:"base_url"`
@@ -222,6 +230,12 @@ func (c *Config) MetadataEnricherOrder() []string {
 		}
 		result = append(result, p)
 	}
+	if len(result) == 0 && len(parts) > 0 {
+		// Filtering unconfigured enrichers emptied the order entirely — metadata
+		// enrichment will be a silent no-op, which is almost certainly not intended.
+		slog.Warn("metadata enricher order is empty after filtering unconfigured enrichers; metadata enrichment will do nothing",
+			"configured_order", c.Metadata.Order)
+	}
 	return result
 }
 
@@ -239,10 +253,11 @@ func (c *Config) IsLidarrEnabled() bool {
 
 // Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-TMO-001, REQ-TMO-005
 // GetShutdownTimeout returns the graceful shutdown budget, falling back to 30s
-// when unset or unparsable.
+// when unset, unparsable, or non-positive (a zero or negative budget would mean
+// zero-grace shutdown).
 func (c *Config) GetShutdownTimeout() time.Duration {
 	if c.ShutdownTimeout != "" {
-		if d, err := time.ParseDuration(c.ShutdownTimeout); err == nil {
+		if d, err := time.ParseDuration(c.ShutdownTimeout); err == nil && d > 0 {
 			return d
 		}
 	}
@@ -261,10 +276,12 @@ func (c *Config) GetMaxConcurrentJobs() int {
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-020 (configurable initial history lookback)
 // GetSyncHistoryLookback returns the initial history window for users with no
-// prior listens, falling back to 720h (30 days) when unset or unparsable.
+// prior listens, falling back to 720h (30 days) when unset, unparsable, or
+// non-positive (a negative lookback would put the since watermark in the
+// future and the first sync would fetch nothing).
 func (c *Config) GetSyncHistoryLookback() time.Duration {
 	if c.Sync.HistoryLookback != "" {
-		if d, err := time.ParseDuration(c.Sync.HistoryLookback); err == nil {
+		if d, err := time.ParseDuration(c.Sync.HistoryLookback); err == nil && d > 0 {
 			return d
 		}
 	}
@@ -314,7 +331,12 @@ func (c *Config) GetEncryptionKeyBytes() ([]byte, error) {
 	return key, nil
 }
 
-func Load() (*Config, error) {
+// newViper creates the Viper instance shared by Load and LoadDatabase:
+// SPOTTER_* prefix, dot-to-underscore key replacer, automatic env binding,
+// and every default registered (Viper only picks up env vars during Unmarshal
+// for keys that have a registered default).
+// Governing: ADR-0009 (Viper configuration)
+func newViper() *viper.Viper {
 	v := viper.New()
 
 	v.SetEnvPrefix("SPOTTER")
@@ -408,24 +430,85 @@ func Load() (*Config, error) {
 	v.SetDefault("metadata.images.max_height", 1000)
 	v.SetDefault("metadata.ai.prompts_directory", "./data/prompts")
 
-	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, err
-	}
+	return v
+}
 
-	// Governing: SPEC-0014 REQ "Driver Validation", ADR-0023
+// validateAndDefaultDatabase validates the database driver and applies the
+// driver-specific default DSN when the source is unset (or still the sqlite
+// default from Viper). Shared by Load and LoadDatabase.
+// Governing: SPEC-0014 REQ "Driver Validation", REQ "Driver-Specific Default Source", ADR-0023
+func validateAndDefaultDatabase(cfg *Config) error {
 	validDrivers := map[string]bool{"sqlite3": true, "postgres": true, "mysql": true}
 	if !validDrivers[cfg.Database.Driver] {
-		return nil, fmt.Errorf("unsupported database driver %q: must be one of sqlite3, postgres, mysql", cfg.Database.Driver)
+		return fmt.Errorf("unsupported database driver %q: must be one of sqlite3, postgres, mysql", cfg.Database.Driver)
 	}
 
-	// Governing: SPEC-0014 REQ "Driver-Specific Default Source", ADR-0023
 	const sqliteDefault = "file:spotter.db?cache=shared&_fk=1"
 	if cfg.Database.Driver == "postgres" && (cfg.Database.Source == "" || cfg.Database.Source == sqliteDefault) {
 		cfg.Database.Source = "host=localhost port=5432 dbname=spotter sslmode=disable"
 	} else if cfg.Database.Driver == "mysql" && (cfg.Database.Source == "" || cfg.Database.Source == sqliteDefault) {
 		cfg.Database.Source = "spotter:spotter@tcp(localhost:3306)/spotter?parseTime=true&charset=utf8mb4"
 	}
+	return nil
+}
+
+// LoadDatabase loads only the database-scoped configuration (driver + source)
+// through the same Viper setup as Load — SPOTTER_DATABASE_DRIVER and
+// SPOTTER_DATABASE_SOURCE with driver validation and driver-specific default
+// DSNs — but skips full-server validation (Navidrome, OpenAI, security keys).
+// Standalone tooling like `spotter-admin rotate-key` uses this so it can run
+// with only database env vars set (SPEC key-rotation Scenario 1) while still
+// honoring ADR-0009's "no hand-rolled os.Getenv" rule.
+// Governing: ADR-0009 (Viper configuration), ADR-0023 (multi-database support), SPEC key-rotation
+func LoadDatabase() (*Config, error) {
+	v := newViper()
+
+	var cfg Config
+	cfg.Database.Driver = v.GetString("database.driver")
+	cfg.Database.Source = v.GetString("database.source")
+
+	// Viper treats empty-string env vars as "set", overriding defaults (see
+	// ADR-0009 consequences); fall back to the sqlite defaults explicitly,
+	// matching the pre-consolidation admin behavior.
+	if cfg.Database.Driver == "" {
+		cfg.Database.Driver = "sqlite3"
+	}
+	if cfg.Database.Source == "" && cfg.Database.Driver == "sqlite3" {
+		cfg.Database.Source = "file:spotter.db?cache=shared&_fk=1"
+	}
+
+	if err := validateAndDefaultDatabase(&cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func Load() (*Config, error) {
+	v := newViper()
+
+	// Governing: ADR-0009 (fail fast with clear error messages)
+	// Pre-validate max_concurrent_jobs so a non-numeric SPOTTER_MAX_CONCURRENT_JOBS
+	// produces a clear error instead of a raw mapstructure decode failure.
+	if s := strings.TrimSpace(v.GetString("max_concurrent_jobs")); s != "" {
+		if _, err := strconv.Atoi(s); err != nil {
+			return nil, fmt.Errorf("max_concurrent_jobs must be an integer (set SPOTTER_MAX_CONCURRENT_JOBS), got %q", s)
+		}
+	}
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, err
+	}
+
+	// Governing: SPEC-0014 REQ "Driver Validation", REQ "Driver-Specific Default Source", ADR-0023
+	if err := validateAndDefaultDatabase(&cfg); err != nil {
+		return nil, err
+	}
+
+	// Governing: ADR-0026, SPEC-0015 (base URL is joined with paths in email links)
+	// Normalize server.base_url: strip trailing slashes so consumers can safely
+	// append absolute paths like /preferences/providers.
+	cfg.Server.BaseURL = strings.TrimRight(cfg.Server.BaseURL, "/")
 
 	// Apply defaults for OpenAI config when env vars are empty strings
 	// (Viper treats empty string env vars as "set", overriding defaults)
