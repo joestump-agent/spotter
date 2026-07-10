@@ -73,6 +73,7 @@ func (s *PlaylistSyncService) syncPlaylistToNavidrome(ctx context.Context, playl
 		"playlist_id", playlistID)
 
 	// Load playlist with user
+	// Governing: AGENTS.md VAL-008 (playlist IDs MUST be validated to exist before sync operations)
 	pl, err := s.client.Playlist.Query().
 		Where(playlist.ID(playlistID)).
 		WithUser().

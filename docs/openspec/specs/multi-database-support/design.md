@@ -96,7 +96,7 @@ flowchart TD
     VAL{"Driver valid?<br/>sqlite3 / postgres / mysql"}
     DSN["Apply default DSN<br/>(if source not set)"]
     ERR["Return error:<br/>unsupported driver"]
-    DB["database.NewClient(driver, source, encryptor)"]
+    DB["database.NewClient(ctx, driver, source, encryptor, logger)"]
     ENT["ent.Open(driver, source)"]
     SCHEMA["client.Schema.Create(ctx)<br/>DDL migration"]
     HOOK["RegisterEncryptionHooks()"]
@@ -146,7 +146,7 @@ erDiagram
   _ "github.com/lib/pq"
   _ "github.com/mattn/go-sqlite3"
   ```
-- `NewClient(driver, source, encryptor)` calls `ent.Open(driver, source)`, runs
+- `NewClient(ctx, driver, source, encryptor, logger)` calls `ent.Open(driver, source)`, runs
   `client.Schema.Create(ctx)` for DDL migration, registers encryption hooks, and
   creates the `entity_tags` denormalized table.
 - `driverToStdlib()` maps Ent dialect names to `database/sql` driver names (they

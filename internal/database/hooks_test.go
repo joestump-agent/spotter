@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"crypto/rand"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -11,6 +13,12 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// testLogger returns a *slog.Logger that discards all output, keeping test
+// logs quiet while still exercising the logging code paths.
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 func TestEncryptionHooks(t *testing.T) {
 	// Create a test encryption key
@@ -32,7 +40,7 @@ func TestEncryptionHooks(t *testing.T) {
 	defer client.Close()
 
 	// Register encryption hooks
-	RegisterEncryptionHooks(client, encryptor)
+	RegisterEncryptionHooks(client, encryptor, testLogger())
 
 	// Run migrations
 	if err := client.Schema.Create(context.Background()); err != nil {
@@ -147,7 +155,7 @@ func TestBackwardCompatibility(t *testing.T) {
 	}
 
 	// Now register hooks (simulating app restart with encryption enabled)
-	RegisterEncryptionHooks(client, encryptor)
+	RegisterEncryptionHooks(client, encryptor, testLogger())
 
 	// Query the auth - should still work with plaintext password
 	authFromDB, err := client.NavidromeAuth.Get(ctx, auth.ID)
@@ -203,7 +211,7 @@ func TestSpotifyAuthEncryption(t *testing.T) {
 	defer client.Close()
 
 	// Register encryption hooks
-	RegisterEncryptionHooks(client, encryptor)
+	RegisterEncryptionHooks(client, encryptor, testLogger())
 
 	// Run migrations
 	if err := client.Schema.Create(context.Background()); err != nil {
@@ -335,7 +343,7 @@ func TestSpotifyAuthBackwardCompatibility(t *testing.T) {
 	}
 
 	// Now register hooks (simulating app restart with encryption enabled)
-	RegisterEncryptionHooks(client, encryptor)
+	RegisterEncryptionHooks(client, encryptor, testLogger())
 
 	// Query the auth - should still work with plaintext tokens
 	authFromDB, err := client.SpotifyAuth.Get(ctx, auth.ID)
@@ -397,7 +405,7 @@ func TestLastFMAuthEncryption(t *testing.T) {
 	defer client.Close()
 
 	// Register encryption hooks
-	RegisterEncryptionHooks(client, encryptor)
+	RegisterEncryptionHooks(client, encryptor, testLogger())
 
 	// Run migrations
 	if err := client.Schema.Create(context.Background()); err != nil {
@@ -487,7 +495,7 @@ func TestMultipleAuthRecords(t *testing.T) {
 	defer client.Close()
 
 	// Register encryption hooks
-	RegisterEncryptionHooks(client, encryptor)
+	RegisterEncryptionHooks(client, encryptor, testLogger())
 
 	// Run migrations
 	if err := client.Schema.Create(context.Background()); err != nil {
