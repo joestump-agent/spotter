@@ -120,6 +120,10 @@ func (Track) Fields() []ent.Field {
 }
 
 // Edges of the Track.
+// There is deliberately NO direct user edge on Track; user scoping is done
+// via traversal (track → artist → user), consistent with ADR-0022's
+// single-user threat model (T9: no per-user data segregation is assumed).
+// See docs/adrs/ADR-0022-threat-model-security-assumptions.md.
 func (Track) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("artist", Artist.Type).

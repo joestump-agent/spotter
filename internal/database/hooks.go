@@ -3,36 +3,44 @@ package database
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"spotter/ent"
 	"spotter/ent/hook"
 	"spotter/internal/crypto"
 )
 
-// RegisterEncryptionHooks registers hooks to encrypt/decrypt sensitive data
-func RegisterEncryptionHooks(client *ent.Client, encryptor *crypto.Encryptor) {
+// RegisterEncryptionHooks registers hooks to encrypt/decrypt sensitive data.
+// Hook and interceptor failures are logged through logger (slog.Default when
+// nil) in addition to being returned to the caller.
+// Governing: ADR-0006 (AES-256-GCM application-layer encryption), ADR-0010 (slog structured logging)
+func RegisterEncryptionHooks(client *ent.Client, encryptor *crypto.Encryptor, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	// Hook for encrypting password on NavidromeAuth create/update
-	client.NavidromeAuth.Use(encryptPasswordHook(encryptor))
+	client.NavidromeAuth.Use(encryptPasswordHook(encryptor, logger))
 
 	// Hook for decrypting password on NavidromeAuth query
-	client.NavidromeAuth.Intercept(decryptPasswordInterceptor(encryptor))
+	client.NavidromeAuth.Intercept(decryptPasswordInterceptor(encryptor, logger))
 
 	// Hook for encrypting tokens on SpotifyAuth create/update
-	client.SpotifyAuth.Use(encryptSpotifyAuthHook(encryptor))
+	client.SpotifyAuth.Use(encryptSpotifyAuthHook(encryptor, logger))
 
 	// Hook for decrypting tokens on SpotifyAuth query
-	client.SpotifyAuth.Intercept(decryptSpotifyAuthInterceptor(encryptor))
+	client.SpotifyAuth.Intercept(decryptSpotifyAuthInterceptor(encryptor, logger))
 
 	// Hook for encrypting session key on LastFMAuth create/update
-	client.LastFMAuth.Use(encryptLastFMAuthHook(encryptor))
+	client.LastFMAuth.Use(encryptLastFMAuthHook(encryptor, logger))
 
 	// Hook for decrypting session key on LastFMAuth query
-	client.LastFMAuth.Intercept(decryptLastFMAuthInterceptor(encryptor))
+	client.LastFMAuth.Intercept(decryptLastFMAuthInterceptor(encryptor, logger))
 }
 
 // encryptPasswordHook encrypts the password field before saving to database
 // and decrypts it in the returned entity
-func encryptPasswordHook(encryptor *crypto.Encryptor) ent.Hook {
+func encryptPasswordHook(encryptor *crypto.Encryptor, logger *slog.Logger) ent.Hook {
 	return func(next ent.Mutator) ent.Mutator {
 		return hook.NavidromeAuthFunc(func(ctx context.Context, m *ent.NavidromeAuthMutation) (ent.Value, error) {
 			// Remember original password for decryption after save
@@ -47,6 +55,7 @@ func encryptPasswordHook(encryptor *crypto.Encryptor) ent.Hook {
 					// Encrypt the password
 					encrypted, err := encryptor.Encrypt(password)
 					if err != nil {
+						logger.Error("encryption hook failed", "entity", "navidrome_auth", "field", "password", "error", err)
 						return nil, fmt.Errorf("failed to encrypt password: %w", err)
 					}
 					m.SetPassword(encrypted)
@@ -70,7 +79,7 @@ func encryptPasswordHook(encryptor *crypto.Encryptor) ent.Hook {
 }
 
 // decryptPasswordInterceptor decrypts password fields after loading from database
-func decryptPasswordInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
+func decryptPasswordInterceptor(encryptor *crypto.Encryptor, logger *slog.Logger) ent.Interceptor {
 	return ent.InterceptFunc(func(next ent.Querier) ent.Querier {
 		return ent.QuerierFunc(func(ctx context.Context, q ent.Query) (ent.Value, error) {
 			// Execute the query
@@ -82,12 +91,12 @@ func decryptPasswordInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
 			// Decrypt passwords in the results
 			switch result := v.(type) {
 			case *ent.NavidromeAuth:
-				if err := decryptNavidromeAuth(encryptor, result); err != nil {
+				if err := decryptNavidromeAuth(encryptor, logger, result); err != nil {
 					return nil, err
 				}
 			case []*ent.NavidromeAuth:
 				for _, auth := range result {
-					if err := decryptNavidromeAuth(encryptor, auth); err != nil {
+					if err := decryptNavidromeAuth(encryptor, logger, auth); err != nil {
 						return nil, err
 					}
 				}
@@ -99,7 +108,7 @@ func decryptPasswordInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
 }
 
 // decryptNavidromeAuth decrypts the password field in a NavidromeAuth entity
-func decryptNavidromeAuth(encryptor *crypto.Encryptor, auth *ent.NavidromeAuth) error {
+func decryptNavidromeAuth(encryptor *crypto.Encryptor, logger *slog.Logger, auth *ent.NavidromeAuth) error {
 	if auth == nil || auth.Password == "" {
 		return nil
 	}
@@ -109,6 +118,7 @@ func decryptNavidromeAuth(encryptor *crypto.Encryptor, auth *ent.NavidromeAuth) 
 	// erroring the whole query (will be encrypted on next update).
 	decrypted, _, err := encryptor.DecryptAny(auth.Password)
 	if err != nil {
+		logger.Error("decryption hook failed", "entity", "navidrome_auth", "field", "password", "id", auth.ID, "error", err)
 		return fmt.Errorf("failed to decrypt password for user %d: %w", auth.ID, err)
 	}
 	auth.Password = decrypted
@@ -118,7 +128,7 @@ func decryptNavidromeAuth(encryptor *crypto.Encryptor, auth *ent.NavidromeAuth) 
 
 // encryptSpotifyAuthHook encrypts the access_token and refresh_token fields before saving to database
 // and decrypts them in the returned entity
-func encryptSpotifyAuthHook(encryptor *crypto.Encryptor) ent.Hook {
+func encryptSpotifyAuthHook(encryptor *crypto.Encryptor, logger *slog.Logger) ent.Hook {
 	return func(next ent.Mutator) ent.Mutator {
 		return hook.SpotifyAuthFunc(func(ctx context.Context, m *ent.SpotifyAuthMutation) (ent.Value, error) {
 			// Remember original tokens for decryption after save
@@ -132,6 +142,7 @@ func encryptSpotifyAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 				if !encryptor.IsCiphertext(accessToken) {
 					encrypted, err := encryptor.Encrypt(accessToken)
 					if err != nil {
+						logger.Error("encryption hook failed", "entity", "spotify_auth", "field", "access_token", "error", err)
 						return nil, fmt.Errorf("failed to encrypt access_token: %w", err)
 					}
 					m.SetAccessToken(encrypted)
@@ -146,6 +157,7 @@ func encryptSpotifyAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 				if !encryptor.IsCiphertext(refreshToken) {
 					encrypted, err := encryptor.Encrypt(refreshToken)
 					if err != nil {
+						logger.Error("encryption hook failed", "entity", "spotify_auth", "field", "refresh_token", "error", err)
 						return nil, fmt.Errorf("failed to encrypt refresh_token: %w", err)
 					}
 					m.SetRefreshToken(encrypted)
@@ -174,7 +186,7 @@ func encryptSpotifyAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 }
 
 // decryptSpotifyAuthInterceptor decrypts access_token and refresh_token fields after loading from database
-func decryptSpotifyAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
+func decryptSpotifyAuthInterceptor(encryptor *crypto.Encryptor, logger *slog.Logger) ent.Interceptor {
 	return ent.InterceptFunc(func(next ent.Querier) ent.Querier {
 		return ent.QuerierFunc(func(ctx context.Context, q ent.Query) (ent.Value, error) {
 			// Execute the query
@@ -186,12 +198,12 @@ func decryptSpotifyAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor 
 			// Decrypt tokens in the results
 			switch result := v.(type) {
 			case *ent.SpotifyAuth:
-				if err := decryptSpotifyAuth(encryptor, result); err != nil {
+				if err := decryptSpotifyAuth(encryptor, logger, result); err != nil {
 					return nil, err
 				}
 			case []*ent.SpotifyAuth:
 				for _, auth := range result {
-					if err := decryptSpotifyAuth(encryptor, auth); err != nil {
+					if err := decryptSpotifyAuth(encryptor, logger, auth); err != nil {
 						return nil, err
 					}
 				}
@@ -203,7 +215,7 @@ func decryptSpotifyAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor 
 }
 
 // decryptSpotifyAuth decrypts the access_token and refresh_token fields in a SpotifyAuth entity
-func decryptSpotifyAuth(encryptor *crypto.Encryptor, auth *ent.SpotifyAuth) error {
+func decryptSpotifyAuth(encryptor *crypto.Encryptor, logger *slog.Logger, auth *ent.SpotifyAuth) error {
 	if auth == nil {
 		return nil
 	}
@@ -214,6 +226,7 @@ func decryptSpotifyAuth(encryptor *crypto.Encryptor, auth *ent.SpotifyAuth) erro
 	if auth.AccessToken != "" {
 		decrypted, _, err := encryptor.DecryptAny(auth.AccessToken)
 		if err != nil {
+			logger.Error("decryption hook failed", "entity", "spotify_auth", "field", "access_token", "id", auth.ID, "error", err)
 			return fmt.Errorf("failed to decrypt access_token for user %d: %w", auth.ID, err)
 		}
 		auth.AccessToken = decrypted
@@ -222,6 +235,7 @@ func decryptSpotifyAuth(encryptor *crypto.Encryptor, auth *ent.SpotifyAuth) erro
 	if auth.RefreshToken != "" {
 		decrypted, _, err := encryptor.DecryptAny(auth.RefreshToken)
 		if err != nil {
+			logger.Error("decryption hook failed", "entity", "spotify_auth", "field", "refresh_token", "id", auth.ID, "error", err)
 			return fmt.Errorf("failed to decrypt refresh_token for user %d: %w", auth.ID, err)
 		}
 		auth.RefreshToken = decrypted
@@ -232,7 +246,7 @@ func decryptSpotifyAuth(encryptor *crypto.Encryptor, auth *ent.SpotifyAuth) erro
 
 // encryptLastFMAuthHook encrypts the session_key field before saving to database
 // and decrypts it in the returned entity
-func encryptLastFMAuthHook(encryptor *crypto.Encryptor) ent.Hook {
+func encryptLastFMAuthHook(encryptor *crypto.Encryptor, logger *slog.Logger) ent.Hook {
 	return func(next ent.Mutator) ent.Mutator {
 		return hook.LastFMAuthFunc(func(ctx context.Context, m *ent.LastFMAuthMutation) (ent.Value, error) {
 			// Remember original session_key for decryption after save
@@ -246,6 +260,7 @@ func encryptLastFMAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 				if !encryptor.IsCiphertext(sessionKey) {
 					encrypted, err := encryptor.Encrypt(sessionKey)
 					if err != nil {
+						logger.Error("encryption hook failed", "entity", "lastfm_auth", "field", "session_key", "error", err)
 						return nil, fmt.Errorf("failed to encrypt session_key: %w", err)
 					}
 					m.SetSessionKey(encrypted)
@@ -269,7 +284,7 @@ func encryptLastFMAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 }
 
 // decryptLastFMAuthInterceptor decrypts session_key field after loading from database
-func decryptLastFMAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
+func decryptLastFMAuthInterceptor(encryptor *crypto.Encryptor, logger *slog.Logger) ent.Interceptor {
 	return ent.InterceptFunc(func(next ent.Querier) ent.Querier {
 		return ent.QuerierFunc(func(ctx context.Context, q ent.Query) (ent.Value, error) {
 			// Execute the query
@@ -281,12 +296,12 @@ func decryptLastFMAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
 			// Decrypt session_key in the results
 			switch result := v.(type) {
 			case *ent.LastFMAuth:
-				if err := decryptLastFMAuth(encryptor, result); err != nil {
+				if err := decryptLastFMAuth(encryptor, logger, result); err != nil {
 					return nil, err
 				}
 			case []*ent.LastFMAuth:
 				for _, auth := range result {
-					if err := decryptLastFMAuth(encryptor, auth); err != nil {
+					if err := decryptLastFMAuth(encryptor, logger, auth); err != nil {
 						return nil, err
 					}
 				}
@@ -298,7 +313,7 @@ func decryptLastFMAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
 }
 
 // decryptLastFMAuth decrypts the session_key field in a LastFMAuth entity
-func decryptLastFMAuth(encryptor *crypto.Encryptor, auth *ent.LastFMAuth) error {
+func decryptLastFMAuth(encryptor *crypto.Encryptor, logger *slog.Logger, auth *ent.LastFMAuth) error {
 	if auth == nil || auth.SessionKey == "" {
 		return nil
 	}
@@ -308,6 +323,7 @@ func decryptLastFMAuth(encryptor *crypto.Encryptor, auth *ent.LastFMAuth) error 
 	// erroring the whole query (will be encrypted on next update).
 	decrypted, _, err := encryptor.DecryptAny(auth.SessionKey)
 	if err != nil {
+		logger.Error("decryption hook failed", "entity", "lastfm_auth", "field", "session_key", "id", auth.ID, "error", err)
 		return fmt.Errorf("failed to decrypt session_key for user %d: %w", auth.ID, err)
 	}
 	auth.SessionKey = decrypted
