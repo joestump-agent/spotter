@@ -154,6 +154,14 @@ func buildPlaylistSyncDropdownConfig(config PlaylistSyncDropdownConfig) ActionBu
 			ModalID:     fmt.Sprintf("playlist-rebuild-modal-%d", config.PlaylistID),
 		},
 		{
+			// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-071, REQ-PLSYNC-072
+			Label:       "Link to Navidrome Playlist",
+			Description: "Pair with an existing playlist",
+			IconClass:   "icon-[heroicons--link]",
+			HtmxGet:     fmt.Sprintf("/playlists/%d/link", config.PlaylistID),
+			HtmxTarget:  "#playlist-sync-dropdown",
+		},
+		{
 			IsDivider: true,
 		},
 		{
@@ -243,6 +251,10 @@ templ PlaylistRebuildModal(playlistID int, playlistName string) {
 }
 
 // PlaylistDisableSyncModal renders the confirmation modal for disabling playlist sync.
+// The user chooses whether the synced Navidrome playlist is kept or deleted; the
+// choice is sent as the navidrome_action parameter and overrides the server-wide
+// delete_on_unsync config for this request.
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-033 (per-request keep/delete override)
 templ PlaylistDisableSyncModal(playlistID int, playlistName string) {
 	<dialog id={ fmt.Sprintf("playlist-disable-sync-modal-%d", playlistID) } class="modal">
 		<div class="modal-box">
@@ -252,24 +264,36 @@ templ PlaylistDisableSyncModal(playlistID int, playlistName string) {
 			</h3>
 			<p class="py-4">
 				Are you sure you want to disable sync for this playlist?
-				The playlist will remain in Navidrome but will no longer be updated.
+				You can keep the synced playlist in Navidrome or delete it.
 			</p>
 			<p class="text-sm text-base-content/60">
 				Playlist: <strong>{ playlistName }</strong>
 			</p>
-			<div class="modal-action">
+			<div class="modal-action flex-wrap">
 				<form method="dialog">
 					<button class="btn btn-ghost">Cancel</button>
 				</form>
 				<button
-					class="btn btn-error"
+					class="btn btn-warning"
 					hx-post={ fmt.Sprintf("/playlists/%d/toggle-sync", playlistID) }
+					hx-vals='{"navidrome_action": "keep"}'
 					hx-target="#playlist-sync-dropdown"
 					hx-swap="outerHTML"
 					onclick={ closeModal(fmt.Sprintf("playlist-disable-sync-modal-%d", playlistID)) }
 				>
 					<span class="icon-[heroicons--pause-circle] w-5 h-5"></span>
-					Disable Sync
+					Disable sync &amp; keep Navidrome playlist
+				</button>
+				<button
+					class="btn btn-error"
+					hx-post={ fmt.Sprintf("/playlists/%d/toggle-sync", playlistID) }
+					hx-vals='{"navidrome_action": "delete"}'
+					hx-target="#playlist-sync-dropdown"
+					hx-swap="outerHTML"
+					onclick={ closeModal(fmt.Sprintf("playlist-disable-sync-modal-%d", playlistID)) }
+				>
+					<span class="icon-[heroicons--trash] w-5 h-5"></span>
+					Disable sync &amp; delete Navidrome playlist
 				</button>
 			</div>
 		</div>

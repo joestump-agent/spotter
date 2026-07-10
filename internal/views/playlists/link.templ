@@ -1,0 +1,55 @@
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-071 (candidate listing),
+// REQ-PLSYNC-072 (arbitrary-target linking)
+package playlists
+
+import (
+	"fmt"
+	"net/url"
+	"spotter/ent"
+	"spotter/internal/providers"
+)
+
+// LinkNavidromePicker renders an inline picker listing the user's Navidrome
+// playlists so a non-Navidrome playlist can be paired with any of them.
+// Selecting a candidate posts to /playlists/{id}/link/{targetId}, which
+// responds with the refreshed sync dropdown.
+templ LinkNavidromePicker(pl *ent.Playlist, candidates []providers.Playlist) {
+	<div id="playlist-link-picker" class="card bg-base-100 shadow-lg mt-4">
+		<div class="card-body gap-4">
+			<h3 class="card-title text-base flex items-center gap-2">
+				<span class="icon-[heroicons--link] w-5 h-5 text-primary"></span>
+				Link "{ pl.Name }" to a Navidrome playlist
+			</h3>
+			if len(candidates) == 0 {
+				<p class="text-sm text-base-content/60">
+					No Navidrome playlists found. Sync this playlist normally to create one.
+				</p>
+			} else {
+				<p class="text-sm text-base-content/60">
+					Choose the Navidrome playlist to pair with. Future syncs will update the
+					selected playlist in place instead of creating a new one.
+				</p>
+				<ul class="menu bg-base-200 rounded-box w-full max-h-64 overflow-y-auto flex-nowrap">
+					for _, c := range candidates {
+						<li>
+							<button
+								hx-post={ fmt.Sprintf("/playlists/%d/link/%s", pl.ID, url.PathEscape(c.ID)) }
+								hx-target="#playlist-link-picker"
+								hx-swap="outerHTML"
+								class="flex items-center justify-between gap-3"
+							>
+								<span class="flex items-center gap-2">
+									<span class="icon-[heroicons--musical-note] w-4 h-4 text-base-content/60"></span>
+									<span class="font-medium">{ c.Name }</span>
+								</span>
+								<span class="text-xs text-base-content/60">
+									{ fmt.Sprintf("%d tracks", c.TrackCount) }
+								</span>
+							</button>
+						</li>
+					}
+				</ul>
+			}
+		</div>
+	</div>
+}
