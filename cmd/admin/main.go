@@ -17,7 +17,17 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const driverSQLite3 = "sqlite3"
+// Database driver names (ADR-0023 multi-database support). Kept in sync with
+// the drivers accepted by internal/config validation.
+const (
+	driverSQLite3  = "sqlite3"
+	driverPostgres = "postgres"
+	driverMySQL    = "mysql"
+)
+
+// selectEncryptedFieldSQL is the Sprintf format used to read encrypted
+// columns: args are the column list and the table name.
+const selectEncryptedFieldSQL = "SELECT id, %s FROM %s"
 
 // encryptedField describes a single encrypted column in the database.
 type encryptedField struct {
@@ -258,7 +268,7 @@ const (
 // Governing: ADR-0021, SPEC key-rotation REQ "ROT-005"
 func acquireRotationGuard(db *sql.DB, driver string) error {
 	switch driver {
-	case "postgres":
+	case driverPostgres:
 		var locked bool
 		if err := db.QueryRow("SELECT pg_try_advisory_lock($1)", rotationLockID).Scan(&locked); err != nil {
 			return fmt.Errorf("failed to acquire rotation advisory lock: %w", err)
@@ -273,7 +283,7 @@ func acquireRotationGuard(db *sql.DB, driver string) error {
 		if others > 0 {
 			return fmt.Errorf("%d other session(s) connected to the database (is the server running?); stop the server before rotating", others)
 		}
-	case "mysql":
+	case driverMySQL:
 		var locked sql.NullInt64
 		if err := db.QueryRow("SELECT GET_LOCK(?, 0)", rotationLockName).Scan(&locked); err != nil {
 			return fmt.Errorf("failed to acquire rotation advisory lock: %w", err)
@@ -311,7 +321,7 @@ func acquireRotationGuard(db *sql.DB, driver string) error {
 // Governing: SPEC key-rotation REQ "ROT-004", ADR-0006, ADR-0021
 func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (found, verified bool, err error) {
 	for _, f := range allEncryptedFields {
-		query := fmt.Sprintf("SELECT id, %s FROM %s", f.column, f.table)
+		query := fmt.Sprintf(selectEncryptedFieldSQL, f.column, f.table)
 		rows, err := db.Query(query)
 		if err != nil {
 			return false, false, fmt.Errorf("failed to query %s.%s: %w", f.table, f.column, err)
@@ -409,7 +419,7 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 
 	for _, tf := range grouped {
 		cols := strings.Join(tf.columns, ", ")
-		query := fmt.Sprintf("SELECT id, %s FROM %s", cols, tf.table)
+		query := fmt.Sprintf(selectEncryptedFieldSQL, cols, tf.table)
 		rows, err := tx.Query(query)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to query %s: %w", tf.table, err)
@@ -466,7 +476,7 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 				}
 
 				var updateSQL string
-				if driver == "postgres" {
+				if driver == driverPostgres {
 					updateSQL = fmt.Sprintf("UPDATE %s SET %s = $1 WHERE id = $2", tf.table, col)
 				} else {
 					updateSQL = fmt.Sprintf("UPDATE %s SET %s = ? WHERE id = ?", tf.table, col)
@@ -492,7 +502,7 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 // Governing: SPEC key-rotation REQ "ROT-020", REQ "ROT-021"
 func verifyNewKey(db *sql.DB, newEnc *crypto.Encryptor) error {
 	for _, f := range allEncryptedFields {
-		query := fmt.Sprintf("SELECT id, %s FROM %s", f.column, f.table)
+		query := fmt.Sprintf(selectEncryptedFieldSQL, f.column, f.table)
 		rows, err := db.Query(query)
 		if err != nil {
 			return fmt.Errorf("verification query failed for %s.%s: %w", f.table, f.column, err)
