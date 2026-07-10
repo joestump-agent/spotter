@@ -47,6 +47,15 @@ func NewClient(driver, source string, encryptor *crypto.Encryptor) (*ent.Client,
 		return nil, fmt.Errorf("failed deduplicating tracks before migration: %v", err)
 	}
 
+	// Add and backfill created_at/updated_at on pre-existing auth tables
+	// BEFORE Schema.Create: Ent would otherwise emit ADD COLUMN ... NOT NULL
+	// with no DEFAULT, which fails on any non-empty table (PR #39 review
+	// finding). See BackfillAuthTimestamps for details.
+	if err := BackfillAuthTimestamps(ctx, driver, db, slog.Default()); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("failed backfilling auth timestamps before migration: %v", err)
+	}
+
 	// Governing: SPEC-0016 REQ "Schema Migration", ADR-0004 (Ent ORM handles DDL for all dialects)
 	if err := client.Schema.Create(ctx); err != nil {
 		// Attempt to close the client on schema creation failure
