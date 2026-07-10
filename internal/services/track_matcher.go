@@ -156,6 +156,15 @@ func (m *TrackMatcher) MatchTracks(ctx context.Context, userID int, tracks []pro
 
 // MatchTracksWithIndex matches source tracks against a precomputed LibraryIndex.
 // It performs no I/O: the index must have been built via LoadLibraryIndex.
+//
+// INVARIANT: idx MUST be non-nil. A nil index is a programming error and
+// panics immediately with a descriptive message (rather than nil-dereferencing
+// a few lines later). Callers are responsible for guarding before the call —
+// as syncPlaylistToNavidrome does by loading an index on demand when its
+// shared one is nil or built for a different user. This matters especially
+// for future callers running in background goroutines, where an unrecovered
+// panic crashes the whole server; if the index may be absent, load one via
+// LoadLibraryIndex (or fall back to MatchTracks) instead of passing nil.
 // Governing: ADR-0014 (three-tier ISRC -> exact -> fuzzy matching)
 func (m *TrackMatcher) MatchTracksWithIndex(idx *LibraryIndex, tracks []providers.Track) []MatchResult {
 	if idx == nil {
