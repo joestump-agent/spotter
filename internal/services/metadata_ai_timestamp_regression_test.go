@@ -5,9 +5,11 @@ package services
 // The artist and track enrichment paths only stamped last_ai_enriched_at
 // inside the `len(data.AITags) > 0` branch. When an AI enricher returned
 // only AISummary (and/or AIBiography for artists) but no AITags, the
-// timestamp was never set, so the openai enricher's skip check
-// (internal/enrichers/openai/openai.go, `LastAiEnrichedAt` recency check)
-// never engaged and those entities were re-enriched on every pass, forever.
+// timestamp was never set, so those entities were re-enriched on every
+// pass, forever. For artists the un-engaged gate is the openai enricher's
+// LastAiEnrichedAt recency check (internal/enrichers/openai/openai.go);
+// for tracks it is the LastAiEnrichedAtIsNil arm of the EnrichTracks
+// selection query (internal/services/metadata.go).
 //
 // The album path was already fixed to stamp the timestamp "if any AI fields
 // were set" (internal/services/metadata.go, enrichAlbum); these tests pin

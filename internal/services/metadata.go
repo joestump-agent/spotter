@@ -1541,9 +1541,10 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 			update = update.SetAiTags(data.AITags)
 		}
 		// If any AI fields were set, update the timestamp. Stamping only on
-		// AITags left summary-only enrichments without a timestamp, so the AI
-		// enricher's skip check never engaged and the track was re-enriched
-		// on every pass (spotter-6p7).
+		// AITags left summary-only enrichments without a timestamp, so the
+		// LastAiEnrichedAtIsNil arm of the EnrichTracks selection query kept
+		// picking the track up and it was re-enriched on every pass
+		// (spotter-6p7).
 		if data.AISummary != "" || len(data.AITags) > 0 {
 			update = update.SetLastAiEnrichedAt(time.Now())
 		}

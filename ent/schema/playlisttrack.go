@@ -52,9 +52,10 @@ func (PlaylistTrack) Fields() []ent.Field {
 }
 
 // Edges of the PlaylistTrack.
-// Governing: ADR-0022 (single-user threat model) — there is deliberately NO
-// direct user edge on PlaylistTrack; user isolation is enforced via traversal
-// (playlisttrack → playlist → user). See docs/adrs/ADR-0022-threat-model-security-assumptions.md.
+// There is deliberately NO direct user edge on PlaylistTrack; user scoping is
+// done via traversal (playlisttrack → playlist → user), consistent with
+// ADR-0022's single-user threat model (T9: no per-user data segregation is
+// assumed). See docs/adrs/ADR-0022-threat-model-security-assumptions.md.
 func (PlaylistTrack) Edges() []ent.Edge {
 	return []ent.Edge{
 		// Required: belongs to a playlist
