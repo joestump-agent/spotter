@@ -346,7 +346,7 @@ Enrichers add metadata, images, and AI-generated content to local entities.
   - Test MUST fail without the fix
   - Test MUST pass with the fix
   - Test name MUST include "Regression" prefix (e.g., `TestLogin_Regression_WhiteScreen`)
-  - Test MUST document the original issue and bead ID in comments
+  - Test MUST document the original issue ID in comments
 
 ### External API Etiquette
 - **Rate Limiting**: Handle 429 responses gracefully (exponential backoff or error)
@@ -730,4 +730,4 @@ When adding new features or configuration options, you MUST update all relevant 
 
 ## Keeping AGENTS.md Updated
 
-**META-RULE:** When workflow instructions are updated (Git, Beads, testing, etc.), AGENTS.md MUST be updated to reflect the changes. This ensures the documentation stays in sync with current practices and all contributors follow the same workflow.
+**META-RULE:** When workflow instructions are updated (Git, testing, etc.), AGENTS.md MUST be updated to reflect the changes. This ensures the documentation stays in sync with current practices and all contributors follow the same workflow.
