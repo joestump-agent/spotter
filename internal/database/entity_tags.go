@@ -110,6 +110,11 @@ CREATE INDEX IF NOT EXISTS idx_entity_tags_entity ON entity_tags (entity_type, e
 // TIMESTAMP 2038 range limit and MySQL's implicit TIMESTAMP
 // auto-initialization/auto-update behaviors. ENGINE=InnoDB is pinned
 // explicitly because FK + ON DELETE CASCADE semantics require InnoDB.
+// NOTE: the TIMESTAMP→DATETIME change only affects fresh databases — CREATE
+// TABLE IF NOT EXISTS never migrates, so existing MySQL deployments keep a
+// TIMESTAMP created_at (UTC-normalized, 2038-limited) while new installs get
+// DATETIME (session-timezone literal). Benign while created_at is never read;
+// revisit if a future feature starts reading it.
 const entityTagsMySQL = `
 CREATE TABLE IF NOT EXISTS entity_tags (
     id BIGINT NOT NULL AUTO_INCREMENT,
