@@ -120,6 +120,9 @@ func (Track) Fields() []ent.Field {
 }
 
 // Edges of the Track.
+// Governing: ADR-0022 (single-user threat model) — there is deliberately NO
+// direct user edge on Track; user isolation is enforced via traversal
+// (track → artist → user). See docs/adrs/ADR-0022-threat-model-security-assumptions.md.
 func (Track) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("artist", Artist.Type).
