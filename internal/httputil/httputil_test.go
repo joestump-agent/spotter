@@ -19,6 +19,7 @@ func TestRetryAfter(t *testing.T) {
 		{name: "zero falls back to default", header: "0", want: DefaultRetryAfter},
 		{name: "negative falls back to default", header: "-5", want: DefaultRetryAfter},
 		{name: "unparseable falls back to default", header: "soon", want: DefaultRetryAfter},
+		{name: "past http-date falls back to default", header: "Mon, 02 Jan 2006 15:04:05 GMT", want: DefaultRetryAfter},
 	}
 
 	for _, tt := range tests {
@@ -32,6 +33,25 @@ func TestRetryAfter(t *testing.T) {
 			}
 		})
 	}
+
+	// HTTP-date values are relative to the wall clock, so assert a range
+	// instead of an exact duration.
+	t.Run("future http-date is honored", func(t *testing.T) {
+		resp := &http.Response{Header: http.Header{}}
+		resp.Header.Set("Retry-After", time.Now().Add(10*time.Second).UTC().Format(http.TimeFormat))
+		got := RetryAfter(resp)
+		if got < 8*time.Second || got > 10*time.Second {
+			t.Errorf("RetryAfter() = %v, want ~10s", got)
+		}
+	})
+
+	t.Run("far-future http-date is capped", func(t *testing.T) {
+		resp := &http.Response{Header: http.Header{}}
+		resp.Header.Set("Retry-After", time.Now().Add(time.Hour).UTC().Format(http.TimeFormat))
+		if got := RetryAfter(resp); got != MaxRetryAfter {
+			t.Errorf("RetryAfter() = %v, want %v", got, MaxRetryAfter)
+		}
+	})
 }
 
 func TestSleep_CancelledContext(t *testing.T) {

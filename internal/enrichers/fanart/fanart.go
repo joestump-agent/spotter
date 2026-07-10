@@ -69,7 +69,9 @@ func (e *Enricher) IsAvailable() bool {
 func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, error) {
 	reqURL := fmt.Sprintf("%s/%s?api_key=%s", e.baseURL, endpoint, e.apiKey)
 
-	for attempt := 0; attempt <= httputil.MaxRateLimitRetries; attempt++ {
+	// The in-loop attempt == MaxRateLimitRetries check is the sole exit for
+	// the rate-limited path, so the loop needs no bound of its own.
+	for attempt := 0; ; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
@@ -125,8 +127,6 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 
 		return body, nil
 	}
-
-	return nil, fmt.Errorf("Fanart.tv API rate limited after %d retries", httputil.MaxRateLimitRetries)
 }
 
 // Fanart.tv API response types for music artists

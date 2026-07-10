@@ -30,7 +30,8 @@ const (
 )
 
 // RetryAfter returns how long to wait before retrying a rate-limited request,
-// based on the response's Retry-After header. Missing, unparseable, zero, or
+// based on the response's Retry-After header. Both RFC 9110 forms are
+// supported: delay-seconds and HTTP-date. Missing, unparseable, zero, or
 // negative values fall back to DefaultRetryAfter; values above MaxRetryAfter
 // are capped.
 func RetryAfter(resp *http.Response) time.Duration {
@@ -38,9 +39,11 @@ func RetryAfter(resp *http.Response) time.Duration {
 	if raHeader := resp.Header.Get("Retry-After"); raHeader != "" {
 		if seconds, err := strconv.Atoi(raHeader); err == nil {
 			retryAfter = time.Duration(seconds) * time.Second
-			if retryAfter > MaxRetryAfter {
-				retryAfter = MaxRetryAfter
-			}
+		} else if t, err := http.ParseTime(raHeader); err == nil {
+			retryAfter = time.Until(t)
+		}
+		if retryAfter > MaxRetryAfter {
+			retryAfter = MaxRetryAfter
 		}
 	}
 	// Guard against zero or negative Retry-After values
