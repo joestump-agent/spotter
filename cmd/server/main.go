@@ -88,7 +88,7 @@ func main() {
 	logger.Info("JWT manager initialized")
 
 	// Connect to Database
-	client, err := database.NewClient(cfg.Database.Driver, cfg.Database.Source, encryptor)
+	client, err := database.NewClient(context.Background(), cfg.Database.Driver, cfg.Database.Source, encryptor, logger)
 	if err != nil {
 		logger.Error("failed to connect to database", "error", err)
 		os.Exit(1)
@@ -96,7 +96,9 @@ func main() {
 	defer func() {
 		if err := client.Close(); err != nil {
 			logger.Error("failed to close database client", "error", err)
+			return
 		}
+		logger.Info("database connection closed")
 	}()
 
 	// Open a persistent raw *sql.DB for operations outside the Ent client (e.g. entity_tags upserts).

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"spotter/internal/httputil"
 )
 
 // ChatMessage represents a single message in a chat completion request.
@@ -117,24 +119,43 @@ func NewClient(cfg ClientConfig) *Client {
 	}
 }
 
-// Chat sends a chat completion request and returns the response.
+// Chat sends a chat completion request and returns the response. 429
+// responses are retried after the server-provided Retry-After delay, up to
+// httputil.MaxRateLimitRetries times.
+// Governing: ADR-0020 (error handling and resilience), SPEC error-handling REQ-ERR-002 (429 retriable)
 func (c *Client) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+	var resp *http.Response
+	for attempt := 0; ; attempt++ {
+		// Build a fresh request per attempt so retries carry a full body.
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			c.cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+		// Governing: AGENTS.md "External API Etiquette" (descriptive User-Agent)
+		httpReq.Header.Set("User-Agent", httputil.UserAgent)
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		resp, err = c.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("http request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusTooManyRequests || attempt == httputil.MaxRateLimitRetries {
+			break
+		}
+
+		retryAfter := httputil.RetryAfter(resp)
+		_ = resp.Body.Close()
+		if err := httputil.Sleep(ctx, retryAfter); err != nil {
+			return nil, err
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
