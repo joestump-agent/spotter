@@ -1,7 +1,10 @@
 package services_test
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -74,11 +77,12 @@ func TestSyncer_ProviderError_TriggersBackoffRetriable(t *testing.T) {
 	}
 	syncer.Register(mockFactory(mockProv))
 
-	// First sync — should not return error (Sync swallows per-provider errors)
+	// First sync — the provider failure must surface as an error (issue #326)
 	err = syncer.Sync(context.Background(), user)
-	assert.NoError(t, err, "Sync should not surface per-provider errors")
+	assert.Error(t, err, "Sync must surface aggregated per-provider errors")
 
-	// Second sync — the provider should be skipped due to backoff
+	// Second sync — the provider is skipped due to backoff; a deliberate
+	// backoff skip is throttling, not a new failure, so no error surfaces
 	err = syncer.Sync(context.Background(), user)
 	assert.NoError(t, err)
 }
@@ -110,11 +114,11 @@ func TestSyncer_ProviderError_FatalNotRetried(t *testing.T) {
 	}
 	syncer.Register(mockFactory(mockProv))
 
-	// First sync — triggers fatal error
+	// First sync — triggers fatal error, which must surface (issue #326)
 	err = syncer.Sync(context.Background(), user)
-	assert.NoError(t, err, "Sync should not surface per-provider errors")
+	assert.Error(t, err, "Sync must surface aggregated per-provider errors")
 
-	// Second sync — provider should be skipped due to fatal backoff
+	// Second sync — provider is skipped due to fatal backoff (throttling, not a new failure)
 	err = syncer.Sync(context.Background(), user)
 	assert.NoError(t, err)
 }
@@ -146,8 +150,9 @@ func TestSyncer_ClearProviderBackoff_AllowsRetryAfterFatal(t *testing.T) {
 	}
 	syncer.Register(mockFactory(mockProv))
 
-	// First sync records the fatal error and blocks the provider.
-	require.NoError(t, syncer.Sync(context.Background(), user))
+	// First sync records the fatal error, blocks the provider, and surfaces
+	// the error (issue #326).
+	require.Error(t, syncer.Sync(context.Background(), user))
 
 	// The provider recovers, but the fatal flag still blocks syncing.
 	mockProv.err = nil
@@ -237,10 +242,170 @@ func TestSyncer_HistoryCallbackError_DoesNotPersistPartialData(t *testing.T) {
 	syncer.Register(mockFactory(failProv))
 
 	err = syncer.SyncRecentListens(context.Background(), user)
-	require.NoError(t, err) // syncHistory swallows per-provider errors
+	require.Error(t, err, "syncHistory must surface aggregated per-provider errors (issue #326)")
 
 	// Verify no listens were persisted
 	listens, err := client.Listen.Query().All(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, listens, "no listens should be created when provider fails")
+}
+
+// metricSyncEvent mirrors the metric.sync attribute schema for log-capture assertions.
+// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
+type metricSyncEvent struct {
+	Msg             string `json:"msg"`
+	Provider        string `json:"provider"`
+	ListensSynced   int    `json:"listens_synced"`
+	PlaylistsSynced int    `json:"playlists_synced"`
+	DurationMs      int64  `json:"duration_ms"`
+	Success         bool   `json:"success"`
+	Error           string `json:"error"`
+}
+
+// captureMetricSyncEvents parses JSON log output and returns metric.sync events keyed by provider.
+func captureMetricSyncEvents(t *testing.T, logs *bytes.Buffer) map[string]metricSyncEvent {
+	t.Helper()
+	events := make(map[string]metricSyncEvent)
+	scanner := bufio.NewScanner(logs)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		var ev metricSyncEvent
+		if err := json.Unmarshal(line, &ev); err != nil {
+			continue
+		}
+		if ev.Msg == "metric.sync" {
+			events[ev.Provider] = ev
+		}
+	}
+	require.NoError(t, scanner.Err())
+	return events
+}
+
+// TestSyncer_AllProvidersFail_SyncReturnsErrorAndMetricSyncFails is the issue
+// joestump/spotter#326 acceptance test: when every provider fails, Sync()
+// returns an aggregated error and each provider's metric.sync event logs
+// success=false.
+// Governing: ADR-0019, ADR-0020, SPEC observability REQ "BG-003"
+func TestSyncer_AllProvidersFail_SyncReturnsErrorAndMetricSyncFails(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
+
+	user, err := client.User.Create().SetUsername("testuser").Save(context.Background())
+	require.NoError(t, err)
+
+	failingSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		err:          fmt.Errorf("connection timeout"),
+	}
+	failingNavidrome := &mockProvider{
+		providerType: providers.TypeNavidrome,
+		err:          fmt.Errorf("connection refused"),
+	}
+	syncer.Register(mockFactory(failingSpotify))
+	syncer.Register(mockFactory(failingNavidrome))
+
+	err = syncer.Sync(context.Background(), user)
+	require.Error(t, err, "Sync must return an error when every provider fails")
+	assert.Contains(t, err.Error(), string(providers.TypeSpotify))
+	assert.Contains(t, err.Error(), string(providers.TypeNavidrome))
+
+	metrics := captureMetricSyncEvents(t, &logs)
+	require.Len(t, metrics, 2, "one metric.sync event per active provider")
+	for provider, ev := range metrics {
+		assert.False(t, ev.Success, "metric.sync for %s must log success=false", provider)
+		assert.NotEmpty(t, ev.Error, "metric.sync for %s must carry the error", provider)
+		assert.Zero(t, ev.ListensSynced, "no listens synced for failing provider %s", provider)
+	}
+}
+
+// TestSyncer_PartialFailure_SurfacesErrorButPreservesPartialSuccess asserts that
+// one provider failing does not prevent other providers from syncing, that the
+// aggregated error still surfaces, and that metric.sync attributes each
+// provider's own counts and success flag (not aggregate totals).
+// Governing: ADR-0019, ADR-0020, SPEC observability REQ "BG-003",
+// SPEC listen-playlist-sync REQ-SYNC-011
+func TestSyncer_PartialFailure_SurfacesErrorButPreservesPartialSuccess(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
+
+	user, err := client.User.Create().SetUsername("testuser").Save(context.Background())
+	require.NoError(t, err)
+
+	failingSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		err:          fmt.Errorf("connection timeout"),
+	}
+	workingNavidrome := &mockProvider{
+		providerType: providers.TypeNavidrome,
+		tracks: []providers.Track{
+			{ID: "t1", Name: "Track One", Artist: "Artist One", Album: "Album One", PlayedAt: time.Now()},
+			{ID: "t2", Name: "Track Two", Artist: "Artist Two", Album: "Album Two", PlayedAt: time.Now().Add(-10 * time.Minute)},
+		},
+	}
+	syncer.Register(mockFactory(failingSpotify))
+	syncer.Register(mockFactory(workingNavidrome))
+
+	err = syncer.Sync(context.Background(), user)
+	require.Error(t, err, "partial failure must still surface an error")
+	assert.Contains(t, err.Error(), string(providers.TypeSpotify))
+	assert.NotContains(t, err.Error(), string(providers.TypeNavidrome),
+		"the healthy provider must not appear in the aggregated error")
+
+	// Partial success preserved: the healthy provider's listens persisted
+	listens, err := client.Listen.Query().All(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, listens, 2, "healthy provider's listens must persist despite the other failing")
+
+	// Per-provider metric attribution (REQ "BG-003")
+	metrics := captureMetricSyncEvents(t, &logs)
+	require.Len(t, metrics, 2, "one metric.sync event per active provider")
+
+	spotifyEv := metrics[string(providers.TypeSpotify)]
+	assert.False(t, spotifyEv.Success, "failing provider must log success=false")
+	assert.NotEmpty(t, spotifyEv.Error)
+	assert.Zero(t, spotifyEv.ListensSynced)
+
+	navidromeEv := metrics[string(providers.TypeNavidrome)]
+	assert.True(t, navidromeEv.Success, "healthy provider must log success=true")
+	assert.Empty(t, navidromeEv.Error)
+	assert.Equal(t, 2, navidromeEv.ListensSynced, "listens_synced must be the provider's own count")
+}
+
+// TestSyncer_SyncProvider_SurfacesProviderError asserts SyncProvider() returns
+// the aggregated error for the targeted provider so the manual "Sync Failed"
+// toast paths in the preferences handlers are reachable (issue #326).
+// Governing: ADR-0020 (error handling and resilience)
+func TestSyncer_SyncProvider_SurfacesProviderError(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
+
+	user, err := client.User.Create().SetUsername("testuser").Save(context.Background())
+	require.NoError(t, err)
+
+	failing := &mockProvider{
+		providerType: providers.TypeSpotify,
+		err:          fmt.Errorf("connection timeout"),
+	}
+	syncer.Register(mockFactory(failing))
+
+	err = syncer.SyncProvider(context.Background(), user, providers.TypeSpotify)
+	require.Error(t, err, "SyncProvider must surface the provider's failure")
+	assert.Contains(t, err.Error(), string(providers.TypeSpotify))
+
+	// A provider that is not active is a no-op, not an error.
+	require.NoError(t, syncer.SyncProvider(context.Background(), user, providers.TypeNavidrome))
 }
