@@ -106,6 +106,10 @@ CREATE INDEX IF NOT EXISTS idx_entity_tags_entity ON entity_tags (entity_type, e
 // SQLite-only) and table-level FOREIGN KEY constraints — MySQL silently
 // ignores inline column REFERENCES clauses. Ent creates users.id and tags.id
 // as signed BIGINT on MySQL, so the FK columns match that type.
+// created_at is DATETIME rather than TIMESTAMP: DATETIME avoids the
+// TIMESTAMP 2038 range limit and MySQL's implicit TIMESTAMP
+// auto-initialization/auto-update behaviors. ENGINE=InnoDB is pinned
+// explicitly because FK + ON DELETE CASCADE semantics require InnoDB.
 const entityTagsMySQL = `
 CREATE TABLE IF NOT EXISTS entity_tags (
     id BIGINT NOT NULL AUTO_INCREMENT,
@@ -115,12 +119,12 @@ CREATE TABLE IF NOT EXISTS entity_tags (
     tag_name VARCHAR(255) NOT NULL,
     entity_type VARCHAR(20) NOT NULL,
     entity_id BIGINT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT entity_tags_unique UNIQUE (tag_id, entity_type, entity_id),
     CONSTRAINT entity_tags_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT entity_tags_tag_id_fk FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-)`
+) ENGINE=InnoDB`
 
 // entityTagsMySQLIndexes are created one statement at a time; creation is
 // skipped when information_schema reports the index already exists.
