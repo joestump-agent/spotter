@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"spotter/internal/config"
 	"spotter/internal/crypto"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -48,23 +49,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Governing: ADR-0023 (multi-database support)
-	// Determine database driver and DSN from environment or flags.
-	driver := os.Getenv("SPOTTER_DATABASE_DRIVER")
-	if driver == "" {
-		driver = driverSQLite3
+	// Governing: ADR-0023 (multi-database support), ADR-0009 (Viper configuration), SPEC key-rotation
+	// Determine database driver and DSN via config.LoadDatabase() — the same
+	// Viper-backed loader the server uses (SPOTTER_DATABASE_DRIVER /
+	// SPOTTER_DATABASE_SOURCE), including driver validation and driver-specific
+	// default sources, but scoped to database config only so rotate-key can run
+	// standalone without full server configuration (SPEC key-rotation Scenario 1).
+	// The --db flag still overrides the configured DSN.
+	cfg, err := config.LoadDatabase()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to load database config: %v\n", err)
+		os.Exit(1)
 	}
-	dsn := os.Getenv("SPOTTER_DATABASE_SOURCE")
-	if dsn == "" {
-		dsn = "file:spotter.db?cache=shared&_fk=1"
-	}
+	driver := cfg.Database.Driver
+	dsn := cfg.Database.Source
 	if *dbDSNFlag != "" {
 		dsn = *dbDSNFlag
-	}
-
-	if driver != driverSQLite3 && driver != "postgres" && driver != "mysql" {
-		fmt.Fprintf(os.Stderr, "Error: unsupported SPOTTER_DATABASE_DRIVER %q (must be sqlite3, postgres, or mysql)\n", driver)
-		os.Exit(1)
 	}
 
 	if err := run(*oldKeyHex, *newKeyHex, driver, dsn); err != nil {
