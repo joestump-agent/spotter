@@ -36,7 +36,7 @@ var allEncryptedFields = []encryptedField{
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] != "rotate-key" {
-		fmt.Fprintln(os.Stderr, "Usage: spotter-admin rotate-key --old-key=<hex> --new-key=<hex> [--db=<dsn>]")
+		fmt.Fprintln(os.Stderr, "Usage: spotter-admin rotate-key --old-key=<hex> --new-key=<hex> [--db=<dsn>] [--force]")
 		os.Exit(1)
 	}
 
@@ -45,6 +45,7 @@ func main() {
 	oldKeyHex := fs.String("old-key", "", "Current 64-char hex encryption key (required)")
 	newKeyHex := fs.String("new-key", "", "New 64-char hex encryption key (required)")
 	dbDSNFlag := fs.String("db", "", "Database DSN (overrides SPOTTER_DATABASE_SOURCE env var)")
+	force := fs.Bool("force", false, "Proceed even when no stored value verifies the old key (DANGEROUS: with a wrong old key this irrecoverably corrupts all credentials; only use when the stored values really are plaintext)")
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		os.Exit(1)
 	}
@@ -67,13 +68,13 @@ func main() {
 		dsn = *dbDSNFlag
 	}
 
-	if err := run(*oldKeyHex, *newKeyHex, driver, dsn); err != nil {
+	if err := run(*oldKeyHex, *newKeyHex, driver, dsn, *force); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(oldKeyHex, newKeyHex, driver, dbDSN string) error {
+func run(oldKeyHex, newKeyHex, driver, dbDSN string, force bool) error {
 	// --- REQ "ROT-001": Validate required flags ---
 	if oldKeyHex == "" {
 		return fmt.Errorf("--old-key is required")
@@ -150,13 +151,25 @@ func run(oldKeyHex, newKeyHex, driver, dbDSN string) error {
 	}
 
 	// --- REQ "ROT-004": Pre-rotation validation ---
-	found, err := verifyOldKey(db, oldEnc)
+	found, verified, err := verifyOldKey(db, oldEnc)
 	if err != nil {
 		return fmt.Errorf("pre-rotation validation failed: %w", err)
 	}
 	if !found {
 		fmt.Println("Warning: no encrypted fields found in the database. Nothing to rotate.")
 		return nil
+	}
+	if !verified {
+		// No stored value positively proved the old key is correct. On an
+		// all-legacy (pre-marker) database this is exactly what a WRONG old
+		// key looks like: proceeding would wrap garbage under the new key
+		// and report success, corrupting every credential. Hard-abort unless
+		// the operator explicitly forces it (e.g. a pre-encryption database
+		// whose values really are plaintext).
+		if !force {
+			return fmt.Errorf("no stored value could be decrypted with --old-key; refusing to rotate because a wrong old key would irrecoverably corrupt all credentials. If the stored values really are unencrypted plaintext, re-run with --force")
+		}
+		fmt.Fprintln(os.Stderr, "Warning: --force given; values not decryptable with the old key will be treated as plaintext and encrypted with the new key.")
 	}
 
 	// --- REQ "ROT-010": All re-encryption in one transaction ---
@@ -230,9 +243,18 @@ const (
 // rotations cannot run concurrently) and refuses to proceed while any other
 // session is connected to this database. The lock lives on the pool's single
 // pinned connection (SetMaxOpenConns(1)) and is released automatically when
-// the process exits. The other-sessions check is best-effort — a server that
-// opens connections lazily could pass it — so stopping the server before
-// rotation remains mandatory (ADR-0021).
+// the process exits.
+//
+// Known caveats — the guard is best-effort, stopping the server before
+// rotation remains mandatory (ADR-0021):
+//   - A server that opens its connections lazily can slip past the
+//     other-sessions check.
+//   - MySQL: information_schema.processlist only shows other users' sessions
+//     when the rotation user has the PROCESS privilege; without it the check
+//     can pass while another user's server session exists.
+//   - If the pinned connection drops and database/sql reconnects, the
+//     advisory lock is silently lost for the remainder of the run.
+//
 // Governing: ADR-0021, SPEC key-rotation REQ "ROT-005"
 func acquireRotationGuard(db *sql.DB, driver string) error {
 	switch driver {
@@ -280,18 +302,19 @@ func acquireRotationGuard(db *sql.DB, driver string) error {
 //     ciphertext — issue #335) and does not abort
 //   - anything else is plaintext from before encryption was enabled
 //
-// Returns (false, nil) when no non-empty values exist (nothing to rotate).
-// When values exist but none positively verified the old key, rotation
-// proceeds with a warning: unverifiable values are treated as plaintext and
-// encrypted with the new key.
+// Returns (found=false, ...) when no non-empty values exist (nothing to
+// rotate), and verified=true only when at least one stored value decrypted
+// with the old key. The caller MUST hard-abort on found && !verified unless
+// the operator explicitly forces the rotation: on an all-legacy database a
+// wrong old key is indistinguishable from all-plaintext data, and rotating
+// with a wrong key would irrecoverably corrupt every credential.
 // Governing: SPEC key-rotation REQ "ROT-004", ADR-0006, ADR-0021
-func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (bool, error) {
-	foundValue := false
+func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (found, verified bool, err error) {
 	for _, f := range allEncryptedFields {
 		query := fmt.Sprintf("SELECT id, %s FROM %s", f.column, f.table)
 		rows, err := db.Query(query)
 		if err != nil {
-			return false, fmt.Errorf("failed to query %s.%s: %w", f.table, f.column, err)
+			return false, false, fmt.Errorf("failed to query %s.%s: %w", f.table, f.column, err)
 		}
 
 		for rows.Next() {
@@ -299,39 +322,36 @@ func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (bool, error) {
 			var val sql.NullString
 			if err := rows.Scan(&id, &val); err != nil {
 				_ = rows.Close()
-				return false, fmt.Errorf("failed to scan %s.%s: %w", f.table, f.column, err)
+				return false, false, fmt.Errorf("failed to scan %s.%s: %w", f.table, f.column, err)
 			}
 			if !val.Valid || val.String == "" {
 				continue
 			}
-			foundValue = true
+			found = true
 
 			if crypto.IsEncrypted(val.String) {
 				if _, err := oldEnc.Decrypt(val.String); err != nil {
 					_ = rows.Close()
-					return false, fmt.Errorf("old key cannot decrypt %s.%s (row id=%d): %w", f.table, f.column, id, err)
+					return true, false, fmt.Errorf("old key cannot decrypt %s.%s (row id=%d): %w", f.table, f.column, id, err)
 				}
 				_ = rows.Close()
-				return true, nil
+				return true, true, nil
 			}
 			if crypto.LooksLikeLegacyCiphertext(val.String) {
 				if _, err := oldEnc.Decrypt(val.String); err == nil {
 					_ = rows.Close()
-					return true, nil
+					return true, true, nil
 				}
 			}
 		}
 		if err := rows.Err(); err != nil {
 			_ = rows.Close()
-			return false, fmt.Errorf("error iterating %s.%s: %w", f.table, f.column, err)
+			return false, false, fmt.Errorf("error iterating %s.%s: %w", f.table, f.column, err)
 		}
 		_ = rows.Close()
 	}
 
-	if foundValue {
-		fmt.Fprintln(os.Stderr, "Warning: no stored value positively verified the old key; values not decryptable with it will be treated as plaintext and encrypted with the new key.")
-	}
-	return foundValue, nil
+	return found, false, nil
 }
 
 // resolveStoredValue recovers the plaintext behind a stored credential value
@@ -381,6 +401,12 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 		grouped[f.table].columns = append(grouped[f.table].columns, f.column)
 	}
 
+	// A buffered row of id + column values.
+	type bufferedRow struct {
+		id   int
+		vals []sql.NullString
+	}
+
 	for _, tf := range grouped {
 		cols := strings.Join(tf.columns, ", ")
 		query := fmt.Sprintf("SELECT id, %s FROM %s", cols, tf.table)
@@ -389,7 +415,11 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 			return nil, 0, fmt.Errorf("failed to query %s: %w", tf.table, err)
 		}
 
-		rowCount := 0
+		// Buffer all rows before issuing UPDATEs: with the pool pinned to a
+		// single connection, mysql and lib/pq cannot execute tx.Exec while a
+		// tx.Query result set is still open on the same connection (SQLite
+		// tolerates it, the other drivers error at runtime).
+		var buffered []bufferedRow
 		for rows.Next() {
 			// Build scan destinations: id + N columns.
 			scanDest := make([]interface{}, 1+len(tf.columns))
@@ -404,28 +434,35 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 				_ = rows.Close()
 				return nil, 0, fmt.Errorf("failed to scan row from %s: %w", tf.table, err)
 			}
+			buffered = append(buffered, bufferedRow{id: id, vals: vals})
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, 0, fmt.Errorf("error iterating %s: %w", tf.table, err)
+		}
+		_ = rows.Close()
 
+		rowCount := 0
+		for _, row := range buffered {
 			rowModified := false
 			for i, col := range tf.columns {
-				if !vals[i].Valid || vals[i].String == "" {
+				if !row.vals[i].Valid || row.vals[i].String == "" {
 					continue // REQ "ROT-012": skip null/empty
 				}
 
 				// REQ "ROT-040": Recover plaintext (marked, legacy, or plaintext value)
-				plaintext, treatedAsPlaintext, err := resolveStoredValue(oldEnc, vals[i].String)
+				plaintext, treatedAsPlaintext, err := resolveStoredValue(oldEnc, row.vals[i].String)
 				if err != nil {
-					_ = rows.Close()
-					return nil, 0, fmt.Errorf("decryption failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
+					return nil, 0, fmt.Errorf("decryption failed for %s.%s (row id=%d): %w", tf.table, col, row.id, err)
 				}
 				if treatedAsPlaintext {
-					fmt.Fprintf(os.Stderr, "Warning: %s.%s (row id=%d) is not decryptable with the old key; treating as plaintext and encrypting with the new key\n", tf.table, col, id)
+					fmt.Fprintf(os.Stderr, "Warning: %s.%s (row id=%d) is not decryptable with the old key; treating as plaintext and encrypting with the new key\n", tf.table, col, row.id)
 				}
 
 				// REQ "ROT-041": Encrypt with new key (always marked format)
 				newCipher, err := newEnc.Encrypt(plaintext)
 				if err != nil {
-					_ = rows.Close()
-					return nil, 0, fmt.Errorf("encryption failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
+					return nil, 0, fmt.Errorf("encryption failed for %s.%s (row id=%d): %w", tf.table, col, row.id, err)
 				}
 
 				var updateSQL string
@@ -434,9 +471,8 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 				} else {
 					updateSQL = fmt.Sprintf("UPDATE %s SET %s = ? WHERE id = ?", tf.table, col)
 				}
-				if _, err := tx.Exec(updateSQL, newCipher, id); err != nil {
-					_ = rows.Close()
-					return nil, 0, fmt.Errorf("update failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
+				if _, err := tx.Exec(updateSQL, newCipher, row.id); err != nil {
+					return nil, 0, fmt.Errorf("update failed for %s.%s (row id=%d): %w", tf.table, col, row.id, err)
 				}
 				totalFields++
 				rowModified = true
@@ -445,10 +481,6 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 				rowCount++
 			}
 		}
-		if err := rows.Err(); err != nil {
-			return nil, 0, fmt.Errorf("error iterating %s: %w", tf.table, err)
-		}
-		_ = rows.Close()
 		counts[tf.table] = rowCount
 	}
 

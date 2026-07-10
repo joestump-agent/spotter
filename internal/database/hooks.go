@@ -3,11 +3,37 @@ package database
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"spotter/ent"
 	"spotter/ent/hook"
+	"spotter/ent/lastfmauth"
+	"spotter/ent/navidromeauth"
+	"spotter/ent/spotifyauth"
 	"spotter/internal/crypto"
 )
+
+// selfHealCtxKey marks a context as belonging to an interceptor self-heal
+// write-back, whose value is already marked ciphertext and must be stored
+// as-is. Every other mutation carries user input and is ALWAYS encrypted —
+// even input that happens to start with the enc:v1: marker. Deciding by
+// value shape in the write hooks would re-open the bricking bug this
+// package exists to fix: a password literally starting with "enc:v1:"
+// would be stored as plaintext and then fail GCM decryption on every read
+// (issue #335).
+type selfHealCtxKey struct{}
+
+// withSelfHeal returns a context that tells the write hooks to store the
+// (already marked-ciphertext) value without re-encrypting it.
+func withSelfHeal(ctx context.Context) context.Context {
+	return context.WithValue(ctx, selfHealCtxKey{}, true)
+}
+
+// isSelfHeal reports whether ctx belongs to an interceptor self-heal write-back.
+func isSelfHeal(ctx context.Context) bool {
+	v, _ := ctx.Value(selfHealCtxKey{}).(bool)
+	return v
+}
 
 // RegisterEncryptionHooks registers hooks to encrypt/decrypt sensitive data
 // Governing: ADR-0006 (application-layer AES-256-GCM encryption via Ent hooks)
@@ -40,46 +66,50 @@ func RegisterEncryptionHooks(client *ent.Client, encryptor *crypto.Encryptor) {
 //  2. Legacy ciphertext shape (bare base64, >= 29 decoded bytes) → attempt
 //     decryption. Success means it is pre-marker ciphertext; GCM failure
 //     means it is plaintext that merely looks like ciphertext (e.g. a
-//     40-char alphanumeric password). Either way the row self-heals: the
-//     plaintext is re-encrypted with the marker and returned as healed.
-//     This path NEVER returns an error — previously it bricked the auth row
-//     by failing the whole query (issue #335).
+//     40-char alphanumeric password) — reported via treatedAsPlaintext so
+//     callers can log it, since it is also the only signal an operator gets
+//     when the encryption key is wrong for legacy rows. Either way the row
+//     self-heals: the plaintext is re-encrypted with the marker and returned
+//     as healed. This path NEVER returns an error — previously it bricked
+//     the auth row by failing the whole query (issue #335).
 //  3. Anything else is plaintext from before encryption was enabled; it is
 //     left as-is and will be encrypted on the next write.
 //
 // Governing: ADR-0006
-func resolveEncryptedField(encryptor *crypto.Encryptor, stored string) (plaintext, healed string, err error) {
+func resolveEncryptedField(encryptor *crypto.Encryptor, stored string) (plaintext, healed string, treatedAsPlaintext bool, err error) {
 	if stored == "" {
-		return "", "", nil
+		return "", "", false, nil
 	}
 
 	if crypto.IsEncrypted(stored) {
 		decrypted, err := encryptor.Decrypt(stored)
 		if err != nil {
-			return "", "", err
+			// Marked values are always ciphertext (the write hooks encrypt
+			// unconditionally), so this can only be a wrong key or corruption.
+			return "", "", false, err
 		}
-		return decrypted, "", nil
+		return decrypted, "", false, nil
 	}
 
 	if crypto.LooksLikeLegacyCiphertext(stored) {
 		if decrypted, err := encryptor.Decrypt(stored); err == nil {
 			// Legacy ciphertext: migrate to the marked format.
 			if reencrypted, err := encryptor.Encrypt(decrypted); err == nil {
-				return decrypted, reencrypted, nil
+				return decrypted, reencrypted, false, nil
 			}
-			return decrypted, "", nil
+			return decrypted, "", false, nil
 		}
 		// GCM failure: the value is plaintext that merely looks like
 		// ciphertext. Treat it as plaintext and self-heal by encrypting
 		// it with the marker so future reads are unambiguous.
 		if reencrypted, err := encryptor.Encrypt(stored); err == nil {
-			return stored, reencrypted, nil
+			return stored, reencrypted, true, nil
 		}
-		return stored, "", nil
+		return stored, "", true, nil
 	}
 
 	// Plaintext from before encryption was enabled (will be encrypted on next write)
-	return stored, "", nil
+	return stored, "", false, nil
 }
 
 // encryptPasswordHook encrypts the password field before saving to database
@@ -91,8 +121,11 @@ func encryptPasswordHook(encryptor *crypto.Encryptor) ent.Hook {
 			var originalPassword string
 			if password, exists := m.Password(); exists {
 				originalPassword = password
-				// Check if already encrypted (for idempotency)
-				if !crypto.IsEncrypted(password) {
+				// ALWAYS encrypt user input — even input that happens to
+				// start with the enc:v1: marker (issue #335). Only the
+				// interceptor self-heal path, which writes back values that
+				// are already marked ciphertext, may skip encryption.
+				if !isSelfHeal(ctx) {
 					// Encrypt the password
 					encrypted, err := encryptor.Encrypt(password)
 					if err != nil {
@@ -154,15 +187,24 @@ func decryptNavidromeAuth(ctx context.Context, client *ent.Client, encryptor *cr
 		return nil
 	}
 
-	plaintext, healed, err := resolveEncryptedField(encryptor, auth.Password)
+	plaintext, healed, treatedAsPlaintext, err := resolveEncryptedField(encryptor, auth.Password)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt password for user %d: %w", auth.ID, err)
 	}
+	if treatedAsPlaintext {
+		slog.Warn("stored navidrome password matches legacy ciphertext shape but fails decryption; treating as plaintext and re-encrypting (wrong SPOTTER_SECURITY_ENCRYPTION_KEY?)",
+			"navidrome_auth_id", auth.ID)
+	}
 	if healed != "" {
-		// Best-effort self-heal: persist the marked ciphertext. The write
-		// hook sees the marker and stores it as-is. Failures are ignored —
-		// the read must never break, and the next read retries the heal.
-		_ = client.NavidromeAuth.UpdateOneID(auth.ID).SetPassword(healed).Exec(ctx)
+		// Best-effort self-heal: persist the marked ciphertext. The
+		// self-heal context tells the write hook to store it as-is, and
+		// the Where guard makes it a compare-and-swap so a concurrent
+		// legitimate credential update is never clobbered. Failures are
+		// ignored — the read must never break; the next read retries.
+		_, _ = client.NavidromeAuth.Update().
+			Where(navidromeauth.ID(auth.ID), navidromeauth.Password(auth.Password)).
+			SetPassword(healed).
+			Save(withSelfHeal(ctx))
 	}
 	auth.Password = plaintext
 
@@ -177,11 +219,12 @@ func encryptSpotifyAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 			// Remember original tokens for decryption after save
 			var originalAccessToken, originalRefreshToken string
 
-			// Encrypt access_token if being set
+			// Encrypt access_token if being set. ALWAYS encrypt user input —
+			// even input starting with the enc:v1: marker (issue #335); only
+			// the interceptor self-heal path may skip encryption.
 			if accessToken, exists := m.AccessToken(); exists {
 				originalAccessToken = accessToken
-				// Check if already encrypted (for idempotency)
-				if !crypto.IsEncrypted(accessToken) {
+				if !isSelfHeal(ctx) {
 					encrypted, err := encryptor.Encrypt(accessToken)
 					if err != nil {
 						return nil, fmt.Errorf("failed to encrypt access_token: %w", err)
@@ -190,11 +233,10 @@ func encryptSpotifyAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 				}
 			}
 
-			// Encrypt refresh_token if being set
+			// Encrypt refresh_token if being set (same self-heal rule as above)
 			if refreshToken, exists := m.RefreshToken(); exists {
 				originalRefreshToken = refreshToken
-				// Check if already encrypted (for idempotency)
-				if !crypto.IsEncrypted(refreshToken) {
+				if !isSelfHeal(ctx) {
 					encrypted, err := encryptor.Encrypt(refreshToken)
 					if err != nil {
 						return nil, fmt.Errorf("failed to encrypt refresh_token: %w", err)
@@ -261,28 +303,40 @@ func decryptSpotifyAuth(ctx context.Context, client *ent.Client, encryptor *cryp
 		return nil
 	}
 
-	accessPlain, accessHealed, err := resolveEncryptedField(encryptor, auth.AccessToken)
+	accessPlain, accessHealed, accessAsPlaintext, err := resolveEncryptedField(encryptor, auth.AccessToken)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt access_token for user %d: %w", auth.ID, err)
 	}
+	if accessAsPlaintext {
+		slog.Warn("stored spotify access_token matches legacy ciphertext shape but fails decryption; treating as plaintext and re-encrypting (wrong SPOTTER_SECURITY_ENCRYPTION_KEY?)",
+			"spotify_auth_id", auth.ID)
+	}
 
-	refreshPlain, refreshHealed, err := resolveEncryptedField(encryptor, auth.RefreshToken)
+	refreshPlain, refreshHealed, refreshAsPlaintext, err := resolveEncryptedField(encryptor, auth.RefreshToken)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt refresh_token for user %d: %w", auth.ID, err)
 	}
+	if refreshAsPlaintext {
+		slog.Warn("stored spotify refresh_token matches legacy ciphertext shape but fails decryption; treating as plaintext and re-encrypting (wrong SPOTTER_SECURITY_ENCRYPTION_KEY?)",
+			"spotify_auth_id", auth.ID)
+	}
 
-	if accessHealed != "" || refreshHealed != "" {
-		// Best-effort self-heal: persist the marked ciphertexts. The write
-		// hook sees the marker and stores them as-is. Failures are ignored —
-		// the read must never break, and the next read retries the heal.
-		update := client.SpotifyAuth.UpdateOneID(auth.ID)
-		if accessHealed != "" {
-			update.SetAccessToken(accessHealed)
-		}
-		if refreshHealed != "" {
-			update.SetRefreshToken(refreshHealed)
-		}
-		_ = update.Exec(ctx)
+	// Best-effort self-heal: persist the marked ciphertexts. The self-heal
+	// context tells the write hook to store them as-is, and the Where guards
+	// make each write a compare-and-swap so a concurrent legitimate
+	// credential update is never clobbered. Failures are ignored — the read
+	// must never break; the next read retries.
+	if accessHealed != "" {
+		_, _ = client.SpotifyAuth.Update().
+			Where(spotifyauth.ID(auth.ID), spotifyauth.AccessToken(auth.AccessToken)).
+			SetAccessToken(accessHealed).
+			Save(withSelfHeal(ctx))
+	}
+	if refreshHealed != "" {
+		_, _ = client.SpotifyAuth.Update().
+			Where(spotifyauth.ID(auth.ID), spotifyauth.RefreshToken(auth.RefreshToken)).
+			SetRefreshToken(refreshHealed).
+			Save(withSelfHeal(ctx))
 	}
 
 	auth.AccessToken = accessPlain
@@ -299,11 +353,12 @@ func encryptLastFMAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 			// Remember original session_key for decryption after save
 			var originalSessionKey string
 
-			// Encrypt session_key if being set
+			// Encrypt session_key if being set. ALWAYS encrypt user input —
+			// even input starting with the enc:v1: marker (issue #335); only
+			// the interceptor self-heal path may skip encryption.
 			if sessionKey, exists := m.SessionKey(); exists {
 				originalSessionKey = sessionKey
-				// Check if already encrypted (for idempotency)
-				if !crypto.IsEncrypted(sessionKey) {
+				if !isSelfHeal(ctx) {
 					encrypted, err := encryptor.Encrypt(sessionKey)
 					if err != nil {
 						return nil, fmt.Errorf("failed to encrypt session_key: %w", err)
@@ -364,15 +419,24 @@ func decryptLastFMAuth(ctx context.Context, client *ent.Client, encryptor *crypt
 		return nil
 	}
 
-	plaintext, healed, err := resolveEncryptedField(encryptor, auth.SessionKey)
+	plaintext, healed, treatedAsPlaintext, err := resolveEncryptedField(encryptor, auth.SessionKey)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt session_key for user %d: %w", auth.ID, err)
 	}
+	if treatedAsPlaintext {
+		slog.Warn("stored lastfm session_key matches legacy ciphertext shape but fails decryption; treating as plaintext and re-encrypting (wrong SPOTTER_SECURITY_ENCRYPTION_KEY?)",
+			"lastfm_auth_id", auth.ID)
+	}
 	if healed != "" {
-		// Best-effort self-heal: persist the marked ciphertext. The write
-		// hook sees the marker and stores it as-is. Failures are ignored —
-		// the read must never break, and the next read retries the heal.
-		_ = client.LastFMAuth.UpdateOneID(auth.ID).SetSessionKey(healed).Exec(ctx)
+		// Best-effort self-heal: persist the marked ciphertext. The
+		// self-heal context tells the write hook to store it as-is, and
+		// the Where guard makes it a compare-and-swap so a concurrent
+		// legitimate credential update is never clobbered. Failures are
+		// ignored — the read must never break; the next read retries.
+		_, _ = client.LastFMAuth.Update().
+			Where(lastfmauth.ID(auth.ID), lastfmauth.SessionKey(auth.SessionKey)).
+			SetSessionKey(healed).
+			Save(withSelfHeal(ctx))
 	}
 	auth.SessionKey = plaintext
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"spotter/ent"
+	"spotter/ent/navidromeauth"
 	"spotter/internal/crypto"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -793,5 +794,186 @@ func TestLegacyCiphertextSelfHealsOnRead(t *testing.T) {
 	}
 	if decrypted != sessionKey {
 		t.Errorf("migrated value decrypts to %q, want %q", decrypted, sessionKey)
+	}
+}
+
+// TestMarkerPrefixedPasswordRoundTrip covers the write-path hazard flagged in
+// review: a user password that literally starts with the enc:v1: marker must
+// still be encrypted on write (never stored as plaintext) and must round-trip
+// on read. Deciding by value shape in the write hook would store it raw and
+// then hard-error every read on GCM failure — the bricking bug again.
+func TestMarkerPrefixedPasswordRoundTrip(t *testing.T) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	encryptor, err := crypto.NewEncryptor(key)
+	if err != nil {
+		t.Fatalf("failed to create encryptor: %v", err)
+	}
+
+	dsn := "file:ent_markerprefix?mode=memory&cache=shared&_fk=1"
+	client, err := ent.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer client.Close()
+
+	RegisterEncryptionHooks(client, encryptor)
+
+	if err := client.Schema.Create(context.Background()); err != nil {
+		t.Fatalf("failed to create schema: %v", err)
+	}
+
+	ctx := context.Background()
+
+	user, err := client.User.Create().
+		SetUsername("testuser").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	// Adversarial user input: plaintext that impersonates the marker.
+	password := crypto.EncryptedMarker + "supersecret"
+
+	auth, err := client.NavidromeAuth.Create().
+		SetUser(user).
+		SetPassword(password).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("failed to create navidrome auth: %v", err)
+	}
+	if auth.Password != password {
+		t.Errorf("password after create = %q, want %q", auth.Password, password)
+	}
+
+	// The read must return the original plaintext, not error.
+	authFromDB, err := client.NavidromeAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("failed to query navidrome auth with marker-prefixed password: %v", err)
+	}
+	if authFromDB.Password != password {
+		t.Errorf("password after query = %q, want %q", authFromDB.Password, password)
+	}
+
+	// The stored value must be real ciphertext of the input, not the input itself.
+	raw := rawColumnValue(t, dsn, "SELECT password FROM navidrome_auths WHERE id = ?", auth.ID)
+	if raw == password {
+		t.Fatalf("marker-prefixed password stored as plaintext")
+	}
+	if !crypto.IsEncrypted(raw) {
+		t.Errorf("stored password %q does not carry the encryption marker", raw)
+	}
+	decrypted, err := encryptor.Decrypt(raw)
+	if err != nil {
+		t.Fatalf("failed to decrypt stored password: %v", err)
+	}
+	if decrypted != password {
+		t.Errorf("decrypted stored password = %q, want %q", decrypted, password)
+	}
+
+	// Update path must behave the same.
+	newPassword := crypto.EncryptedMarker + "another-secret"
+	if _, err := client.NavidromeAuth.UpdateOne(auth).SetPassword(newPassword).Save(ctx); err != nil {
+		t.Fatalf("failed to update password: %v", err)
+	}
+	updated, err := client.NavidromeAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("failed to query updated auth: %v", err)
+	}
+	if updated.Password != newPassword {
+		t.Errorf("updated password = %q, want %q", updated.Password, newPassword)
+	}
+}
+
+// TestSelfHealDoesNotClobberConcurrentUpdate verifies the compare-and-swap
+// guard on heal write-backs: when the stored value changes between the read
+// and the heal write, the heal must not overwrite the newer value.
+func TestSelfHealDoesNotClobberConcurrentUpdate(t *testing.T) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	encryptor, err := crypto.NewEncryptor(key)
+	if err != nil {
+		t.Fatalf("failed to create encryptor: %v", err)
+	}
+
+	dsn := "file:ent_healrace?mode=memory&cache=shared&_fk=1"
+	client, err := ent.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer client.Close()
+
+	if err := client.Schema.Create(context.Background()); err != nil {
+		t.Fatalf("failed to create schema: %v", err)
+	}
+
+	ctx := context.Background()
+
+	user, err := client.User.Create().
+		SetUsername("testuser").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	// Legacy row stored raw (no hooks yet).
+	lookalike := "abcdefghijklmnopqrstuvwxyzABCDEF01234567"
+	auth, err := client.NavidromeAuth.Create().
+		SetUser(user).
+		SetPassword(lookalike).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("failed to create auth: %v", err)
+	}
+
+	RegisterEncryptionHooks(client, encryptor)
+
+	// Simulate the race deterministically: resolve the heal value the same
+	// way the interceptor does, then change the stored value before the
+	// conditional heal write fires.
+	_, healed, _, err := resolveEncryptedField(encryptor, lookalike)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if healed == "" {
+		t.Fatal("expected a heal value for the lookalike plaintext")
+	}
+
+	newPassword := "user-changed-password"
+	if _, err := client.NavidromeAuth.UpdateOne(auth).SetPassword(newPassword).Save(ctx); err != nil {
+		t.Fatalf("concurrent update: %v", err)
+	}
+	rawAfterUpdate := rawColumnValue(t, dsn, "SELECT password FROM navidrome_auths WHERE id = ?", auth.ID)
+
+	// The stale heal write: guarded by the old raw value, it must not match.
+	n, err := client.NavidromeAuth.Update().
+		Where(navidromeauth.ID(auth.ID), navidromeauth.Password(lookalike)).
+		SetPassword(healed).
+		Save(withSelfHeal(ctx))
+	if err != nil {
+		t.Fatalf("stale heal write errored: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("stale heal write modified %d row(s), want 0", n)
+	}
+
+	raw := rawColumnValue(t, dsn, "SELECT password FROM navidrome_auths WHERE id = ?", auth.ID)
+	if raw != rawAfterUpdate {
+		t.Errorf("stored value changed by stale heal: %q != %q", raw, rawAfterUpdate)
+	}
+
+	// The row still reads back as the user's new password.
+	got, err := client.NavidromeAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("read after stale heal: %v", err)
+	}
+	if got.Password != newPassword {
+		t.Errorf("password = %q, want %q", got.Password, newPassword)
 	}
 }
