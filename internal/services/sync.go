@@ -141,10 +141,17 @@ func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 			"error", strings.Join(st.errs, "; "))
 	}
 
+	// Surface aggregated per-provider errors without having blocked partial
+	// success: providers that succeeded have already persisted their data.
+	// Governing: ADR-0020, SPEC listen-playlist-sync REQ-SYNC-011 (history
+	// failure does not abort playlist sync) — both phases ran above.
+	if syncErr := errors.Join(histErr, plErr); syncErr != nil {
+		s.logger.Error("full sync completed with errors", "username", refreshedUser.Username, "error", syncErr)
+		return fmt.Errorf("sync completed with errors: %w", syncErr)
+	}
+
 	s.logger.Info("full sync completed", "username", refreshedUser.Username)
-	// Governing: SPEC listen-playlist-sync REQ-SYNC-011 (history failure does not
-	// abort playlist sync) — both phases ran above; surface any failures now.
-	return errors.Join(histErr, plErr)
+	return nil
 }
 
 // SyncProvider performs a full synchronization for a specific provider only.
@@ -170,13 +177,23 @@ func (s *Syncer) SyncProvider(ctx context.Context, u *ent.User, providerType pro
 	}
 
 	// 1. History
-	if _, err := s.syncHistory(ctx, refreshedUser, targetProviders, nil); err != nil {
-		s.logger.Error("failed to sync history", "username", refreshedUser.Username, "provider", providerType, "error", err)
+	_, histErr := s.syncHistory(ctx, refreshedUser, targetProviders, nil)
+	if histErr != nil {
+		s.logger.Error("failed to sync history", "username", refreshedUser.Username, "provider", providerType, "error", histErr)
 	}
 
 	// 2. Playlists
-	if _, err := s.syncPlaylists(ctx, refreshedUser, targetProviders, nil); err != nil {
-		s.logger.Error("failed to sync playlists", "username", refreshedUser.Username, "provider", providerType, "error", err)
+	_, plErr := s.syncPlaylists(ctx, refreshedUser, targetProviders, nil)
+	if plErr != nil {
+		s.logger.Error("failed to sync playlists", "username", refreshedUser.Username, "provider", providerType, "error", plErr)
+	}
+
+	// Surface aggregated errors so callers (e.g. the manual "Sync Failed"
+	// toast paths in handlers) report real failures instead of silently
+	// succeeding. Both phases still ran, preserving partial success.
+	// Governing: ADR-0020 (error handling and resilience)
+	if err := errors.Join(histErr, plErr); err != nil {
+		return fmt.Errorf("provider sync completed with errors: %w", err)
 	}
 
 	s.logger.Info("provider sync completed", "username", refreshedUser.Username, "provider", providerType)
@@ -254,8 +271,12 @@ func (s *Syncer) logEvent(ctx context.Context, u *ent.User, eventType syncevent.
 // Governing: SPEC listen-playlist-sync REQ-SYNC-020 (since timestamp from last listen)
 // Governing: SPEC listen-playlist-sync REQ-SYNC-022 (per-track errors logged, sync continues)
 // Governing: SPEC listen-playlist-sync REQ-SYNC-023 (notification published on new listens)
+// Governing: ADR-0020 — per-provider failures are aggregated and returned via
+// errors.Join; one provider failing does not prevent the remaining providers
+// from syncing (partial success is preserved).
 func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders []providers.Provider, stats map[providers.Type]*providerSyncStats) (int, error) {
 	allAdded := 0
+	var errs []error
 	for _, provider := range activeProviders {
 		// Check if provider supports history fetching
 		fetcher, ok := provider.(providers.HistoryFetcher)
@@ -267,6 +288,8 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 		// Check backoff state before calling provider
 		// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
+		// A backoff skip is deliberate throttling, not a new failure — it is
+		// not added to the aggregated error.
 		backoffKey := BackoffKey{UserID: u.ID, ProviderType: provider.Type()}
 		if skip, reason := s.backoff.ShouldSkip(backoffKey); skip {
 			s.logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
@@ -332,12 +355,16 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 		})
 
 		if err != nil {
-			// Governing: SPEC observability REQ "BG-003" (per-provider failure recorded)
+			// Governing: SPEC observability REQ "BG-003" (per-provider failure recorded;
+			// listens persisted by earlier batches before the failure still count)
 			if st := syncStatsFor(stats, provider.Type()); st != nil {
+				st.listensSynced += totalAdded
 				st.duration += time.Since(providerStart)
 				st.failed = true
 				st.errs = append(st.errs, err.Error())
 			}
+			// Batches persisted before the failure are real synced listens.
+			allAdded += totalAdded
 			// Classify error and record backoff state
 			// Governing: SPEC error-handling REQ-ERR-001 through REQ-ERR-004
 			errClass := ClassifyError(err)
@@ -361,6 +388,11 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			}
 			// Log sync failed event
 			s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName, fmt.Sprintf("Failed to fetch listens from %s: %v", providerName, err), nil)
+			// Aggregate the failure instead of swallowing it so Sync(),
+			// SyncProvider(), and their callers see real failures.
+			// Remaining providers still sync.
+			// Governing: ADR-0020, SPEC listen-playlist-sync REQ-SYNC-011
+			errs = append(errs, fmt.Errorf("%s: history sync failed: %w", providerName, err))
 			continue
 		}
 
@@ -404,12 +436,17 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 			s.logger.Warn("failed to update last_synced_at", "provider", provider.Type(), "error", err)
 		}
 	}
-	return allAdded, nil
+	// Governing: ADR-0020 — aggregated per-provider errors returned via errors.Join
+	return allAdded, errors.Join(errs...)
 }
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-030 (fetch playlists from each PlaylistManager provider)
+// Governing: ADR-0020 — per-provider failures are aggregated and returned via
+// errors.Join; one provider failing does not prevent the remaining providers
+// from syncing (partial success is preserved).
 func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders []providers.Provider, stats map[providers.Type]*providerSyncStats) (int, error) {
 	allAdded := 0
+	var errs []error
 	for _, provider := range activeProviders {
 		manager, ok := provider.(providers.PlaylistManager)
 		if !ok {
@@ -420,6 +457,8 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 
 		// Check backoff state before calling provider
 		// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
+		// A backoff skip is deliberate throttling, not a new failure — it is
+		// not added to the aggregated error.
 		backoffKey := BackoffKey{UserID: u.ID, ProviderType: provider.Type()}
 		if skip, reason := s.backoff.ShouldSkip(backoffKey); skip {
 			s.logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
@@ -469,6 +508,11 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 			}
 			// Log sync failed event
 			s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName, fmt.Sprintf("Failed to fetch playlists from %s: %v", providerName, err), nil)
+			// Aggregate the failure instead of swallowing it so Sync(),
+			// SyncProvider(), and their callers see real failures.
+			// Remaining providers still sync.
+			// Governing: ADR-0020, SPEC listen-playlist-sync REQ-SYNC-011
+			errs = append(errs, fmt.Errorf("%s: playlist sync failed: %w", providerName, err))
 			continue
 		}
 
@@ -488,6 +532,17 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 			added, skipped, err := s.persistPlaylists(ctx, u, provider.Type(), playlists)
 			if err != nil {
 				s.logger.Error("failed to persist playlists", "error", err)
+				// Persistence failures are real sync failures too: record them
+				// in the per-provider stats and the aggregated error instead
+				// of logging a "completed" event.
+				// Governing: ADR-0020, SPEC observability REQ "BG-003"
+				if st := syncStatsFor(stats, provider.Type()); st != nil {
+					st.failed = true
+					st.errs = append(st.errs, err.Error())
+				}
+				errs = append(errs, fmt.Errorf("%s: failed to persist playlists: %w", providerName, err))
+				s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName,
+					fmt.Sprintf("Failed to persist playlists from %s: %v", providerName, err), nil)
 			}
 			allAdded += added
 			playlistsAdded = added
@@ -498,10 +553,12 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 					fmt.Sprintf("Imported %d playlists from %s", added, provider.Type()), "success")
 			}
 
-			// Log sync completed event
-			s.logEvent(ctx, u, syncevent.EventTypeSyncCompleted, providerName,
-				fmt.Sprintf("Completed syncing playlists from %s: %d added, %d updated", providerName, added, skipped),
-				map[string]interface{}{"added": added, "updated": skipped, "total": len(playlists)})
+			if err == nil {
+				// Log sync completed event
+				s.logEvent(ctx, u, syncevent.EventTypeSyncCompleted, providerName,
+					fmt.Sprintf("Completed syncing playlists from %s: %d added, %d updated", providerName, added, skipped),
+					map[string]interface{}{"added": added, "updated": skipped, "total": len(playlists)})
+			}
 		} else {
 			// Log sync completed with no playlists
 			s.logEvent(ctx, u, syncevent.EventTypeSyncCompleted, providerName,
@@ -522,7 +579,8 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 			st.duration += time.Since(providerStart)
 		}
 	}
-	return allAdded, nil
+	// Governing: ADR-0020 — aggregated per-provider errors returned via errors.Join
+	return allAdded, errors.Join(errs...)
 }
 
 // publishFatalNotification publishes a user-visible notification for fatal provider errors.
