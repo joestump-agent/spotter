@@ -101,7 +101,7 @@ func TestNewClient_Regression_AuthTimestampsUpgradeWithExistingRows(t *testing.T
 	source := setupLegacyAuthDatabase(t)
 
 	// Phase 2 of the upgrade: boot the new binary against the old database.
-	client, err := NewClient("sqlite3", source, nil)
+	client, err := NewClient(context.Background(), "sqlite3", source, nil, nil)
 	if err != nil {
 		t.Fatalf("NewClient failed migrating a pre-timestamps database with existing auth rows: %v", err)
 	}
