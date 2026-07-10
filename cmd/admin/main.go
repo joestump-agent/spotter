@@ -115,6 +115,11 @@ func run(oldKeyHex, newKeyHex, driver, dbDSN string) error {
 	}
 	defer func() { _ = db.Close() }()
 
+	// Pin the pool to a single connection so session-scoped state (the SQLite
+	// exclusive-lock probe, the postgres/mysql advisory locks below) is held
+	// on the same connection every statement runs on.
+	db.SetMaxOpenConns(1)
+
 	if driver == driverSQLite3 {
 		// SQLite-specific: attempt to acquire an exclusive lock to check if the server is running.
 		if _, err := db.Exec("PRAGMA locking_mode=EXCLUSIVE"); err != nil {
@@ -130,6 +135,17 @@ func run(oldKeyHex, newKeyHex, driver, dbDSN string) error {
 		// PostgreSQL/MySQL: verify connectivity with a ping.
 		if err := db.Ping(); err != nil {
 			return fmt.Errorf("failed to connect to database: %w", err)
+		}
+		// Governing: ADR-0021 — "server not running" pre-rotation guard.
+		// Client-server databases have no equivalent of the SQLite BEGIN
+		// EXCLUSIVE probe, so we (a) take a session-scoped advisory lock to
+		// serialize rotations, and (b) refuse to run while any other session
+		// is connected to this database — the strongest available signal
+		// that the Spotter server is still running. Note the connection
+		// check is advisory: a server that connects lazily could slip past
+		// it, so operators MUST still stop the server before rotating.
+		if err := acquireRotationGuard(db, driver); err != nil {
+			return err
 		}
 	}
 
@@ -202,43 +218,151 @@ func parseHexKey(hexKey string) ([]byte, error) {
 	return key, nil
 }
 
-// verifyOldKey attempts to decrypt one encrypted field with the old key.
-// Returns (true, nil) if at least one field was found and decrypted successfully.
-// Returns (false, nil) if no encrypted fields exist at all.
-// Governing: SPEC key-rotation REQ "ROT-004"
+// rotationLockID and rotationLockName identify the cross-process advisory
+// lock that serializes key rotations on client-server databases.
+const (
+	rotationLockID   = int64(0x53504f54524f5431) // ASCII "SPOTROT1"
+	rotationLockName = "spotter_key_rotation"
+)
+
+// acquireRotationGuard is the "server not running" pre-rotation check for
+// client-server databases: it takes a session-scoped advisory lock (so two
+// rotations cannot run concurrently) and refuses to proceed while any other
+// session is connected to this database. The lock lives on the pool's single
+// pinned connection (SetMaxOpenConns(1)) and is released automatically when
+// the process exits. The other-sessions check is best-effort — a server that
+// opens connections lazily could pass it — so stopping the server before
+// rotation remains mandatory (ADR-0021).
+// Governing: ADR-0021, SPEC key-rotation REQ "ROT-005"
+func acquireRotationGuard(db *sql.DB, driver string) error {
+	switch driver {
+	case "postgres":
+		var locked bool
+		if err := db.QueryRow("SELECT pg_try_advisory_lock($1)", rotationLockID).Scan(&locked); err != nil {
+			return fmt.Errorf("failed to acquire rotation advisory lock: %w", err)
+		}
+		if !locked {
+			return fmt.Errorf("another key rotation is already in progress (advisory lock %d is held)", rotationLockID)
+		}
+		var others int
+		if err := db.QueryRow("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()").Scan(&others); err != nil {
+			return fmt.Errorf("failed to check for other database sessions: %w", err)
+		}
+		if others > 0 {
+			return fmt.Errorf("%d other session(s) connected to the database (is the server running?); stop the server before rotating", others)
+		}
+	case "mysql":
+		var locked sql.NullInt64
+		if err := db.QueryRow("SELECT GET_LOCK(?, 0)", rotationLockName).Scan(&locked); err != nil {
+			return fmt.Errorf("failed to acquire rotation advisory lock: %w", err)
+		}
+		if !locked.Valid || locked.Int64 != 1 {
+			return fmt.Errorf("another key rotation is already in progress (lock %q is held)", rotationLockName)
+		}
+		var others int
+		if err := db.QueryRow("SELECT COUNT(*) FROM information_schema.processlist WHERE id <> CONNECTION_ID() AND db = DATABASE()").Scan(&others); err != nil {
+			return fmt.Errorf("failed to check for other database sessions: %w", err)
+		}
+		if others > 0 {
+			return fmt.Errorf("%d other session(s) connected to the database (is the server running?); stop the server before rotating", others)
+		}
+	}
+	return nil
+}
+
+// verifyOldKey scans encrypted fields for evidence that the old key is
+// correct before any data is modified. Values are classified by format
+// (ADR-0006):
+//   - marked ciphertext (enc:v1:) MUST decrypt with the old key — a failure
+//     is definitive proof of a wrong key (or corruption) and aborts rotation
+//   - legacy-shaped values (bare base64) are attempted; success verifies the
+//     old key, failure is ambiguous (may be plaintext that merely looks like
+//     ciphertext — issue #335) and does not abort
+//   - anything else is plaintext from before encryption was enabled
+//
+// Returns (false, nil) when no non-empty values exist (nothing to rotate).
+// When values exist but none positively verified the old key, rotation
+// proceeds with a warning: unverifiable values are treated as plaintext and
+// encrypted with the new key.
+// Governing: SPEC key-rotation REQ "ROT-004", ADR-0006, ADR-0021
 func verifyOldKey(db *sql.DB, oldEnc *crypto.Encryptor) (bool, error) {
+	foundValue := false
 	for _, f := range allEncryptedFields {
-		query := fmt.Sprintf("SELECT id, %s FROM %s LIMIT 1", f.column, f.table)
+		query := fmt.Sprintf("SELECT id, %s FROM %s", f.column, f.table)
 		rows, err := db.Query(query)
 		if err != nil {
 			return false, fmt.Errorf("failed to query %s.%s: %w", f.table, f.column, err)
 		}
 
-		if rows.Next() {
+		for rows.Next() {
 			var id int
 			var val sql.NullString
 			if err := rows.Scan(&id, &val); err != nil {
 				_ = rows.Close()
 				return false, fmt.Errorf("failed to scan %s.%s: %w", f.table, f.column, err)
 			}
-			_ = rows.Close()
+			if !val.Valid || val.String == "" {
+				continue
+			}
+			foundValue = true
 
-			if val.Valid && val.String != "" {
-				_, err := oldEnc.Decrypt(val.String)
-				if err != nil {
+			if crypto.IsEncrypted(val.String) {
+				if _, err := oldEnc.Decrypt(val.String); err != nil {
+					_ = rows.Close()
 					return false, fmt.Errorf("old key cannot decrypt %s.%s (row id=%d): %w", f.table, f.column, id, err)
 				}
+				_ = rows.Close()
 				return true, nil
 			}
-		} else {
+			if crypto.LooksLikeLegacyCiphertext(val.String) {
+				if _, err := oldEnc.Decrypt(val.String); err == nil {
+					_ = rows.Close()
+					return true, nil
+				}
+			}
+		}
+		if err := rows.Err(); err != nil {
 			_ = rows.Close()
+			return false, fmt.Errorf("error iterating %s.%s: %w", f.table, f.column, err)
+		}
+		_ = rows.Close()
+	}
+
+	if foundValue {
+		fmt.Fprintln(os.Stderr, "Warning: no stored value positively verified the old key; values not decryptable with it will be treated as plaintext and encrypted with the new key.")
+	}
+	return foundValue, nil
+}
+
+// resolveStoredValue recovers the plaintext behind a stored credential value
+// during rotation. Marked ciphertext MUST decrypt with the old key;
+// legacy-shaped values fall back to being treated as plaintext on GCM
+// failure (self-heal, issue #335); anything else is plaintext from before
+// encryption was enabled. Every value is subsequently re-encrypted with the
+// new key, so rotation also migrates legacy ciphertext and plaintext rows to
+// the marked format.
+// Governing: ADR-0006, ADR-0021
+func resolveStoredValue(oldEnc *crypto.Encryptor, stored string) (plaintext string, treatedAsPlaintext bool, err error) {
+	if crypto.IsEncrypted(stored) {
+		decrypted, err := oldEnc.Decrypt(stored)
+		if err != nil {
+			return "", false, err
+		}
+		return decrypted, false, nil
+	}
+	if crypto.LooksLikeLegacyCiphertext(stored) {
+		if decrypted, err := oldEnc.Decrypt(stored); err == nil {
+			return decrypted, false, nil
 		}
 	}
-	return false, nil
+	return stored, true, nil
 }
 
 // reencryptAll re-encrypts all encrypted fields in a single transaction.
-// Returns per-table row counts and total field count.
+// It handles all three stored formats (marked ciphertext, legacy unmarked
+// ciphertext, plaintext) via resolveStoredValue and always writes back the
+// marked format under the new key, so a rotated database is uniformly
+// enc:v1:-marked. Returns per-table row counts and total field count.
 // Governing: SPEC key-rotation REQ "ROT-010", REQ "ROT-011", REQ "ROT-012", REQ "ROT-013", ADR-0023 (multi-database support)
 func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (map[string]int, int, error) {
 	counts := make(map[string]int)
@@ -287,14 +411,17 @@ func reencryptAll(tx *sql.Tx, oldEnc, newEnc *crypto.Encryptor, driver string) (
 					continue // REQ "ROT-012": skip null/empty
 				}
 
-				// REQ "ROT-040": Decrypt with old key
-				plaintext, err := oldEnc.Decrypt(vals[i].String)
+				// REQ "ROT-040": Recover plaintext (marked, legacy, or plaintext value)
+				plaintext, treatedAsPlaintext, err := resolveStoredValue(oldEnc, vals[i].String)
 				if err != nil {
 					_ = rows.Close()
 					return nil, 0, fmt.Errorf("decryption failed for %s.%s (row id=%d): %w", tf.table, col, id, err)
 				}
+				if treatedAsPlaintext {
+					fmt.Fprintf(os.Stderr, "Warning: %s.%s (row id=%d) is not decryptable with the old key; treating as plaintext and encrypting with the new key\n", tf.table, col, id)
+				}
 
-				// REQ "ROT-041": Encrypt with new key
+				// REQ "ROT-041": Encrypt with new key (always marked format)
 				newCipher, err := newEnc.Encrypt(plaintext)
 				if err != nil {
 					_ = rows.Close()

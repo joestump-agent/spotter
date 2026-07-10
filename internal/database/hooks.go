@@ -10,24 +10,76 @@ import (
 )
 
 // RegisterEncryptionHooks registers hooks to encrypt/decrypt sensitive data
+// Governing: ADR-0006 (application-layer AES-256-GCM encryption via Ent hooks)
 func RegisterEncryptionHooks(client *ent.Client, encryptor *crypto.Encryptor) {
 	// Hook for encrypting password on NavidromeAuth create/update
 	client.NavidromeAuth.Use(encryptPasswordHook(encryptor))
 
 	// Hook for decrypting password on NavidromeAuth query
-	client.NavidromeAuth.Intercept(decryptPasswordInterceptor(encryptor))
+	client.NavidromeAuth.Intercept(decryptPasswordInterceptor(client, encryptor))
 
 	// Hook for encrypting tokens on SpotifyAuth create/update
 	client.SpotifyAuth.Use(encryptSpotifyAuthHook(encryptor))
 
 	// Hook for decrypting tokens on SpotifyAuth query
-	client.SpotifyAuth.Intercept(decryptSpotifyAuthInterceptor(encryptor))
+	client.SpotifyAuth.Intercept(decryptSpotifyAuthInterceptor(client, encryptor))
 
 	// Hook for encrypting session key on LastFMAuth create/update
 	client.LastFMAuth.Use(encryptLastFMAuthHook(encryptor))
 
 	// Hook for decrypting session key on LastFMAuth query
-	client.LastFMAuth.Intercept(decryptLastFMAuthInterceptor(encryptor))
+	client.LastFMAuth.Intercept(decryptLastFMAuthInterceptor(client, encryptor))
+}
+
+// resolveEncryptedField returns the plaintext for a stored credential value
+// and, when the stored form is legacy, a marked ciphertext to write back
+// (self-heal). Resolution order:
+//
+//  1. Explicit marker (enc:v1:) → decrypt; a failure here is a real error
+//     (wrong key or corrupted ciphertext) and is returned to the caller.
+//  2. Legacy ciphertext shape (bare base64, >= 29 decoded bytes) → attempt
+//     decryption. Success means it is pre-marker ciphertext; GCM failure
+//     means it is plaintext that merely looks like ciphertext (e.g. a
+//     40-char alphanumeric password). Either way the row self-heals: the
+//     plaintext is re-encrypted with the marker and returned as healed.
+//     This path NEVER returns an error — previously it bricked the auth row
+//     by failing the whole query (issue #335).
+//  3. Anything else is plaintext from before encryption was enabled; it is
+//     left as-is and will be encrypted on the next write.
+//
+// Governing: ADR-0006
+func resolveEncryptedField(encryptor *crypto.Encryptor, stored string) (plaintext, healed string, err error) {
+	if stored == "" {
+		return "", "", nil
+	}
+
+	if crypto.IsEncrypted(stored) {
+		decrypted, err := encryptor.Decrypt(stored)
+		if err != nil {
+			return "", "", err
+		}
+		return decrypted, "", nil
+	}
+
+	if crypto.LooksLikeLegacyCiphertext(stored) {
+		if decrypted, err := encryptor.Decrypt(stored); err == nil {
+			// Legacy ciphertext: migrate to the marked format.
+			if reencrypted, err := encryptor.Encrypt(decrypted); err == nil {
+				return decrypted, reencrypted, nil
+			}
+			return decrypted, "", nil
+		}
+		// GCM failure: the value is plaintext that merely looks like
+		// ciphertext. Treat it as plaintext and self-heal by encrypting
+		// it with the marker so future reads are unambiguous.
+		if reencrypted, err := encryptor.Encrypt(stored); err == nil {
+			return stored, reencrypted, nil
+		}
+		return stored, "", nil
+	}
+
+	// Plaintext from before encryption was enabled (will be encrypted on next write)
+	return stored, "", nil
 }
 
 // encryptPasswordHook encrypts the password field before saving to database
@@ -67,7 +119,7 @@ func encryptPasswordHook(encryptor *crypto.Encryptor) ent.Hook {
 }
 
 // decryptPasswordInterceptor decrypts password fields after loading from database
-func decryptPasswordInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
+func decryptPasswordInterceptor(client *ent.Client, encryptor *crypto.Encryptor) ent.Interceptor {
 	return ent.InterceptFunc(func(next ent.Querier) ent.Querier {
 		return ent.QuerierFunc(func(ctx context.Context, q ent.Query) (ent.Value, error) {
 			// Execute the query
@@ -79,12 +131,12 @@ func decryptPasswordInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
 			// Decrypt passwords in the results
 			switch result := v.(type) {
 			case *ent.NavidromeAuth:
-				if err := decryptNavidromeAuth(encryptor, result); err != nil {
+				if err := decryptNavidromeAuth(ctx, client, encryptor, result); err != nil {
 					return nil, err
 				}
 			case []*ent.NavidromeAuth:
 				for _, auth := range result {
-					if err := decryptNavidromeAuth(encryptor, auth); err != nil {
+					if err := decryptNavidromeAuth(ctx, client, encryptor, auth); err != nil {
 						return nil, err
 					}
 				}
@@ -95,21 +147,24 @@ func decryptPasswordInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
 	})
 }
 
-// decryptNavidromeAuth decrypts the password field in a NavidromeAuth entity
-func decryptNavidromeAuth(encryptor *crypto.Encryptor, auth *ent.NavidromeAuth) error {
+// decryptNavidromeAuth decrypts the password field in a NavidromeAuth entity,
+// self-healing legacy-format rows to the marked ciphertext format.
+func decryptNavidromeAuth(ctx context.Context, client *ent.Client, encryptor *crypto.Encryptor, auth *ent.NavidromeAuth) error {
 	if auth == nil || auth.Password == "" {
 		return nil
 	}
 
-	// Check if password is encrypted (backward compatibility)
-	if crypto.IsEncrypted(auth.Password) {
-		decrypted, err := encryptor.Decrypt(auth.Password)
-		if err != nil {
-			return fmt.Errorf("failed to decrypt password for user %d: %w", auth.ID, err)
-		}
-		auth.Password = decrypted
+	plaintext, healed, err := resolveEncryptedField(encryptor, auth.Password)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt password for user %d: %w", auth.ID, err)
 	}
-	// If not encrypted, leave as-is (will be encrypted on next update)
+	if healed != "" {
+		// Best-effort self-heal: persist the marked ciphertext. The write
+		// hook sees the marker and stores it as-is. Failures are ignored —
+		// the read must never break, and the next read retries the heal.
+		_ = client.NavidromeAuth.UpdateOneID(auth.ID).SetPassword(healed).Exec(ctx)
+	}
+	auth.Password = plaintext
 
 	return nil
 }
@@ -170,7 +225,7 @@ func encryptSpotifyAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 }
 
 // decryptSpotifyAuthInterceptor decrypts access_token and refresh_token fields after loading from database
-func decryptSpotifyAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
+func decryptSpotifyAuthInterceptor(client *ent.Client, encryptor *crypto.Encryptor) ent.Interceptor {
 	return ent.InterceptFunc(func(next ent.Querier) ent.Querier {
 		return ent.QuerierFunc(func(ctx context.Context, q ent.Query) (ent.Value, error) {
 			// Execute the query
@@ -182,12 +237,12 @@ func decryptSpotifyAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor 
 			// Decrypt tokens in the results
 			switch result := v.(type) {
 			case *ent.SpotifyAuth:
-				if err := decryptSpotifyAuth(encryptor, result); err != nil {
+				if err := decryptSpotifyAuth(ctx, client, encryptor, result); err != nil {
 					return nil, err
 				}
 			case []*ent.SpotifyAuth:
 				for _, auth := range result {
-					if err := decryptSpotifyAuth(encryptor, auth); err != nil {
+					if err := decryptSpotifyAuth(ctx, client, encryptor, auth); err != nil {
 						return nil, err
 					}
 				}
@@ -198,31 +253,41 @@ func decryptSpotifyAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor 
 	})
 }
 
-// decryptSpotifyAuth decrypts the access_token and refresh_token fields in a SpotifyAuth entity
-func decryptSpotifyAuth(encryptor *crypto.Encryptor, auth *ent.SpotifyAuth) error {
+// decryptSpotifyAuth decrypts the access_token and refresh_token fields in a
+// SpotifyAuth entity, self-healing legacy-format values to the marked
+// ciphertext format.
+func decryptSpotifyAuth(ctx context.Context, client *ent.Client, encryptor *crypto.Encryptor, auth *ent.SpotifyAuth) error {
 	if auth == nil {
 		return nil
 	}
 
-	// Decrypt access_token if encrypted (backward compatibility)
-	if auth.AccessToken != "" && crypto.IsEncrypted(auth.AccessToken) {
-		decrypted, err := encryptor.Decrypt(auth.AccessToken)
-		if err != nil {
-			return fmt.Errorf("failed to decrypt access_token for user %d: %w", auth.ID, err)
-		}
-		auth.AccessToken = decrypted
+	accessPlain, accessHealed, err := resolveEncryptedField(encryptor, auth.AccessToken)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt access_token for user %d: %w", auth.ID, err)
 	}
 
-	// Decrypt refresh_token if encrypted (backward compatibility)
-	if auth.RefreshToken != "" && crypto.IsEncrypted(auth.RefreshToken) {
-		decrypted, err := encryptor.Decrypt(auth.RefreshToken)
-		if err != nil {
-			return fmt.Errorf("failed to decrypt refresh_token for user %d: %w", auth.ID, err)
-		}
-		auth.RefreshToken = decrypted
+	refreshPlain, refreshHealed, err := resolveEncryptedField(encryptor, auth.RefreshToken)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt refresh_token for user %d: %w", auth.ID, err)
 	}
 
-	// If not encrypted, leave as-is (will be encrypted on next update)
+	if accessHealed != "" || refreshHealed != "" {
+		// Best-effort self-heal: persist the marked ciphertexts. The write
+		// hook sees the marker and stores them as-is. Failures are ignored —
+		// the read must never break, and the next read retries the heal.
+		update := client.SpotifyAuth.UpdateOneID(auth.ID)
+		if accessHealed != "" {
+			update.SetAccessToken(accessHealed)
+		}
+		if refreshHealed != "" {
+			update.SetRefreshToken(refreshHealed)
+		}
+		_ = update.Exec(ctx)
+	}
+
+	auth.AccessToken = accessPlain
+	auth.RefreshToken = refreshPlain
+
 	return nil
 }
 
@@ -264,7 +329,7 @@ func encryptLastFMAuthHook(encryptor *crypto.Encryptor) ent.Hook {
 }
 
 // decryptLastFMAuthInterceptor decrypts session_key field after loading from database
-func decryptLastFMAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
+func decryptLastFMAuthInterceptor(client *ent.Client, encryptor *crypto.Encryptor) ent.Interceptor {
 	return ent.InterceptFunc(func(next ent.Querier) ent.Querier {
 		return ent.QuerierFunc(func(ctx context.Context, q ent.Query) (ent.Value, error) {
 			// Execute the query
@@ -276,12 +341,12 @@ func decryptLastFMAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
 			// Decrypt session_key in the results
 			switch result := v.(type) {
 			case *ent.LastFMAuth:
-				if err := decryptLastFMAuth(encryptor, result); err != nil {
+				if err := decryptLastFMAuth(ctx, client, encryptor, result); err != nil {
 					return nil, err
 				}
 			case []*ent.LastFMAuth:
 				for _, auth := range result {
-					if err := decryptLastFMAuth(encryptor, auth); err != nil {
+					if err := decryptLastFMAuth(ctx, client, encryptor, auth); err != nil {
 						return nil, err
 					}
 				}
@@ -292,21 +357,24 @@ func decryptLastFMAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
 	})
 }
 
-// decryptLastFMAuth decrypts the session_key field in a LastFMAuth entity
-func decryptLastFMAuth(encryptor *crypto.Encryptor, auth *ent.LastFMAuth) error {
+// decryptLastFMAuth decrypts the session_key field in a LastFMAuth entity,
+// self-healing legacy-format rows to the marked ciphertext format.
+func decryptLastFMAuth(ctx context.Context, client *ent.Client, encryptor *crypto.Encryptor, auth *ent.LastFMAuth) error {
 	if auth == nil || auth.SessionKey == "" {
 		return nil
 	}
 
-	// Check if session_key is encrypted (backward compatibility)
-	if crypto.IsEncrypted(auth.SessionKey) {
-		decrypted, err := encryptor.Decrypt(auth.SessionKey)
-		if err != nil {
-			return fmt.Errorf("failed to decrypt session_key for user %d: %w", auth.ID, err)
-		}
-		auth.SessionKey = decrypted
+	plaintext, healed, err := resolveEncryptedField(encryptor, auth.SessionKey)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt session_key for user %d: %w", auth.ID, err)
 	}
-	// If not encrypted, leave as-is (will be encrypted on next update)
+	if healed != "" {
+		// Best-effort self-heal: persist the marked ciphertext. The write
+		// hook sees the marker and stores it as-is. Failures are ignored —
+		// the read must never break, and the next read retries the heal.
+		_ = client.LastFMAuth.UpdateOneID(auth.ID).SetSessionKey(healed).Exec(ctx)
+	}
+	auth.SessionKey = plaintext
 
 	return nil
 }
