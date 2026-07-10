@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -269,14 +270,206 @@ func TestAIPromptsDirectoryCustom(t *testing.T) {
 }
 
 // setRequiredEnvVars sets all required environment variables for config loading.
+// Lidarr is intentionally absent: it is optional (see TestLidarrOptional).
 func setRequiredEnvVars(t *testing.T) {
 	t.Helper()
 	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
 	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
-	t.Setenv("SPOTTER_LIDARR_BASE_URL", "http://localhost:8686")
-	t.Setenv("SPOTTER_LIDARR_API_KEY", "test-api-key")
 	t.Setenv("SPOTTER_SECURITY_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	t.Setenv("SPOTTER_SECURITY_JWT_SECRET", "test-jwt-secret-at-least-32-chars")
+	// Explicitly clear optional Lidarr vars so values from the developer's shell
+	// don't leak into tests.
+	t.Setenv("SPOTTER_LIDARR_BASE_URL", "")
+	t.Setenv("SPOTTER_LIDARR_API_KEY", "")
+}
+
+// Governing: ADR-0009 (Viper configuration), SPEC-0014 (compose scenarios MUST start without Lidarr)
+// Lidarr configuration is optional: Load() must succeed with no Lidarr env vars set.
+func TestLidarrOptional(t *testing.T) {
+	setRequiredEnvVars(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.IsLidarrEnabled())
+}
+
+// Governing: SPEC-0017 REQ "Background Submitter Goroutine" (submitter only starts if Lidarr is configured)
+func TestLidarrEnabledWhenFullyConfigured(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("SPOTTER_LIDARR_BASE_URL", "http://localhost:8686")
+	t.Setenv("SPOTTER_LIDARR_API_KEY", "test-api-key")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.IsLidarrEnabled())
+	assert.Equal(t, "http://localhost:8686", cfg.Lidarr.BaseURL)
+	assert.Equal(t, "test-api-key", cfg.Lidarr.APIKey)
+}
+
+// Governing: ADR-0009 (fail fast with clear error messages)
+// Setting only one of the two Lidarr values is a misconfiguration and must fail.
+func TestLidarrPartialConfigRejected(t *testing.T) {
+	t.Run("base_url without api_key", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_LIDARR_BASE_URL", "http://localhost:8686")
+
+		_, err := Load()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "lidarr.base_url and lidarr.api_key must both be set")
+	})
+
+	t.Run("api_key without base_url", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_LIDARR_API_KEY", "test-api-key")
+
+		_, err := Load()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "lidarr.base_url and lidarr.api_key must both be set")
+	})
+}
+
+// Governing: ADR-0015 (pluggable enricher registry), ADR-0009 (Lidarr optional)
+// The lidarr enricher is filtered out of the enricher order when Lidarr is unconfigured.
+func TestMetadataEnricherOrderExcludesLidarrWhenUnconfigured(t *testing.T) {
+	t.Run("default order", func(t *testing.T) {
+		setRequiredEnvVars(t)
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.NotContains(t, cfg.MetadataEnricherOrder(), "lidarr")
+	})
+
+	t.Run("explicit order", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_METADATA_ORDER", "lidarr,musicbrainz,openai")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, []string{"musicbrainz", "openai"}, cfg.MetadataEnricherOrder())
+	})
+
+	t.Run("included when lidarr configured", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_LIDARR_BASE_URL", "http://localhost:8686")
+		t.Setenv("SPOTTER_LIDARR_API_KEY", "test-api-key")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Contains(t, cfg.MetadataEnricherOrder(), "lidarr")
+	})
+}
+
+// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-TMO-005
+// SPOTTER_SHUTDOWN_TIMEOUT must bind through Viper (moved out of raw os.Getenv).
+func TestShutdownTimeout(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SHUTDOWN_TIMEOUT", "")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 30*time.Second, cfg.GetShutdownTimeout())
+	})
+
+	t.Run("env override", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SHUTDOWN_TIMEOUT", "45s")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 45*time.Second, cfg.GetShutdownTimeout())
+	})
+
+	t.Run("invalid falls back to default", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SHUTDOWN_TIMEOUT", "not-a-duration")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 30*time.Second, cfg.GetShutdownTimeout())
+	})
+}
+
+// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-SEM-002
+// SPOTTER_MAX_CONCURRENT_JOBS must bind through Viper (moved out of raw os.Getenv).
+func TestMaxConcurrentJobs(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		setRequiredEnvVars(t)
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 10, cfg.GetMaxConcurrentJobs())
+	})
+
+	t.Run("env override", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_MAX_CONCURRENT_JOBS", "5")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 5, cfg.GetMaxConcurrentJobs())
+	})
+
+	t.Run("non-positive falls back to default", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_MAX_CONCURRENT_JOBS", "0")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 10, cfg.GetMaxConcurrentJobs())
+	})
+}
+
+// Governing: ADR-0026, SPEC-0015 (public base URL used in sync-failure email links)
+func TestServerBaseURL(t *testing.T) {
+	t.Run("default empty", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SERVER_BASE_URL", "")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, "", cfg.Server.BaseURL)
+	})
+
+	t.Run("env override", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SERVER_BASE_URL", "https://spotter.example.com")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, "https://spotter.example.com", cfg.Server.BaseURL)
+	})
+}
+
+// Governing: SPEC listen-playlist-sync REQ-SYNC-020 (configurable initial history lookback)
+func TestSyncHistoryLookback(t *testing.T) {
+	t.Run("default 720h", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SYNC_HISTORY_LOOKBACK", "")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 720*time.Hour, cfg.GetSyncHistoryLookback())
+	})
+
+	t.Run("env override", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SYNC_HISTORY_LOOKBACK", "240h")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, "240h", cfg.Sync.HistoryLookback)
+		assert.Equal(t, 240*time.Hour, cfg.GetSyncHistoryLookback())
+	})
+
+	t.Run("invalid falls back to default", func(t *testing.T) {
+		setRequiredEnvVars(t)
+		t.Setenv("SPOTTER_SYNC_HISTORY_LOOKBACK", "one-fortnight")
+
+		cfg, err := Load()
+		require.NoError(t, err)
+		assert.Equal(t, 720*time.Hour, cfg.GetSyncHistoryLookback())
+	})
 }
 
 // Governing: SPEC-0014 REQ "Test Coverage" (valid drivers, invalid driver rejection, default source per driver)

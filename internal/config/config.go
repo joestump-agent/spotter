@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -110,12 +111,19 @@ type Config struct {
 	Server struct {
 		Port              string `mapstructure:"port"`
 		Host              string `mapstructure:"host"`
+		BaseURL           string `mapstructure:"base_url"`            // Governing: ADR-0026, SPEC-0015 (public base URL used in sync-failure email links)
 		ReadHeaderTimeout string `mapstructure:"read_header_timeout"` // Duration string for read header timeout (default: "10s")
 		ReadTimeout       string `mapstructure:"read_timeout"`        // Duration string for read timeout (default: "30s")
 		WriteTimeout      string `mapstructure:"write_timeout"`       // Duration string for write timeout (default: "60s")
 		IdleTimeout       string `mapstructure:"idle_timeout"`        // Duration string for idle timeout (default: "120s")
 	} `mapstructure:"server"`
-	Navidrome struct {
+	// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-TMO-005 (configurable shutdown timeout)
+	// ShutdownTimeout is the graceful shutdown budget (SPOTTER_SHUTDOWN_TIMEOUT, default "30s").
+	ShutdownTimeout string `mapstructure:"shutdown_timeout"`
+	// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-SEM-002 (configurable semaphore capacity)
+	// MaxConcurrentJobs bounds concurrent per-user background jobs (SPOTTER_MAX_CONCURRENT_JOBS, default 10).
+	MaxConcurrentJobs int `mapstructure:"max_concurrent_jobs"`
+	Navidrome         struct {
 		BaseURL string `mapstructure:"base_url"`
 	} `mapstructure:"navidrome"`
 	// Governing: SPEC-0017 REQ "Configuration", ADR-0029
@@ -127,6 +135,9 @@ type Config struct {
 	} `mapstructure:"lidarr"`
 	Sync struct {
 		Interval string `mapstructure:"interval"`
+		// Governing: SPEC listen-playlist-sync REQ-SYNC-020 (configurable initial history lookback)
+		// HistoryLookback is the initial history window for users with no prior listens (default: "720h" = 30 days).
+		HistoryLookback string `mapstructure:"history_lookback"`
 	} `mapstructure:"sync"`
 	Theme struct {
 		Available string `mapstructure:"available"` // Comma-separated list of DaisyUI theme names
@@ -191,17 +202,25 @@ func (c *Config) AvailableThemes() []string {
 
 // MetadataEnricherOrder returns the list of enrichers in the configured order.
 // Falls back to default order if not configured.
+// Governing: ADR-0015 (pluggable enricher registry), ADR-0009 (Lidarr optional —
+// the lidarr enricher is filtered out when Lidarr is unconfigured).
 func (c *Config) MetadataEnricherOrder() []string {
+	var parts []string
 	if c.Metadata.Order == "" {
-		return []string{"musicbrainz", "lidarr", "navidrome", "spotify", "lastfm", "fanart", "openai"}
+		parts = []string{"musicbrainz", "lidarr", "navidrome", "spotify", "lastfm", "fanart", "openai"}
+	} else {
+		parts = strings.Split(c.Metadata.Order, ",")
 	}
-	parts := strings.Split(c.Metadata.Order, ",")
 	result := make([]string, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(strings.ToLower(p))
-		if p != "" {
-			result = append(result, p)
+		if p == "" {
+			continue
 		}
+		if p == "lidarr" && !c.IsLidarrEnabled() {
+			continue
+		}
+		result = append(result, p)
 	}
 	return result
 }
@@ -209,6 +228,47 @@ func (c *Config) MetadataEnricherOrder() []string {
 // IsOpenAIEnabled returns true if OpenAI API key is configured.
 func (c *Config) IsOpenAIEnabled() bool {
 	return c.OpenAI.APIKey != ""
+}
+
+// Governing: ADR-0009 (Viper configuration), SPEC-0017 REQ "Background Submitter Goroutine" (submitter only starts if Lidarr is configured)
+// IsLidarrEnabled returns true if Lidarr is fully configured (base URL and API key).
+// Lidarr is optional: when unconfigured, the Lidarr enricher and submitter are skipped.
+func (c *Config) IsLidarrEnabled() bool {
+	return c.Lidarr.BaseURL != "" && c.Lidarr.APIKey != ""
+}
+
+// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-TMO-001, REQ-TMO-005
+// GetShutdownTimeout returns the graceful shutdown budget, falling back to 30s
+// when unset or unparsable.
+func (c *Config) GetShutdownTimeout() time.Duration {
+	if c.ShutdownTimeout != "" {
+		if d, err := time.ParseDuration(c.ShutdownTimeout); err == nil {
+			return d
+		}
+	}
+	return 30 * time.Second
+}
+
+// Governing: ADR-0009 (Viper configuration), SPEC graceful-shutdown REQ-SEM-002
+// GetMaxConcurrentJobs returns the background job semaphore capacity, falling
+// back to 10 when unset or non-positive.
+func (c *Config) GetMaxConcurrentJobs() int {
+	if c.MaxConcurrentJobs > 0 {
+		return c.MaxConcurrentJobs
+	}
+	return 10
+}
+
+// Governing: SPEC listen-playlist-sync REQ-SYNC-020 (configurable initial history lookback)
+// GetSyncHistoryLookback returns the initial history window for users with no
+// prior listens, falling back to 720h (30 days) when unset or unparsable.
+func (c *Config) GetSyncHistoryLookback() time.Duration {
+	if c.Sync.HistoryLookback != "" {
+		if d, err := time.ParseDuration(c.Sync.HistoryLookback); err == nil {
+			return d
+		}
+	}
+	return 720 * time.Hour
 }
 
 // GetVibesModel returns the model to use for vibes generation.
@@ -269,11 +329,18 @@ func Load() (*Config, error) {
 	v.SetDefault("security.auth_rate_limit", 10)  // Login attempts per minute per IP
 	v.SetDefault("server.port", "8080")
 	v.SetDefault("server.host", "0.0.0.0")
+	// Governing: ADR-0026, SPEC-0015 (public base URL used in sync-failure email links)
+	v.SetDefault("server.base_url", "")
 	v.SetDefault("server.read_header_timeout", "10s")
 	v.SetDefault("server.read_timeout", "30s")
 	v.SetDefault("server.write_timeout", "60s")
 	v.SetDefault("server.idle_timeout", "120s")
+	// Governing: SPEC graceful-shutdown REQ-TMO-005, REQ-SEM-002 (moved from raw os.Getenv per ADR-0009)
+	v.SetDefault("shutdown_timeout", "30s")
+	v.SetDefault("max_concurrent_jobs", 10)
 	v.SetDefault("sync.interval", "5m")
+	// Governing: SPEC listen-playlist-sync REQ-SYNC-020 (configurable initial history lookback, 30 days)
+	v.SetDefault("sync.history_lookback", "720h")
 	v.SetDefault("theme.available", "light,dark,cupcake")
 	v.SetDefault("theme.default", "dark")
 	v.SetDefault("database.driver", "sqlite3")
@@ -373,11 +440,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("navidrome.base_url is required")
 	}
 
-	if cfg.Lidarr.BaseURL == "" {
-		return nil, fmt.Errorf("lidarr.base_url is required")
-	}
-	if cfg.Lidarr.APIKey == "" {
-		return nil, fmt.Errorf("lidarr.api_key is required")
+	// Governing: ADR-0009 (Viper configuration), SPEC-0014 (compose scenarios MUST start without Lidarr),
+	// SPEC-0017 REQ "Background Submitter Goroutine" (submitter only starts if Lidarr is configured)
+	// Lidarr is optional: validation only rejects partial configuration (one of the
+	// two settings without the other), never the fully-unset case.
+	if (cfg.Lidarr.BaseURL == "") != (cfg.Lidarr.APIKey == "") {
+		return nil, fmt.Errorf("lidarr.base_url and lidarr.api_key must both be set to enable Lidarr (or both left unset to disable it)")
 	}
 
 	if cfg.OpenAI.APIKey == "" {
