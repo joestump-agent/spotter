@@ -2,16 +2,23 @@ package services_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"fmt"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+
 	"spotter/ent"
 	"spotter/ent/enttest"
 	"spotter/ent/playlist"
+	"spotter/ent/syncevent"
 	user_ent "spotter/ent/user"
 	"spotter/internal/config"
 	"spotter/internal/events"
@@ -714,4 +721,89 @@ func TestPlaylistSyncService_RebuildPlaylistSync_NoExistingNavidromeID(t *testin
 	updatedPl, err := client.Playlist.Get(ctx, pl.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "nav-playlist-123", updatedPl.NavidromePlaylistID)
+}
+
+// libraryQueryFailingDriver wraps an Ent driver and, when enabled, fails any
+// read query against the "tracks" table (the library query issued by
+// TrackMatcher.LoadLibraryIndex) while letting every other statement through,
+// so playlist updates and SyncEvent writes still succeed.
+type libraryQueryFailingDriver struct {
+	dialect.Driver
+	fail          atomic.Bool
+	failedQueries atomic.Int64
+}
+
+func (d *libraryQueryFailingDriver) Query(ctx context.Context, query string, args, v any) error {
+	if d.fail.Load() && (strings.Contains(query, "`tracks`") || strings.Contains(query, `"tracks"`)) {
+		d.failedQueries.Add(1)
+		return errors.New("injected library query failure")
+	}
+	return d.Driver.Query(ctx, query, args, v)
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-060 (SyncEvent audit logging on failure)
+// Issue #330 / PR review follow-up: when the tick-level LoadLibraryIndex in
+// SyncAllEnabledPlaylists fails, the tick must NOT abort before any playlist
+// gets error handling. It falls back to per-playlist loading so each due
+// playlist still reaches handleSyncError: sync_status=error, a
+// playlist_sync_failed SyncEvent, and a UI notification.
+func TestPlaylistSyncService_SyncAllEnabledPlaylists_LibraryIndexLoadFailure(t *testing.T) {
+	ctx := context.Background()
+
+	drv, err := entsql.Open("sqlite3", "file:libfailtick?mode=memory&cache=shared&_fk=1")
+	require.NoError(t, err)
+	failing := &libraryQueryFailingDriver{Driver: drv}
+	client := ent.NewClient(ent.Driver(failing))
+	t.Cleanup(func() { client.Close() })
+	require.NoError(t, client.Schema.Create(ctx))
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.PlaylistSync.MinMatchConfidence = 0.7
+	bus := events.NewBus()
+	svc := services.NewPlaylistSyncService(client, cfg, logger, bus)
+	svc.Register(mockPlaylistSyncerFactory(&mockPlaylistSyncer{
+		providerType: providers.TypeNavidrome,
+		syncedID:     "nav-playlist-tickfail",
+	}))
+
+	user := createTestUserWithNavidromeAuth(t, client)
+	pl1 := createTestPlaylistForSync(t, client, user, "spotify", true)
+	createTestPlaylistTracksForSync(t, client, pl1)
+	pl2 := createTestPlaylistForSync(t, client, user, "spotify", true)
+	createTestPlaylistTracksForSync(t, client, pl2)
+
+	failing.fail.Store(true)
+	err = svc.SyncAllEnabledPlaylists(ctx, user.ID)
+	failing.fail.Store(false)
+
+	// The tick itself reports the per-playlist failures, not the index error.
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to sync 2 playlists")
+
+	// Proof the fallback ran: one failed tick-level load, then one failed
+	// per-playlist load for each of the two playlists (1 + 2 = 3).
+	assert.Equal(t, int64(3), failing.failedQueries.Load(),
+		"expected tick-level load plus one per-playlist fallback load per playlist")
+
+	// REQ-PLSYNC-060: every due playlist ends in sync_status=error with the
+	// library-index error recorded.
+	for _, plID := range []int{pl1.ID, pl2.ID} {
+		updated, getErr := client.Playlist.Get(ctx, plID)
+		require.NoError(t, getErr)
+		assert.Equal(t, playlist.SyncStatusError, updated.SyncStatus,
+			"playlist %d must end with sync_status=error", plID)
+		assert.Contains(t, updated.SyncError, "failed to load library index",
+			"playlist %d must record the library index error", plID)
+	}
+
+	// ...and every due playlist gets a playlist_sync_failed SyncEvent.
+	failedEvents, err := client.SyncEvent.Query().
+		Where(syncevent.EventTypeEQ(syncevent.EventTypePlaylistSyncFailed)).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, failedEvents, 2)
+	combinedMetadata := failedEvents[0].Metadata + failedEvents[1].Metadata
+	assert.Contains(t, combinedMetadata, fmt.Sprintf(`"playlist_id":%d`, pl1.ID))
+	assert.Contains(t, combinedMetadata, fmt.Sprintf(`"playlist_id":%d`, pl2.ID))
 }
