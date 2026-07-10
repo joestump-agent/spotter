@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	"spotter/internal/httputil"
 	"spotter/internal/tags"
 
 	"golang.org/x/oauth2"
@@ -24,10 +24,8 @@ import (
 
 const (
 	// Governing: ADR-0020 (error handling and resilience)
-	rateLimitDelay    = 500 * time.Millisecond // Spotify rate limit throttle
-	maxRetries        = 3
-	defaultRetryAfter = 5 * time.Second
-	maxRetryAfter     = 60 * time.Second
+	rateLimitDelay = 500 * time.Millisecond // Spotify rate limit throttle
+	maxRetries     = httputil.MaxRateLimitRetries
 )
 
 // Enricher implements the Spotify metadata enricher.
@@ -210,6 +208,8 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/json")
+		// Governing: AGENTS.md "External API Etiquette" (descriptive User-Agent)
+		req.Header.Set("User-Agent", httputil.UserAgent)
 
 		resp, err := e.httpClient.Do(req)
 		if err != nil {
@@ -217,24 +217,11 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAfter := httputil.RetryAfter(resp)
 			resp.Body.Close()
 
 			if attempt == maxRetries {
 				return nil, fmt.Errorf("Spotify API rate limited after %d retries", maxRetries)
-			}
-
-			retryAfter := defaultRetryAfter
-			if raHeader := resp.Header.Get("Retry-After"); raHeader != "" {
-				if seconds, err := strconv.Atoi(raHeader); err == nil {
-					retryAfter = time.Duration(seconds) * time.Second
-					if retryAfter > maxRetryAfter {
-						retryAfter = maxRetryAfter
-					}
-				}
-			}
-			// Guard against zero or negative Retry-After values
-			if retryAfter <= 0 {
-				retryAfter = defaultRetryAfter
 			}
 
 			e.logger.Warn("Spotify API rate limited, retrying",
@@ -242,12 +229,10 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 				"retry_after", retryAfter,
 				"endpoint", endpoint)
 
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(retryAfter):
-				continue
+			if err := httputil.Sleep(ctx, retryAfter); err != nil {
+				return nil, err
 			}
+			continue
 		}
 
 		body, readErr := io.ReadAll(resp.Body)

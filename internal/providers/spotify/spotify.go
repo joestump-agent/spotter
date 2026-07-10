@@ -14,6 +14,7 @@ import (
 
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/httputil"
 	"spotter/internal/providers"
 
 	"golang.org/x/oauth2"
@@ -251,36 +252,54 @@ func (p *Provider) persistAuth(ctx context.Context) {
 	p.logger.Debug("persisted refreshed Spotify token", "auth_id", p.auth.ID)
 }
 
-// Governing: SPEC error-handling REQ-ERR-002 Scenario 4 (single refresh+retry on mid-operation 401)
+// Governing: SPEC error-handling REQ-ERR-002 Scenario 4 (single refresh+retry on mid-operation 401),
+// SPEC error-handling REQ-ERR-002 (429 retriable), ADR-0020 (error handling and resilience)
 // doAPIRequest performs an authenticated Spotify API request. If the API
 // responds 401 (e.g. the token was revoked or expired server-side), it
 // attempts exactly one token refresh and retries the request once before
-// returning the response to the caller.
+// returning the response to the caller. 429 responses are retried after the
+// server-provided Retry-After delay, up to httputil.MaxRateLimitRetries times.
 func (p *Provider) doAPIRequest(ctx context.Context, method, reqURL string, body []byte) (*http.Response, error) {
 	token, err := p.getValidToken(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := p.send(ctx, method, reqURL, body, token)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusUnauthorized {
-		return resp, nil
-	}
+	refreshedAfter401 := false
 
-	if err := resp.Body.Close(); err != nil {
-		p.logger.Warn("failed to close response body", "error", err)
-	}
+	for attempt := 0; ; attempt++ {
+		resp, err := p.send(ctx, method, reqURL, body, token)
+		if err != nil {
+			return nil, err
+		}
 
-	p.logger.Debug("spotify API returned 401, refreshing token and retrying once")
-	token, err = p.refreshAndPersist(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to refresh token after 401: %w", err)
-	}
+		switch {
+		case resp.StatusCode == http.StatusTooManyRequests && attempt < httputil.MaxRateLimitRetries:
+			retryAfter := httputil.RetryAfter(resp)
+			p.closeBody(resp)
 
-	return p.send(ctx, method, reqURL, body, token)
+			p.logger.Warn("spotify API rate limited, retrying",
+				"attempt", attempt+1,
+				"retry_after", retryAfter)
+
+			if err := httputil.Sleep(ctx, retryAfter); err != nil {
+				return nil, err
+			}
+
+		case resp.StatusCode == http.StatusUnauthorized && !refreshedAfter401:
+			p.closeBody(resp)
+
+			p.logger.Debug("spotify API returned 401, refreshing token and retrying once")
+			refreshedAfter401 = true
+			token, err = p.refreshAndPersist(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to refresh token after 401: %w", err)
+			}
+
+		default:
+			return resp, nil
+		}
+	}
 }
 
 // send performs a single HTTP request against the Spotify API.
@@ -296,6 +315,8 @@ func (p *Provider) send(ctx context.Context, method, reqURL string, body []byte,
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
+	// Governing: AGENTS.md "External API Etiquette" (descriptive User-Agent)
+	req.Header.Set("User-Agent", httputil.UserAgent)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -322,6 +343,8 @@ func (p *Provider) fetchUserProfile(ctx context.Context, accessToken string) (*s
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	// Governing: AGENTS.md "External API Etiquette" (descriptive User-Agent)
+	req.Header.Set("User-Agent", httputil.UserAgent)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {

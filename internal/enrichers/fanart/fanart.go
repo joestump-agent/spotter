@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"spotter/ent"
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
+	"spotter/internal/httputil"
 )
 
 const (
@@ -63,48 +65,68 @@ func (e *Enricher) IsAvailable() bool {
 }
 
 // doRequest performs an authenticated request to the Fanart.tv API.
+// Governing: ADR-0020 (error handling and resilience), SPEC error-handling REQ-ERR-002 (429 retriable)
 func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, error) {
 	reqURL := fmt.Sprintf("%s/%s?api_key=%s", e.baseURL, endpoint, e.apiKey)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
+	// The in-loop attempt == MaxRateLimitRetries check is the sole exit for
+	// the rate-limited path, so the loop needs no bound of its own.
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
 
-	req.Header.Set("Accept", "application/json")
+		req.Header.Set("Accept", "application/json")
+		// Governing: AGENTS.md "External API Etiquette" (descriptive User-Agent)
+		req.Header.Set("User-Agent", httputil.UserAgent)
 
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer func() {
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAfter := httputil.RetryAfter(resp)
+			if err := resp.Body.Close(); err != nil {
+				e.logger.Warn("failed to close response body", "error", err)
+			}
+
+			if attempt == httputil.MaxRateLimitRetries {
+				return nil, fmt.Errorf("Fanart.tv API rate limited after %d retries", httputil.MaxRateLimitRetries)
+			}
+
+			e.logger.Warn("Fanart.tv API rate limited, retrying",
+				"attempt", attempt+1,
+				"retry_after", retryAfter,
+				"endpoint", endpoint)
+
+			if err := httputil.Sleep(ctx, retryAfter); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
 		if err := resp.Body.Close(); err != nil {
 			e.logger.Warn("failed to close response body", "error", err)
 		}
-	}()
 
-	if resp.StatusCode == http.StatusNotFound {
-		// No data available for this entity
-		return nil, nil
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Fanart.tv API returned status %d", resp.StatusCode)
-	}
-
-	var result []byte
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			result = append(result, buf[:n]...)
+		if resp.StatusCode == http.StatusNotFound {
+			// No data available for this entity
+			return nil, nil
 		}
-		if err != nil {
-			break
-		}
-	}
 
-	return result, nil
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("Fanart.tv API returned status %d", resp.StatusCode)
+		}
+
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", readErr)
+		}
+
+		return body, nil
+	}
 }
 
 // Fanart.tv API response types for music artists
