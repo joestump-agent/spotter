@@ -31,7 +31,7 @@ func TestNewClient_Success(t *testing.T) {
 
 	logs := buf.String()
 	for _, want := range []string{
-		"database connection opened",
+		"database handle opened",
 		"running schema migration",
 		"schema migration complete",
 	} {

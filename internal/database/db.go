@@ -32,7 +32,7 @@ func NewClient(ctx context.Context, driver, source string, encryptor *crypto.Enc
 	if err != nil {
 		return nil, fmt.Errorf("failed opening connection to %s: %w", driver, err)
 	}
-	logger.Info("database connection opened", "driver", driver)
+	logger.Info("database handle opened", "driver", driver)
 
 	// Register encryption/decryption hooks if encryptor is provided
 	if encryptor != nil {
