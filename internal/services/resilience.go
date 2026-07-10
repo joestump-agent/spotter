@@ -99,13 +99,16 @@ func ClassifyError(err error) ErrorClass {
 		return ErrorClassFatal
 	}
 
-	// Heuristic: check error message for common patterns
+	// Heuristic: check error message for common patterns. Fatal patterns are
+	// checked first so a fatal status embedded in a message wins even when
+	// the appended response body happens to contain a retriable-looking word
+	// (e.g. `last.fm api returned status 401: ...timeout...`).
 	msg := strings.ToLower(err.Error())
-	if isRetriableErrorMessage(msg) {
-		return ErrorClassRetriable
-	}
 	if isFatalErrorMessage(msg) {
 		return ErrorClassFatal
+	}
+	if isRetriableErrorMessage(msg) {
+		return ErrorClassRetriable
 	}
 
 	// Default to retriable for unknown errors — prefer retry over giving up
@@ -116,10 +119,20 @@ func ClassifyError(err error) ErrorClass {
 // Governing: SPEC error-handling REQ-ERR-002 (retriable statuses), REQ-ERR-003 (fatal statuses)
 func classifyHTTPStatus(statusCode int) ErrorClass {
 	switch statusCode {
-	case http.StatusTooManyRequests, // 429
+	case http.StatusRequestTimeout, // 408 — a timeout, retriable per REQ-ERR-002
+		http.StatusTooManyRequests,     // 429
 		http.StatusBadGateway,          // 502
 		http.StatusServiceUnavailable,  // 503
 		http.StatusInternalServerError: // 500
+		return ErrorClassRetriable
+	case http.StatusNotFound: // 404
+		// Deliberate: 404 is retriable. Reverse proxies (e.g. Traefik) return
+		// transient 404s while a backend's route is dropped during a container
+		// redeploy; classifying that fatal would permanently stop sync with a
+		// misleading "reconnect credentials" notification. A genuinely wrong
+		// base URL keeps retrying at the 30-minute backoff cap instead —
+		// invalid configuration is REQ-ERR-003's concern at config-validation
+		// time, not per-request.
 		return ErrorClassRetriable
 	case http.StatusUnauthorized, // 401
 		http.StatusForbidden: // 403
@@ -128,6 +141,8 @@ func classifyHTTPStatus(statusCode int) ErrorClass {
 		if statusCode >= 500 {
 			return ErrorClassRetriable
 		}
+		// Remaining 4xx (400, 405, 422, ...) are client errors that will not
+		// succeed on retry — the request itself is wrong.
 		return ErrorClassFatal
 	}
 }
@@ -165,8 +180,11 @@ func isRetriableErrorMessage(msg string) bool {
 //	"last.fm api returned status 401: ..."   (code followed by body)
 //	"lidarr api error: 403 - ..."
 //
+// 404 is deliberately excluded to stay consistent with the typed path in
+// classifyHTTPStatus: transient 404s from reverse proxies during redeploys
+// must remain retriable.
 // Governing: ADR-0020, SPEC error-handling REQ-ERR-003
-var fatalStatusPattern = regexp.MustCompile(`(?:status|error):? *(?:401|403|404)\b`)
+var fatalStatusPattern = regexp.MustCompile(`(?:status|error):? *(?:401|403)\b`)
 
 func isFatalErrorMessage(msg string) bool {
 	fatalPatterns := []string{
@@ -183,7 +201,7 @@ func isFatalErrorMessage(msg string) bool {
 		}
 	}
 	// Catch "returned status 4xx" style messages from errors that were not
-	// wrapped in HTTPStatusError. 401/403/404 are client errors that won't
+	// wrapped in HTTPStatusError. 401/403 are credential errors that won't
 	// succeed on retry.
 	return fatalStatusPattern.MatchString(msg)
 }

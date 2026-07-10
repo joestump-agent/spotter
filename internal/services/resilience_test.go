@@ -21,7 +21,9 @@ import (
 
 func TestClassifyError_HTTPRetriableStatuses(t *testing.T) {
 	retriableCodes := []int{
+		http.StatusRequestTimeout,      // 408 — a timeout, retriable per REQ-ERR-002
 		http.StatusTooManyRequests,     // 429
+		http.StatusNotFound,            // 404 — transient behind reverse proxies during redeploys
 		http.StatusBadGateway,          // 502
 		http.StatusServiceUnavailable,  // 503
 		http.StatusInternalServerError, // 500
@@ -108,10 +110,10 @@ func TestClassifyError_MessageBasedFatal(t *testing.T) {
 		{"unauthorized_message", "unauthorized: token expired"},
 		{"forbidden_message", "forbidden: insufficient permissions"},
 		{"invalid_api_key", "invalid api key provided"},
-		// Providers that return plain "returned status NNN" messages without HTTPStatusError
+		// Providers that return plain "returned status NNN" messages without HTTPStatusError.
+		// 404 is deliberately absent: it classifies retriable (transient behind proxies).
 		{"plain_status_401", "spotify API returned status 401"},
 		{"plain_status_403", "spotify API returned status 403"},
-		{"plain_status_404", "spotify API returned status 404"},
 	}
 
 	for _, tt := range tests {
@@ -146,13 +148,17 @@ func TestClassifyError_RealWorldClientFormats(t *testing.T) {
 		})
 	}
 
-	// 5xx/429 messages must stay retriable — no behavior change for transient errors
+	// 5xx/429/404 messages must stay retriable — no behavior change for
+	// transient errors, and 404s can be transient route-drops behind a
+	// reverse proxy during redeploys.
 	retriable := []struct {
 		name string
 		msg  string
 	}{
 		{"navidrome_colon_503", "navidrome API returned status: 503"},
+		{"navidrome_colon_404", "navidrome API returned status: 404"},
 		{"spotify_500", "spotify API returned status 500"},
+		{"spotify_404", "spotify API returned status 404"},
 		{"lastfm_502", "last.fm api returned status 502: bad gateway"},
 	}
 	for _, tt := range retriable {
@@ -160,6 +166,31 @@ func TestClassifyError_RealWorldClientFormats(t *testing.T) {
 			assert.Equal(t, services.ErrorClassRetriable, services.ClassifyError(errors.New(tt.msg)))
 		})
 	}
+}
+
+// TestClassifyError_FatalPatternWinsOverRetriableSubstring pins the fallback
+// ordering: a fatal status embedded in a message must win even when the
+// appended response body contains a retriable-looking word like "timeout".
+func TestClassifyError_FatalPatternWinsOverRetriableSubstring(t *testing.T) {
+	err := errors.New("last.fm api returned status 401: upstream request timeout while validating session")
+	assert.Equal(t, services.ErrorClassFatal, services.ClassifyError(err))
+}
+
+// TestClassifyError_Transient404_Typed pins the deliberate decision that a
+// typed 404 is retriable: reverse proxies (e.g. Traefik) return transient
+// 404s while a backend's route is dropped during a container redeploy, and a
+// fatal classification would permanently stop sync with a misleading
+// "reconnect credentials" notification.
+func TestClassifyError_Transient404_Typed(t *testing.T) {
+	err := services.NewHTTPStatusError(http.StatusNotFound, fmt.Errorf("navidrome API returned status: %d", http.StatusNotFound))
+	assert.Equal(t, services.ErrorClassRetriable, services.ClassifyError(err))
+}
+
+// TestClassifyError_RequestTimeout408_Typed pins 408 as retriable — it is a
+// timeout and REQ-ERR-002 requires timeouts to be retriable.
+func TestClassifyError_RequestTimeout408_Typed(t *testing.T) {
+	err := services.NewHTTPStatusError(http.StatusRequestTimeout, fmt.Errorf("spotify API returned status %d", http.StatusRequestTimeout))
+	assert.Equal(t, services.ErrorClassRetriable, services.ClassifyError(err))
 }
 
 // TestClassifyError_NavidromeRevokedCredentials_Typed simulates the error the
