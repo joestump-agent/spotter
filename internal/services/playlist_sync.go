@@ -204,7 +204,7 @@ func (s *PlaylistSyncService) syncPlaylistToNavidrome(ctx context.Context, playl
 		}
 	}
 
-	matchResults := s.trackMatcher.MatchTracksWithIndex(ctx, libraryIndex, sourceTracks)
+	matchResults := s.trackMatcher.MatchTracksWithIndex(libraryIndex, sourceTracks)
 
 	// Filter to only matched tracks (we can only add tracks that exist in Navidrome)
 	var matchedTracks []providers.Track
@@ -432,12 +432,17 @@ func (s *PlaylistSyncService) SyncAllEnabledPlaylists(ctx context.Context, userI
 	// Governing: ADR-0014; issue #330 — load the user's library once per sync
 	// tick and share the index across all playlists, instead of re-running the
 	// full library query per playlist.
+	//
+	// If the tick-level load fails, do NOT abort the tick: fall back to
+	// per-playlist loading (libraryIndex == nil) so each playlist still goes
+	// through handleSyncError — sync_status=error, SyncEvent audit logging,
+	// and UI notification per REQ-PLSYNC-060 — instead of failing invisibly.
 	libraryIndex, err := s.trackMatcher.LoadLibraryIndex(ctx, userID)
 	if err != nil {
-		s.logger.Error("failed to load library index for sync tick",
+		s.logger.Error("failed to load shared library index for sync tick, falling back to per-playlist loading",
 			"user_id", userID,
 			"error", err)
-		return fmt.Errorf("failed to load library index: %w", err)
+		libraryIndex = nil
 	}
 
 	var syncErrors []error

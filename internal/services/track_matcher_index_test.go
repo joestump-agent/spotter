@@ -91,7 +91,7 @@ func TestLibraryIndex_LoadedOncePerTick(t *testing.T) {
 
 	// Shared-index path: matching N playlists issues ZERO additional queries.
 	for i := 0; i < playlists; i++ {
-		results := matcher.MatchTracksWithIndex(ctx, idx, sourceTracks)
+		results := matcher.MatchTracksWithIndex(idx, sourceTracks)
 		require.Len(t, results, 3)
 		assert.Equal(t, "nav-1", results[0].NavidromeTrackID)
 		assert.Equal(t, "nav-2", results[1].NavidromeTrackID)
@@ -190,7 +190,7 @@ func BenchmarkMatchTracksSharedIndex(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		matcher.MatchTracksWithIndex(ctx, idx, sourceTracks)
+		matcher.MatchTracksWithIndex(idx, sourceTracks)
 	}
 }
 

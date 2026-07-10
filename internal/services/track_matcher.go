@@ -4,6 +4,7 @@ package services
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -121,14 +122,14 @@ func (m *TrackMatcher) LoadLibraryIndex(ctx context.Context, userID int) (*Libra
 		key := normalizedArtist + "|" + normalizedTitle
 		idx.exactMap[key] = t
 
-		// Fuzzy match candidate with precomputed normalized runes
-		if t.NavidromeID != nil {
-			idx.candidates = append(idx.candidates, NormalizedCandidate{
-				Track:       t,
-				TitleRunes:  []rune(normalizedTitle),
-				ArtistRunes: []rune(normalizedArtist),
-			})
-		}
+		// Fuzzy match candidate with precomputed normalized runes.
+		// The query above already filters NavidromeIDNotNil, so every track
+		// here is a valid candidate.
+		idx.candidates = append(idx.candidates, NormalizedCandidate{
+			Track:       t,
+			TitleRunes:  []rune(normalizedTitle),
+			ArtistRunes: []rune(normalizedArtist),
+		})
 	}
 
 	m.Logger.Debug("built library index",
@@ -149,12 +150,17 @@ func (m *TrackMatcher) MatchTracks(ctx context.Context, userID int, tracks []pro
 	if err != nil {
 		return nil, err
 	}
-	return m.MatchTracksWithIndex(ctx, idx, tracks), nil
+	return m.MatchTracksWithIndex(idx, tracks), nil
 }
 
 // MatchTracksWithIndex matches source tracks against a precomputed LibraryIndex.
+// It performs no I/O: the index must have been built via LoadLibraryIndex.
 // Governing: ADR-0014 (three-tier ISRC -> exact -> fuzzy matching)
-func (m *TrackMatcher) MatchTracksWithIndex(ctx context.Context, idx *LibraryIndex, tracks []providers.Track) []MatchResult {
+func (m *TrackMatcher) MatchTracksWithIndex(idx *LibraryIndex, tracks []providers.Track) []MatchResult {
+	if idx == nil {
+		panic("services.TrackMatcher.MatchTracksWithIndex: nil LibraryIndex; call LoadLibraryIndex first")
+	}
+
 	startTime := time.Now()
 	results := make([]MatchResult, len(tracks))
 
@@ -426,10 +432,11 @@ func normalizeForMatch(s string) string {
 // clear the fuzzy threshold.
 // Governing: SPEC track-matching REQ-TM-031 (issue #330: distance and max length in rune units)
 func similarity(a, b []rune) float64 {
+	// Fast path: identical strings (including both-empty) skip the DP matrix.
+	if slices.Equal(a, b) {
+		return 1.0
+	}
 	if len(a) == 0 || len(b) == 0 {
-		if len(a) == 0 && len(b) == 0 {
-			return 1.0
-		}
 		return 0.0
 	}
 
