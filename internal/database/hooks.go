@@ -28,6 +28,13 @@ func RegisterEncryptionHooks(client *ent.Client, encryptor *crypto.Encryptor) {
 
 	// Hook for decrypting session key on LastFMAuth query
 	client.LastFMAuth.Intercept(decryptLastFMAuthInterceptor(encryptor))
+
+	// Hook for encrypting token on ListenBrainzAuth create/update
+	// Governing: ADR-0006, SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+	client.ListenBrainzAuth.Use(encryptListenBrainzAuthHook(encryptor))
+
+	// Hook for decrypting token on ListenBrainzAuth query
+	client.ListenBrainzAuth.Intercept(decryptListenBrainzAuthInterceptor(encryptor))
 }
 
 // encryptPasswordHook encrypts the password field before saving to database
@@ -311,6 +318,93 @@ func decryptLastFMAuth(encryptor *crypto.Encryptor, auth *ent.LastFMAuth) error 
 		return fmt.Errorf("failed to decrypt session_key for user %d: %w", auth.ID, err)
 	}
 	auth.SessionKey = decrypted
+
+	return nil
+}
+
+// encryptListenBrainzAuthHook encrypts the token field before saving to database
+// and decrypts it in the returned entity.
+// Governing: ADR-0006 (AES-256-GCM at rest), SPEC music-provider-integration
+// REQ "ListenBrainz Provider" (REQ-PROV-046)
+func encryptListenBrainzAuthHook(encryptor *crypto.Encryptor) ent.Hook {
+	return func(next ent.Mutator) ent.Mutator {
+		return hook.ListenBrainzAuthFunc(func(ctx context.Context, m *ent.ListenBrainzAuthMutation) (ent.Value, error) {
+			// Remember original token for decryption after save
+			var originalToken string
+
+			// Encrypt token if being set
+			if token, exists := m.Token(); exists {
+				originalToken = token
+				// Check if already encrypted (for idempotency).
+				// Governing: ADR-0006 — see encryptPasswordHook.
+				if !encryptor.IsCiphertext(token) {
+					encrypted, err := encryptor.Encrypt(token)
+					if err != nil {
+						return nil, fmt.Errorf("failed to encrypt token: %w", err)
+					}
+					m.SetToken(encrypted)
+				}
+			}
+
+			// Execute the mutation
+			value, err := next.Mutate(ctx, m)
+			if err != nil {
+				return nil, err
+			}
+
+			// Decrypt the token in the returned entity
+			if auth, ok := value.(*ent.ListenBrainzAuth); ok && originalToken != "" {
+				auth.Token = originalToken
+			}
+
+			return value, nil
+		})
+	}
+}
+
+// decryptListenBrainzAuthInterceptor decrypts token field after loading from database
+func decryptListenBrainzAuthInterceptor(encryptor *crypto.Encryptor) ent.Interceptor {
+	return ent.InterceptFunc(func(next ent.Querier) ent.Querier {
+		return ent.QuerierFunc(func(ctx context.Context, q ent.Query) (ent.Value, error) {
+			// Execute the query
+			v, err := next.Query(ctx, q)
+			if err != nil {
+				return nil, err
+			}
+
+			// Decrypt token in the results
+			switch result := v.(type) {
+			case *ent.ListenBrainzAuth:
+				if err := decryptListenBrainzAuth(encryptor, result); err != nil {
+					return nil, err
+				}
+			case []*ent.ListenBrainzAuth:
+				for _, auth := range result {
+					if err := decryptListenBrainzAuth(encryptor, auth); err != nil {
+						return nil, err
+					}
+				}
+			}
+
+			return v, nil
+		})
+	})
+}
+
+// decryptListenBrainzAuth decrypts the token field in a ListenBrainzAuth entity
+func decryptListenBrainzAuth(encryptor *crypto.Encryptor, auth *ent.ListenBrainzAuth) error {
+	if auth == nil || auth.Token == "" {
+		return nil
+	}
+
+	// Governing: ADR-0006 — accept enc:v1:, legacy base64, and plaintext.
+	// Legacy values that fail to decrypt are returned as plaintext instead of
+	// erroring the whole query (will be encrypted on next update).
+	decrypted, _, err := encryptor.DecryptAny(auth.Token)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt token for user %d: %w", auth.ID, err)
+	}
+	auth.Token = decrypted
 
 	return nil
 }

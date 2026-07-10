@@ -33,6 +33,7 @@ import (
 	"spotter/internal/migrations"
 	"spotter/internal/notifications"
 	"spotter/internal/providers/lastfm"
+	"spotter/internal/providers/listenbrainz"
 	"spotter/internal/providers/navidrome"
 	"spotter/internal/providers/spotify"
 	"spotter/internal/services"
@@ -154,6 +155,8 @@ func main() {
 	syncer.Register(navidrome.New(logger, cfg))
 	syncer.Register(spotify.New(logger, cfg, client))
 	syncer.Register(lastfm.New(logger, cfg))
+	// Governing: ADR-0016, SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-045)
+	syncer.Register(listenbrainz.New(logger, cfg))
 
 	// Initialize Playlist Sync Service (for syncing playlists to Navidrome)
 	playlistSyncSvc := services.NewPlaylistSyncService(client, cfg, logger, bus)
@@ -518,6 +521,10 @@ func main() {
 		r.Post("/preferences/lastfm/sync", h.SyncLastFM)
 		r.Post("/preferences/lastfm/rebuild", h.RebuildLastFM)
 		r.Post("/preferences/lastfm/disconnect", h.DisconnectLastFM)
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+		r.Post("/preferences/listenbrainz/sync", h.SyncListenBrainz)
+		r.Post("/preferences/listenbrainz/rebuild", h.RebuildListenBrainz)
+		r.Post("/preferences/listenbrainz/disconnect", h.DisconnectListenBrainz)
 
 		// Task routes
 		r.Post("/preferences/tasks/sync-listens", h.TaskSyncListens)
@@ -531,6 +538,13 @@ func main() {
 		// OAuth login initiators (require existing session)
 		r.Get("/auth/spotify/login", h.SpotifyLogin)
 		r.Get("/auth/lastfm/login", h.LastFMLogin)
+
+		// ListenBrainz has no OAuth: users paste their token from
+		// listenbrainz.org/settings while logged in, so both routes stay
+		// behind auth (no public callback needed).
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+		r.Get("/auth/listenbrainz/connect", h.ListenBrainzConnectForm)
+		r.Post("/auth/listenbrainz/connect", h.ListenBrainzConnect)
 
 		r.Get("/recent", h.RecentListens)
 		r.Get("/playlists", h.Playlists)
