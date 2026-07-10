@@ -44,7 +44,7 @@ func TestProvidersPage_WiresLogoutModalWithPOSTForm(t *testing.T) {
 	cfg := &config.Config{}
 
 	var buf bytes.Buffer
-	require.NoError(t, preferences.Providers(user, nil, nil, navidromeAuth, cfg).Render(context.Background(), &buf))
+	require.NoError(t, preferences.Providers(user, nil, nil, navidromeAuth, cfg, "").Render(context.Background(), &buf))
 	html := buf.String()
 
 	assert.Contains(t, html, `id="navidrome-logout-modal"`, "logout modal must be present on the page")

@@ -161,7 +161,11 @@ func (h *Handler) PreferencesProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Render(w, r, preferences.Providers(u, u.Edges.SpotifyAuth, u.Edges.LastfmAuth, u.Edges.NavidromeAuth, h.Config))
+	// Surface OAuth failure redirects (e.g. ?error=spotify_denied) as a mapped,
+	// plain-English alert; never echo the raw query value.
+	errorMsg := getOAuthErrorMessage(r.URL.Query().Get("error"))
+
+	h.Render(w, r, preferences.Providers(u, u.Edges.SpotifyAuth, u.Edges.LastfmAuth, u.Edges.NavidromeAuth, h.Config, errorMsg))
 }
 
 func (h *Handler) DisconnectSpotify(w http.ResponseWriter, r *http.Request) {
