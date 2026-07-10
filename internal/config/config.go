@@ -380,7 +380,7 @@ func Load() (*Config, error) {
 	v.SetDefault("vibes.max_tokens", 4000)          // Enough for track list + explanations
 	v.SetDefault("vibes.timeout_seconds", 120)      // 2 minutes
 	v.SetDefault("vibes.prompts_directory", "")     // Falls back to metadata.ai.prompts_directory
-	v.SetDefault("vibes.min_match_confidence", 0.7) // Lower than playlist sync for more matches
+	v.SetDefault("vibes.min_match_confidence", 0.7) // Same as playlist sync default (ADR-0014)
 
 	// Metadata enrichment defaults
 	v.SetDefault("metadata.enabled", true)
