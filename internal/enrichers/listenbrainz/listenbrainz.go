@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"spotter/ent"
@@ -384,6 +385,9 @@ type lbRecordingPopularity struct {
 // keeps the field comparable in magnitude to Spotify's popularity while
 // preserving ordering between entities.
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-062
+// Zero listens is treated as "no data" by the callers (they return nil so a
+// later Spotify pass can still claim the field); this function only scores
+// positive counts.
 func popularityScore(listenCount int64) int {
 	if listenCount <= 0 {
 		return 0
@@ -391,9 +395,6 @@ func popularityScore(listenCount int64) int {
 	score := int(math.Round(100 * math.Log10(float64(listenCount)+1) / popularityReferenceLog10))
 	if score > 100 {
 		score = 100
-	}
-	if score < 1 {
-		score = 1 // any listens at all rank above "no data"
 	}
 	return score
 }
@@ -550,7 +551,10 @@ func (e *Enricher) artistPopularity(ctx context.Context, mbid string) (*int, err
 	}
 
 	for _, entry := range result {
-		if entry.ArtistMBID == mbid && entry.TotalListenCount != nil {
+		// Case-insensitive: stored MBIDs may be uppercase (Navidrome file
+		// tags; see ent/schema/musicbrainz_id.go) while ListenBrainz keys
+		// responses with canonical lowercase.
+		if strings.EqualFold(entry.ArtistMBID, mbid) && entry.TotalListenCount != nil && *entry.TotalListenCount > 0 {
 			score := popularityScore(*entry.TotalListenCount)
 			return &score, nil
 		}
@@ -616,7 +620,16 @@ func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enricher
 
 	meta, ok := metadata[mbid]
 	if !ok {
+		// Stored MBIDs may be uppercase; response keys are lowercase.
+		meta, ok = metadata[strings.ToLower(mbid)]
+	}
+	if !ok {
 		e.logger.Debug("no ListenBrainz data for track", "track", track.Name, "mbid", mbid)
+		// Still persist a freshly matched MBID so the mapper lookup is not
+		// repeated on every pass.
+		if matched {
+			return &enrichers.TrackData{MusicBrainzID: mbid}, nil
+		}
 		return nil, nil
 	}
 
@@ -674,7 +687,8 @@ func (e *Enricher) recordingPopularity(ctx context.Context, mbid string) (*int, 
 	}
 
 	for _, entry := range result {
-		if entry.RecordingMBID == mbid && entry.TotalListenCount != nil {
+		// Case-insensitive for the same reason as artistPopularity.
+		if strings.EqualFold(entry.RecordingMBID, mbid) && entry.TotalListenCount != nil && *entry.TotalListenCount > 0 {
 			score := popularityScore(*entry.TotalListenCount)
 			return &score, nil
 		}
