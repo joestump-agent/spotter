@@ -712,9 +712,20 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 
 		// Apply enrichment data (Artist has string fields, not *string)
 		if data.MusicBrainzID != "" && cur.MusicbrainzID == "" {
-			update = update.SetMusicbrainzID(data.MusicBrainzID)
-			cur.MusicbrainzID = data.MusicBrainzID
-			externalIDsSet = true
+			// The schema rejects non-UUID MBIDs on write; skip invalid values
+			// from enrichers (e.g. garbage file tags surfaced via Navidrome)
+			// instead of failing the whole update.
+			// Governing: AGENTS.md VAL-007, SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results preserved)
+			if schema.IsValidMusicBrainzID(data.MusicBrainzID) {
+				update = update.SetMusicbrainzID(data.MusicBrainzID)
+				cur.MusicbrainzID = data.MusicBrainzID
+				externalIDsSet = true
+			} else {
+				s.logger.Warn("skipping non-UUID MusicBrainz ID from enricher",
+					"enricher", artistEnricher.Name(),
+					"artist", art.Name,
+					"musicbrainz_id", data.MusicBrainzID)
+			}
 		}
 		if data.SpotifyID != "" && cur.SpotifyID == "" {
 			update = update.SetSpotifyID(data.SpotifyID)
@@ -1136,8 +1147,16 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 
 		// Apply enrichment data (Album has string fields, not *string)
 		if data.MusicBrainzID != "" && cur.MusicbrainzID == "" {
-			update = update.SetMusicbrainzID(data.MusicBrainzID)
-			cur.MusicbrainzID = data.MusicBrainzID
+			// Governing: AGENTS.md VAL-007, SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results preserved)
+			if schema.IsValidMusicBrainzID(data.MusicBrainzID) {
+				update = update.SetMusicbrainzID(data.MusicBrainzID)
+				cur.MusicbrainzID = data.MusicBrainzID
+			} else {
+				s.logger.Warn("skipping non-UUID MusicBrainz ID from enricher",
+					"enricher", albumEnricher.Name(),
+					"album", alb.Name,
+					"musicbrainz_id", data.MusicBrainzID)
+			}
 		}
 		if data.SpotifyID != "" && cur.SpotifyID == "" {
 			update = update.SetSpotifyID(data.SpotifyID)
@@ -1451,8 +1470,16 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 
 		// Apply enrichment data (Track has *string fields due to Nillable())
 		if data.MusicBrainzID != "" && (cur.MusicbrainzID == nil || *cur.MusicbrainzID == "") {
-			update = update.SetMusicbrainzID(data.MusicBrainzID)
-			cur.MusicbrainzID = &data.MusicBrainzID
+			// Governing: AGENTS.md VAL-007, SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results preserved)
+			if schema.IsValidMusicBrainzID(data.MusicBrainzID) {
+				update = update.SetMusicbrainzID(data.MusicBrainzID)
+				cur.MusicbrainzID = &data.MusicBrainzID
+			} else {
+				s.logger.Warn("skipping non-UUID MusicBrainz ID from enricher",
+					"enricher", trackEnricher.Name(),
+					"track", t.Name,
+					"musicbrainz_id", data.MusicBrainzID)
+			}
 		}
 		if data.SpotifyID != "" && (cur.SpotifyID == nil || *cur.SpotifyID == "") {
 			update = update.SetSpotifyID(data.SpotifyID)
