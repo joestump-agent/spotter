@@ -724,6 +724,7 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 				s.logger.Warn("skipping non-UUID MusicBrainz ID from enricher",
 					"enricher", artistEnricher.Name(),
 					"artist", art.Name,
+					"artist_id", art.ID,
 					"musicbrainz_id", data.MusicBrainzID)
 			}
 		}
@@ -1155,6 +1156,7 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 				s.logger.Warn("skipping non-UUID MusicBrainz ID from enricher",
 					"enricher", albumEnricher.Name(),
 					"album", alb.Name,
+					"album_id", alb.ID,
 					"musicbrainz_id", data.MusicBrainzID)
 			}
 		}
@@ -1478,6 +1480,7 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 				s.logger.Warn("skipping non-UUID MusicBrainz ID from enricher",
 					"enricher", trackEnricher.Name(),
 					"track", t.Name,
+					"track_id", t.ID,
 					"musicbrainz_id", data.MusicBrainzID)
 			}
 		}
