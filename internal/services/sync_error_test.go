@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"spotter/ent"
 	"spotter/ent/enttest"
 	"spotter/internal/config"
 	"spotter/internal/events"
@@ -408,4 +409,202 @@ func TestSyncer_SyncProvider_SurfacesProviderError(t *testing.T) {
 
 	// A provider that is not active is a no-op, not an error.
 	require.NoError(t, syncer.SyncProvider(context.Background(), user, providers.TypeNavidrome))
+}
+
+// failListenCreateHook makes every Listen INSERT fail, simulating a DB write
+// outage during history persistence. Existence/dedup checks are queries, not
+// mutations, so they still run — the failure surfaces at builder.Save(ctx)
+// inside persistListens (the Create().Save() path).
+func failListenCreateHook(client *ent.Client) {
+	client.Listen.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if m.Op().Is(ent.OpCreate) {
+				return nil, fmt.Errorf("simulated listen insert failure")
+			}
+			return next.Mutate(ctx, m)
+		})
+	})
+}
+
+// failPlaylistCreateHook makes every Playlist INSERT fail, simulating a DB
+// write outage during playlist persistence. The upsert's existence check is a
+// query (not intercepted) and the row is new, so the failure surfaces at
+// Create().Save() inside upsertPlaylistRow.
+func failPlaylistCreateHook(client *ent.Client) {
+	client.Playlist.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			if m.Op().Is(ent.OpCreate) {
+				return nil, fmt.Errorf("simulated playlist insert failure")
+			}
+			return next.Mutate(ctx, m)
+		})
+	})
+}
+
+// TestSyncer_PersistListens_DBFailure_SurfacesErrorAndMetricSyncFails is the
+// issue #35 acceptance test for history persistence: when a Listen INSERT fails
+// mid-sync, persistListens collects the genuine DB error and returns it (rather
+// than swallowing it and returning nil), so Sync() surfaces an aggregated error
+// and the provider's metric.sync event logs success=false.
+// Governing: ADR-0020, SPEC listen-playlist-sync REQ-SYNC-022, SPEC observability REQ "BG-003"
+func TestSyncer_PersistListens_DBFailure_SurfacesErrorAndMetricSyncFails(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
+
+	user, err := client.User.Create().SetUsername("testuser").Save(context.Background())
+	require.NoError(t, err)
+
+	prov := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks: []providers.Track{
+			{ID: "t1", Name: "Track One", Artist: "Artist One", Album: "Album One", PlayedAt: time.Now()},
+			{ID: "t2", Name: "Track Two", Artist: "Artist Two", Album: "Album Two", PlayedAt: time.Now().Add(-10 * time.Minute)},
+		},
+	}
+	syncer.Register(mockFactory(prov))
+
+	// Install the failing INSERT hook only after setup, so the write outage
+	// begins exactly when persistListens tries to save.
+	failListenCreateHook(client)
+
+	err = syncer.Sync(context.Background(), user)
+	require.Error(t, err, "Sync must return an error when a listen INSERT fails mid-sync")
+	assert.Contains(t, err.Error(), string(providers.TypeSpotify),
+		"the aggregated error must name the failing provider")
+
+	metrics := captureMetricSyncEvents(t, &logs)
+	ev, ok := metrics[string(providers.TypeSpotify)]
+	require.True(t, ok, "a metric.sync event must be emitted for the provider")
+	assert.False(t, ev.Success, "metric.sync must report success=false when persistence fails")
+	assert.NotEmpty(t, ev.Error, "metric.sync must carry the persistence error")
+	assert.Zero(t, ev.ListensSynced, "no listens synced when every INSERT fails")
+
+	listens, err := client.Listen.Query().All(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, listens, "no listens should persist when every INSERT fails")
+}
+
+// TestSyncer_PersistListens_DBFailure_SyncProviderSurfacesError asserts the
+// same mid-sync DB write failure is surfaced by the single-provider entry point
+// SyncProvider() (issue #35).
+// Governing: ADR-0020, SPEC listen-playlist-sync REQ-SYNC-022
+func TestSyncer_PersistListens_DBFailure_SyncProviderSurfacesError(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
+
+	user, err := client.User.Create().SetUsername("testuser").Save(context.Background())
+	require.NoError(t, err)
+
+	prov := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks: []providers.Track{
+			{ID: "t1", Name: "Track One", Artist: "Artist One", PlayedAt: time.Now()},
+		},
+	}
+	syncer.Register(mockFactory(prov))
+	failListenCreateHook(client)
+
+	err = syncer.SyncProvider(context.Background(), user, providers.TypeSpotify)
+	require.Error(t, err, "SyncProvider must surface a mid-sync listen INSERT failure")
+	assert.Contains(t, err.Error(), string(providers.TypeSpotify))
+
+	listens, err := client.Listen.Query().All(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, listens, "no listens should persist when the INSERT fails")
+}
+
+// TestSyncer_PersistPlaylists_DBFailure_SurfacesErrorAndMetricSyncFails is the
+// issue #35 acceptance test for playlist persistence: when a Playlist INSERT
+// fails mid-sync, persistPlaylists collects the genuine DB error and returns it,
+// so Sync() surfaces an aggregated error and metric.sync logs success=false.
+// Governing: ADR-0020, SPEC listen-playlist-sync REQ-SYNC-031, SPEC observability REQ "BG-003"
+func TestSyncer_PersistPlaylists_DBFailure_SurfacesErrorAndMetricSyncFails(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
+
+	user, err := client.User.Create().SetUsername("testuser").Save(context.Background())
+	require.NoError(t, err)
+
+	// Spotify source so persistPlaylists skips the Navidrome managed-playlist
+	// pre-query and the failure is isolated to the per-playlist create path.
+	prov := &mockProvider{
+		providerType: providers.TypeSpotify,
+		playlists: []providers.Playlist{
+			{ID: "pl1", Name: "Playlist One", TrackCount: 3},
+			{ID: "pl2", Name: "Playlist Two", TrackCount: 5},
+		},
+	}
+	syncer.Register(mockFactory(prov))
+	failPlaylistCreateHook(client)
+
+	err = syncer.Sync(context.Background(), user)
+	require.Error(t, err, "Sync must return an error when a playlist INSERT fails mid-sync")
+	assert.Contains(t, err.Error(), string(providers.TypeSpotify))
+
+	metrics := captureMetricSyncEvents(t, &logs)
+	ev, ok := metrics[string(providers.TypeSpotify)]
+	require.True(t, ok, "a metric.sync event must be emitted for the provider")
+	assert.False(t, ev.Success, "metric.sync must report success=false when playlist persistence fails")
+	assert.NotEmpty(t, ev.Error, "metric.sync must carry the persistence error")
+	assert.Zero(t, ev.PlaylistsSynced, "no playlists synced when every INSERT fails")
+
+	playlists, err := client.Playlist.Query().All(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, playlists, "no playlists should persist when every INSERT fails")
+}
+
+// TestSyncer_PersistListens_ExpectedSkips_DoNotFailSync guards the other half of
+// issue #35: EXPECTED skips (validation failures) must NOT be reported as DB
+// errors. A batch with one valid and one invalid track still succeeds — the
+// valid track persists, the invalid one is skipped, Sync() returns nil, and
+// metric.sync reports success=true.
+// Governing: SPEC listen-playlist-sync REQ-SYNC-021, REQ-SYNC-022
+func TestSyncer_PersistListens_ExpectedSkips_DoNotFailSync(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
+
+	user, err := client.User.Create().SetUsername("testuser").Save(context.Background())
+	require.NoError(t, err)
+
+	prov := &mockProvider{
+		providerType: providers.TypeSpotify,
+		tracks: []providers.Track{
+			{ID: "t1", Name: "Valid Track", Artist: "Artist One", PlayedAt: time.Now()},
+			{ID: "t2", Name: "Missing Artist", Artist: "", PlayedAt: time.Now().Add(-time.Minute)},
+		},
+	}
+	syncer.Register(mockFactory(prov))
+
+	// No failing hook: DB writes succeed. Only the missing-artist skip occurs.
+	err = syncer.Sync(context.Background(), user)
+	require.NoError(t, err, "an expected validation skip must not fail the sync")
+
+	metrics := captureMetricSyncEvents(t, &logs)
+	ev := metrics[string(providers.TypeSpotify)]
+	assert.True(t, ev.Success, "metric.sync must report success=true when only expected skips occur")
+	assert.Empty(t, ev.Error)
+	assert.Equal(t, 1, ev.ListensSynced, "only the valid track counts as synced")
+
+	listens, err := client.Listen.Query().All(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, listens, 1, "only the valid track should persist")
 }
