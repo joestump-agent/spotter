@@ -14,9 +14,17 @@ import (
 	"time"
 )
 
+// ClientName and ClientVersion identify Spotter to external APIs that take a
+// split client name + version (e.g. the ListenBrainz submission payload's
+// submission_client / submission_client_version fields).
+const (
+	ClientName    = "Spotter"
+	ClientVersion = "1.0.0"
+)
+
 // UserAgent is the User-Agent header value sent on every outbound request to
 // an external API.
-const UserAgent = "Spotter/1.0.0"
+const UserAgent = ClientName + "/" + ClientVersion
 
 const (
 	// MaxRateLimitRetries is the number of retry attempts after a 429 response.
