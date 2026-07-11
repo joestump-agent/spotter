@@ -920,10 +920,11 @@ type submitRequestCapture struct {
 			TrackName      string `json:"track_name"`
 			ReleaseName    string `json:"release_name"`
 			AdditionalInfo struct {
-				DurationMs       int    `json:"duration_ms"`
-				ISRC             string `json:"isrc"`
-				OriginURL        string `json:"origin_url"`
-				SubmissionClient string `json:"submission_client"`
+				DurationMs              int    `json:"duration_ms"`
+				ISRC                    string `json:"isrc"`
+				OriginURL               string `json:"origin_url"`
+				SubmissionClient        string `json:"submission_client"`
+				SubmissionClientVersion string `json:"submission_client_version"`
 			} `json:"additional_info"`
 		} `json:"track_metadata"`
 	} `json:"payload"`
@@ -985,7 +986,9 @@ func TestSubmitListens_PayloadShape(t *testing.T) {
 	assert.Equal(t, 215000, l.TrackMetadata.AdditionalInfo.DurationMs)
 	assert.Equal(t, "USRC12345678", l.TrackMetadata.AdditionalInfo.ISRC)
 	assert.Equal(t, "https://example.com/song", l.TrackMetadata.AdditionalInfo.OriginURL)
-	assert.Equal(t, httputil.UserAgent, l.TrackMetadata.AdditionalInfo.SubmissionClient)
+	// The ListenBrainz payload spec splits the client into name + version.
+	assert.Equal(t, httputil.ClientName, l.TrackMetadata.AdditionalInfo.SubmissionClient)
+	assert.Equal(t, httputil.ClientVersion, l.TrackMetadata.AdditionalInfo.SubmissionClientVersion)
 }
 
 // Governing: SPEC music-provider-integration REQ-PROV-049 (batches of at most
@@ -1080,6 +1083,59 @@ func TestSubmitListens_SkipsUnsubmittableListens(t *testing.T) {
 
 	// Empty input makes no request at all.
 	err = p.SubmitListens(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, requests)
+}
+
+// Regression: PR #55 adversarial review MAJOR 1 — POST /1/submit-listens
+// rejects the ENTIRE request with 400 if ANY listen is invalid, so a single
+// bad listen used to poison its whole batch on every sync. Listens that
+// ListenBrainz is known to reject — whitespace-only names, listened_at before
+// the LB minimum (~Oct 2002), and future timestamps from clock skew — must be
+// filtered out before batching, and padded names must be trimmed.
+func TestSubmitListens_Regression_FiltersBatchPoisoningListens(t *testing.T) {
+	requests := 0
+	var captured submitRequestCapture
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&captured))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+
+	playedAt := time.Unix(1700000000, 0)
+	err := p.SubmitListens(context.Background(), []providers.Track{
+		{Name: "   ", Artist: "Artist", PlayedAt: playedAt},                                  // whitespace-only track name
+		{Name: "Track", Artist: "\t \n", PlayedAt: playedAt},                                 // whitespace-only artist name
+		{Name: "Too Old", Artist: "Artist", PlayedAt: time.Unix(1000000000, 0)},              // 2001: before the LB minimum
+		{Name: "Prehistoric", Artist: "Artist", PlayedAt: time.Unix(100, 0)},                 // way before the LB minimum
+		{Name: "From The Future", Artist: "Artist", PlayedAt: time.Now().Add(2 * time.Hour)}, // clock-skew future
+		{Name: "  Padded  ", Artist: "  Artist  ", PlayedAt: playedAt},                       // valid after trimming
+		{Name: "Keeper", Artist: "Artist", PlayedAt: playedAt},                               // valid
+		{Name: "Boundary", Artist: "Artist", PlayedAt: time.Unix(listenMinimumUnix, 0)},      // exactly the minimum: valid
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, requests, "poison listens must be filtered, not sent")
+	require.Len(t, captured.Payload, 3, "only submittable listens reach the API")
+
+	names := map[string]string{}
+	for _, l := range captured.Payload {
+		names[l.TrackMetadata.TrackName] = l.TrackMetadata.ArtistName
+	}
+	assert.Contains(t, names, "Keeper")
+	assert.Contains(t, names, "Boundary")
+	assert.Contains(t, names, "Padded", "padded names must be submitted trimmed")
+	assert.Equal(t, "Artist", names["Padded"], "padded artist names must be submitted trimmed")
+
+	// All-poison input makes no request at all.
+	requests = 0
+	err = p.SubmitListens(context.Background(), []providers.Track{
+		{Name: " ", Artist: " ", PlayedAt: playedAt},
+		{Name: "Too Old", Artist: "Artist", PlayedAt: time.Unix(1000000000, 0)},
+	})
 	require.NoError(t, err)
 	assert.Equal(t, 0, requests)
 }
