@@ -202,6 +202,50 @@ func TestSyncer_UpdatesLastSyncedAt_LastFM(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), updatedAuth.LastSyncedAt, 5*time.Second)
 }
 
+// Governing: SPEC music-provider-integration REQ-PROV-048 (ListenBrainz implements HistoryFetcher),
+// SPEC listen-playlist-sync REQ-SYNC-012 (sync cursor updated after each provider sync)
+func TestSyncer_UpdatesLastSyncedAt_ListenBrainz(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+
+	// Create user with ListenBrainz auth
+	user := createTestUser(t, client)
+	lbAuth, err := client.ListenBrainzAuth.Create().
+		SetUser(user).
+		SetUsername("lb_user").
+		SetToken("test_token").
+		Save(ctx)
+	require.NoError(t, err)
+	assert.True(t, lbAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be zero initially")
+
+	// Register mock ListenBrainz provider. syncHistory discovers history
+	// support via the HistoryFetcher type assertion, then updates the
+	// cursor through the TypeListenBrainz case of updateLastSyncedAt.
+	mockLB := &mockProvider{
+		providerType: providers.TypeListenBrainz,
+		tracks: []providers.Track{
+			{
+				ID:       "mbid-123",
+				Name:     "LB Track",
+				Artist:   "LB Artist",
+				Album:    "LB Album",
+				PlayedAt: time.Now(),
+			},
+		},
+	}
+	syncer.Register(mockFactory(mockLB))
+
+	// Run sync
+	err = syncer.Sync(ctx, user)
+	require.NoError(t, err)
+
+	// Verify LastSyncedAt was updated
+	updatedAuth, err := client.ListenBrainzAuth.Get(ctx, lbAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated after sync")
+	assert.WithinDuration(t, time.Now(), updatedAuth.LastSyncedAt, 5*time.Second)
+}
+
 func TestSyncer_UpdatesLastSyncedAt_EvenWithNoNewTracks(t *testing.T) {
 	client, syncer, _ := setupTestSyncer(t)
 	ctx := context.Background()
