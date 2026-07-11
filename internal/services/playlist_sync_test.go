@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -41,6 +42,15 @@ type mockPlaylistSyncer struct {
 	updatedID      string
 	updatedTracks  []providers.Track
 	updateErr      error
+
+	// Optional synchronization hooks for concurrency tests (issue #48). When
+	// syncPlaylistEntered is non-nil it is closed the first time SyncPlaylist
+	// (the create path) is entered; when syncPlaylistBlock is non-nil,
+	// SyncPlaylist blocks on a receive from it before returning. This lets a
+	// test hold a "create" in flight while it drives a concurrent pair.
+	syncPlaylistEntered chan struct{}
+	syncPlaylistBlock   chan struct{}
+	syncPlaylistOnce    sync.Once
 }
 
 func (m *mockPlaylistSyncer) Type() providers.Type {
@@ -48,6 +58,12 @@ func (m *mockPlaylistSyncer) Type() providers.Type {
 }
 
 func (m *mockPlaylistSyncer) SyncPlaylist(ctx context.Context, playlist providers.SyncPlaylistRequest) (string, error) {
+	if m.syncPlaylistEntered != nil {
+		m.syncPlaylistOnce.Do(func() { close(m.syncPlaylistEntered) })
+	}
+	if m.syncPlaylistBlock != nil {
+		<-m.syncPlaylistBlock
+	}
 	if m.syncErr != nil {
 		return "", m.syncErr
 	}
@@ -836,6 +852,100 @@ func TestPlaylistSyncService_PairWithNavidrome_PlaylistNotFound(t *testing.T) {
 	err := svc.PairWithNavidrome(ctx, 99999, "nav-whatever")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load playlist")
+}
+
+// TestPlaylistSyncService_PairDuringInFlightSync_PairingNotLost is a regression
+// test for issue #48: a Sync-Now / scheduled sync in flight for an
+// enabled-but-unpaired playlist must not clobber a pairing the user commits
+// concurrently.
+//
+// Before the per-playlist lock, the sync loaded the row with an empty
+// navidrome_playlist_id, created a fresh remote playlist, and its Save
+// overwrote (last-write-wins) the id PairWithNavidrome had just set — leaving
+// the playlist linked to a duplicate the user never chose.
+//
+// The test forces the exact dangerous interleaving deterministically: the sync
+// is blocked mid-create while holding the per-playlist lock, then the pair is
+// launched and must serialize behind the sync. With the lock the pair's load
+// always happens after the sync's Save, so the pairing the user chose wins
+// regardless of goroutine scheduling.
+// Governing: issue #48 (playlist sync concurrency guard),
+// SPEC playlist-sync-navidrome REQ-PLSYNC-070 (PairWithNavidrome)
+func TestPlaylistSyncService_PairDuringInFlightSync_PairingNotLost(t *testing.T) {
+	client, svc, _, mockSyncer := setupPlaylistSyncService(t)
+	ctx := context.Background()
+
+	user := createTestUserWithNavidromeAuth(t, client)
+	createNavidromeTracksForMatching(t, client, user)
+
+	// Enabled but not yet paired -> a sync takes the CREATE path.
+	pl := createTestPlaylistForSync(t, client, user, "spotify", true)
+	createTestPlaylistTracksForSync(t, client, pl)
+
+	// The user's chosen existing Navidrome playlist, cached as a navidrome-source
+	// duplicate in Spotter's DB (as PairWithNavidrome expects).
+	const pairedRemoteID = "nav-user-chosen-99"
+	require.NotEqual(t, mockSyncer.syncedID, pairedRemoteID)
+	duplicate, err := client.Playlist.Create().
+		SetUser(user).
+		SetRemoteID(pairedRemoteID).
+		SetName("Test Playlist").
+		SetSource("navidrome").
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Make the create path block so the sync is provably "in flight" (holding
+	// the per-playlist lock) while we launch the pair.
+	mockSyncer.syncPlaylistEntered = make(chan struct{})
+	mockSyncer.syncPlaylistBlock = make(chan struct{})
+
+	var wg sync.WaitGroup
+	var syncErr, pairErr error
+
+	// 1. Start the sync; it grabs the per-playlist lock, loads the unpaired row,
+	//    enters the CREATE path, and blocks inside SyncPlaylist.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		syncErr = svc.SyncPlaylistToNavidrome(ctx, pl.ID)
+	}()
+	<-mockSyncer.syncPlaylistEntered // sync now holds the lock, blocked mid-create
+
+	// 2. Launch the pair. It must block on the per-playlist lock until the sync
+	//    finishes; without the lock it would race the sync's Save.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pairErr = svc.PairWithNavidrome(ctx, pl.ID, pairedRemoteID)
+	}()
+
+	// 3. Release the blocked create so the sync completes and drops the lock,
+	//    letting the pair proceed.
+	close(mockSyncer.syncPlaylistBlock)
+	wg.Wait()
+
+	require.NoError(t, syncErr)
+	require.NoError(t, pairErr)
+
+	// The pairing the user chose survives: the playlist is linked to the paired
+	// remote id, NOT the freshly-created duplicate the in-flight sync produced.
+	updatedPl, err := client.Playlist.Get(ctx, pl.ID)
+	require.NoError(t, err)
+	assert.Equal(t, pairedRemoteID, updatedPl.NavidromePlaylistID,
+		"pairing must win over the in-flight create sync")
+	assert.NotEqual(t, mockSyncer.syncedID, updatedPl.NavidromePlaylistID,
+		"playlist must not be left linked to the sync-created duplicate")
+
+	// The pair took the UPDATE path against the user's chosen playlist...
+	assert.Equal(t, pairedRemoteID, mockSyncer.updatedID,
+		"pair must UPDATE the chosen playlist, not create a new one")
+
+	// ...and the navidrome-source duplicate cache row was removed by the pair.
+	exists, err := client.Playlist.Query().
+		Where(playlist.ID(duplicate.ID)).
+		Exist(ctx)
+	require.NoError(t, err)
+	assert.False(t, exists, "navidrome-source duplicate must be deleted after pairing")
 }
 
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-033 (per-request keep/delete override)
