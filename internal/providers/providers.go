@@ -4,6 +4,7 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"spotter/ent"
@@ -15,6 +16,22 @@ import (
 // contract change that will not succeed on retry).
 // Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
 var ErrMalformedResponse = errors.New("malformed provider response")
+
+// StatusError reports a non-2xx response from a provider API, carrying the
+// HTTP status code so callers can distinguish permanent rejections (non-429
+// 4xx: retrying the identical payload can never succeed) from transient
+// failures (429/5xx/network: safe to retry later). Providers wrap it with
+// fmt.Errorf("...: %w", ...) so errors.As finds it through the chain.
+// Governing: SPEC error-handling REQ-ERR-002 (retriable statuses),
+// REQ-ERR-003 (fatal statuses)
+type StatusError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("status %d: %s", e.StatusCode, e.Body)
+}
 
 // Type identifies the source of the data (e.g., "spotify", "navidrome").
 type Type string

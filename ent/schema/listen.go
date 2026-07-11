@@ -33,12 +33,22 @@ func (Listen) Fields() []ent.Field {
 		// on databases that already contain rows (a NOT NULL column with only a
 		// Go-side default would fail to migrate — see the PR #39 regression in
 		// internal/database/backfill_timestamps_test.go). NULL means "not yet
-		// submitted"; repeat syncs only submit rows where this is NULL, making
-		// resubmission idempotent.
+		// processed"; repeat syncs only select rows where this is NULL, making
+		// the submission pipeline idempotent.
+		//
+		// The stamp means "processed for ListenBrainz submission", NOT strictly
+		// "accepted": it is set when the listen was (a) submitted and accepted,
+		// (b) permanently rejected by ListenBrainz as unsubmittable (stamping
+		// keeps a poison listen from wedging the oldest-first submission queue
+		// forever), or (c) skipped because ListenBrainz already has the play
+		// natively (a listenbrainz-source sibling row exists within the
+		// cross-provider dedup window).
 		field.Time("submitted_to_listenbrainz_at").
 			Optional().
 			Nillable().
-			Comment("When this listen was pushed to ListenBrainz (NULL = never submitted)"),
+			Comment("When this listen was processed for ListenBrainz submission: " +
+				"submitted and accepted, permanently rejected as unsubmittable, " +
+				"or skipped as already present in ListenBrainz (NULL = not yet processed)"),
 	}
 }
 
