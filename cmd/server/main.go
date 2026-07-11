@@ -22,6 +22,7 @@ import (
 	enricherFanart "spotter/internal/enrichers/fanart"
 	enricherLastfm "spotter/internal/enrichers/lastfm"
 	enricherLidarr "spotter/internal/enrichers/lidarr"
+	enricherListenbrainz "spotter/internal/enrichers/listenbrainz"
 	enricherMusicbrainz "spotter/internal/enrichers/musicbrainz"
 	enricherNavidrome "spotter/internal/enrichers/navidrome"
 	enricherOpenai "spotter/internal/enrichers/openai"
@@ -178,6 +179,8 @@ func main() {
 	registerEnricher(enrichers.TypeNavidrome, enricherNavidrome.New(logger, cfg))
 	registerEnricher(enrichers.TypeSpotify, enricherSpotify.New(logger, cfg, client))
 	registerEnricher(enrichers.TypeLastFM, enricherLastfm.New(logger, cfg))
+	// Governing: SPEC metadata-enrichment-pipeline REQ "ListenBrainz Enricher" (REQ-ENRICH-060)
+	registerEnricher(enrichers.TypeListenBrainz, enricherListenbrainz.New(logger, cfg))
 	registerEnricher(enrichers.TypeFanart, enricherFanart.New(logger, cfg))
 	registerEnricher(enrichers.TypeOpenAI, enricherOpenai.New(logger, cfg))
 

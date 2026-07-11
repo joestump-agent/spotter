@@ -179,7 +179,7 @@ type Config struct {
 		Enabled      bool   `mapstructure:"enabled"`       // Enable/disable metadata enrichment
 		Interval     string `mapstructure:"interval"`      // Sync interval (e.g., "1h", "30m")
 		InitialDelay string `mapstructure:"initial_delay"` // Startup delay before first run (e.g., "30s"); "0s" skips the delay
-		Order        string `mapstructure:"order"`         // Comma-separated enricher order (e.g., "musicbrainz,navidrome,spotify,lastfm,fanart,openai")
+		Order        string `mapstructure:"order"`         // Comma-separated enricher order (e.g., "musicbrainz,navidrome,spotify,lastfm,listenbrainz,fanart,openai")
 
 		MusicBrainz struct {
 			UserAgent string `mapstructure:"user_agent"` // Required by MusicBrainz API - should include app name and contact
@@ -237,7 +237,8 @@ func (c *Config) AvailableThemes() []string {
 // Falls back to default order if not configured.
 func (c *Config) MetadataEnricherOrder() []string {
 	if c.Metadata.Order == "" {
-		return []string{"musicbrainz", "lidarr", "navidrome", "spotify", "lastfm", "fanart", "openai"}
+		// Governing: SPEC metadata-enrichment-pipeline REQ "ListenBrainz Enricher" (REQ-ENRICH-064)
+		return []string{"musicbrainz", "lidarr", "navidrome", "spotify", "lastfm", "listenbrainz", "fanart", "openai"}
 	}
 	parts := strings.Split(c.Metadata.Order, ",")
 	result := make([]string, 0, len(parts))
@@ -437,7 +438,8 @@ func Load() (*Config, error) {
 	v.SetDefault("metadata.interval", "1h")
 	// Governing: ADR-0009 (Viper configuration) — startup delay before first enrichment run
 	v.SetDefault("metadata.initial_delay", defaultMetadataInitialDelay)
-	v.SetDefault("metadata.order", "musicbrainz,lidarr,navidrome,spotify,lastfm,fanart,openai")
+	// Governing: SPEC metadata-enrichment-pipeline REQ "ListenBrainz Enricher" (REQ-ENRICH-064)
+	v.SetDefault("metadata.order", "musicbrainz,lidarr,navidrome,spotify,lastfm,listenbrainz,fanart,openai")
 	v.SetDefault("metadata.musicbrainz.user_agent", "Spotter/1.0.0 (https://github.com/spotter)")
 	v.SetDefault("metadata.fanart.api_key", "")
 	v.SetDefault("metadata.images.download", true)

@@ -86,3 +86,41 @@ func TestList_CapabilityAccessors(t *testing.T) {
 	assert.Empty(t, list.AlbumEnrichers())
 	assert.Empty(t, list.IDMatchers())
 }
+
+// TestParseType_ListenBrainz verifies the ListenBrainz enricher type parses
+// from config strings alongside the existing types.
+// Governing: SPEC metadata-enrichment-pipeline REQ "ListenBrainz Enricher" (REQ-ENRICH-060)
+func TestParseType_ListenBrainz(t *testing.T) {
+	parsed, ok := ParseType("listenbrainz")
+	require.True(t, ok)
+	assert.Equal(t, TypeListenBrainz, parsed)
+
+	_, ok = ParseType("listenbrains")
+	assert.False(t, ok)
+}
+
+// TestDefaultOrder_ListenBrainzPlacement verifies ListenBrainz runs after
+// MusicBrainz (it needs MBIDs) and after Spotify (which stays the primary
+// popularity source under REQ-ENRICH-020 first-writer-wins merging), and
+// that OpenAI stays last.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-011, REQ-ENRICH-012,
+// REQ "ListenBrainz Enricher" (REQ-ENRICH-064)
+func TestDefaultOrder_ListenBrainzPlacement(t *testing.T) {
+	order := DefaultOrder()
+
+	idx := func(target Type) int {
+		for i, ty := range order {
+			if ty == target {
+				return i
+			}
+		}
+		return -1
+	}
+
+	lb := idx(TypeListenBrainz)
+	require.NotEqual(t, -1, lb, "listenbrainz must be in the default order")
+	assert.Greater(t, lb, idx(TypeMusicBrainz))
+	assert.Greater(t, lb, idx(TypeSpotify))
+	assert.Equal(t, TypeMusicBrainz, order[0])
+	assert.Equal(t, TypeOpenAI, order[len(order)-1])
+}

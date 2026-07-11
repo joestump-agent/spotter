@@ -97,6 +97,18 @@ Out of scope: Vibes AI generation (see Vibes spec), playlist sync track matching
 
 **REQ-ENRICH-051** — The registry MUST support querying enrichers by capability: `ArtistEnrichers()`, `AlbumEnrichers()`, `TrackEnrichers()`, `IDMatchers()` — each returning enrichers sorted by priority.
 
+### ListenBrainz Enricher
+
+**REQ-ENRICH-060** — Spotter MUST provide a ListenBrainz enricher (type `listenbrainz`) implementing `ArtistEnricher`, `TrackEnricher`, and `IDMatcher`. The enricher MUST NOT require a user token: it uses only public read endpoints (`/1/metadata/*`, `/1/popularity/*`), so its factory MUST always return an instance (like MusicBrainz) rather than gating on `ListenBrainzAuth`.
+
+**REQ-ENRICH-061** — The enricher MUST resolve recording MBIDs via the ListenBrainz MBID mapper (`GET /1/metadata/lookup?artist_name=...&recording_name=...`, optionally `release_name`). `MatchArtist` and `MatchAlbum` MUST return no match (ListenBrainz has no name-only artist/release search); artist and album ID matching remains owned by MusicBrainz. An unmatched lookup (empty JSON object) MUST be treated as "no data", not an error.
+
+**REQ-ENRICH-062** — The enricher MUST populate `ArtistData.Popularity` and `TrackData.Popularity` from `POST /1/popularity/artist` and `POST /1/popularity/recording` (JSON bodies `{"artist_mbids": [...]}` / `{"recording_mbids": [...]}`). Raw `total_listen_count` values MUST be log-scaled onto the shared 0–100 popularity scale. Popularity fetch failures MUST NOT discard other enrichment data for the entity.
+
+**REQ-ENRICH-063** — All ListenBrainz requests MUST send the shared descriptive `User-Agent`, use a 30s client timeout, and honor 429 responses by waiting the advertised `Retry-After` (or `X-RateLimit-Reset-In`) interval before retrying; when the advertised interval exceeds a 30s cap the request MUST abort rather than retry early.
+
+**REQ-ENRICH-064** — Metadata lookups (`GET /1/metadata/artist/`, `GET /1/metadata/recording/`) are keyed by MusicBrainz ID; the enricher MUST run after MusicBrainz in the default order and MUST skip (return `nil, nil`) artists lacking an MBID. It runs after Spotify/Last.fm so Spotify remains the primary popularity source under REQ-ENRICH-020 merge semantics. Data ListenBrainz does not serve — bios, images, audio features, similar artists (Labs-only) — MUST NOT be fabricated.
+
 ---
 
 ## Enricher Inventory
@@ -108,7 +120,8 @@ Out of scope: Vibes AI generation (see Vibes spec), playlist sync track matching
 | Navidrome | `navidrome` | ArtistEnricher, AlbumEnricher, TrackEnricher | 3 | NavidromeAuth |
 | Spotify | `spotify` | ArtistEnricher, AlbumEnricher, TrackEnricher | 4 | SpotifyAuth, Spotify ID |
 | Last.fm | `lastfm` | ArtistEnricher, AlbumEnricher | 5 | Last.fm API key |
-| Fanart.tv | `fanart` | ArtistEnricher, AlbumEnricher | 6 | Fanart API key, MusicBrainz ID |
+| ListenBrainz | `listenbrainz` | ArtistEnricher, TrackEnricher, IDMatcher | 6 | MusicBrainz ID (artists); no credentials |
+| Fanart.tv | `fanart` | ArtistEnricher, AlbumEnricher | 7 | Fanart API key, MusicBrainz ID |
 | OpenAI | `openai` | ArtistEnricher, AlbumEnricher | 99 (highest) | OpenAI API key, prior enriched data |
 
 ---
@@ -157,9 +170,10 @@ flowchart TD
         NV["3. Navidrome\n(library metadata)"]
         SP["4. Spotify\n(popularity, audio features)"]
         LF["5. Last.fm\n(tags, listener counts)"]
-        FA["6. Fanart.tv\n(high-quality artwork)"]
+        LB["6. ListenBrainz\n(tags, listen-count popularity)"]
+        FA["7. Fanart.tv\n(high-quality artwork)"]
         OA["99. OpenAI\n(AI biography + summary)"]
-        MB --> LI --> NV --> SP --> LF --> FA --> OA
+        MB --> LI --> NV --> SP --> LF --> LB --> FA --> OA
     end
 
     subgraph Storage
@@ -232,7 +246,7 @@ And the local path is stored in the database
 
 ## Implementation Notes
 
-- Enricher implementations: `internal/enrichers/{musicbrainz,lidarr,navidrome,spotify,lastfm,fanart,openai}/`
+- Enricher implementations: `internal/enrichers/{musicbrainz,lidarr,navidrome,spotify,lastfm,listenbrainz,fanart,openai}/`
 - Interface definitions and data structs: `internal/enrichers/enrichers.go`
 - Image download/resize: `internal/enrichers/images.go`
 - MetadataService: `internal/services/metadata.go`
