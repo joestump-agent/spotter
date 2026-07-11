@@ -111,6 +111,13 @@ type Track struct {
 
 **REQ-PROV-048** — The ListenBrainz provider MUST implement `HistoryFetcher`. `GetRecentListens` MUST use the `GET /1/user/{username}/listens` API endpoint with `count` set to at most 100, paginating backwards via `max_ts` until the `since` timestamp is reached or no more listens remain. Because `max_ts` is exclusive (the endpoint returns only listens with `listened_at` strictly less than it), the next page's `max_ts` MUST be set to the oldest `listened_at` of the previous page **plus one** — setting it to the oldest value itself would permanently drop listens that share the boundary timestamp but fell past the page cut. The resulting re-delivery of boundary-second listens is safe because listen persistence de-duplicates idempotently (SPEC listen-playlist-sync REQ-SYNC-021). Because the endpoint rejects requests combining `min_ts` and `max_ts`, the `since` bound MUST be enforced client-side: listens with `listened_at` strictly before `since` MUST NOT be delivered to the callback, while listens with `listened_at` equal to `since` MUST be delivered (the watermark second may hold ties that were never synced; idempotent persistence absorbs the duplicate). Pagination MUST terminate when a page is empty or shorter than the requested count, when a listen strictly before `since` appears, or when the new cursor fails to strictly decrease relative to the previous `max_ts` (e.g. 100 or more listens sharing one timestamp, or a misbehaving server re-serving a page) — the strict-decrease guard MUST end the fetch rather than loop.
 
+**REQ-PROV-049** — The ListenBrainz provider MUST implement the read side of `PlaylistManager`; ListenBrainz playlist sync is **read-only INTO Spotter**:
+
+- `GetPlaylists` MUST fetch playlist stubs from BOTH `GET /1/user/{username}/playlists` (playlists the user created) AND `GET /1/user/{username}/playlists/createdfor` (playlists generated FOR the user by ListenBrainz, e.g. Weekly Jams, Weekly Exploration, Daily Jams — these MUST be included; they are the most valuable playlists to import and are absent from the created-by listing). Both listing endpoints paginate via `count`/`offset` and MUST be paged until a short/empty page is returned or the advertised `playlist_count` is reached. A playlist appearing in both listings MUST be imported once (deduplicated by playlist MBID).
+- The listing endpoints return JSPF stubs without tracks; full contents MUST be fetched per playlist via `GET /1/playlist/{playlist_mbid}`, where the playlist MBID is parsed from the JSPF playlist `identifier` (`https://listenbrainz.org/playlist/<mbid>`). The playlist MBID (not the full URL) is the remote ID used for upserts. Stubs without a parseable, well-formed playlist MBID MUST be skipped. If fetching one playlist's full contents fails, the provider SHOULD degrade gracefully by returning the stub without tracks (so the sync reconciler does not deactivate it) rather than failing the entire fetch.
+- JSPF tracks identify recordings by MusicBrainz MBID carried in `identifier` URIs of the form `http(s)://musicbrainz.org/recording/<mbid>`. The `identifier` field MUST be accepted in both encodings: a single URI string (the JSPF spec form) and a list of URI strings (the form ListenBrainz emits for tracks). The recording MBID MUST be parsed out of the identifier URI, validated as a well-formed UUID, and carried as the provider track ID (`providers.Track.ID`, persisted as `PlaylistTrack.remote_id`). The track-matching pipeline has no MBID tier (ADR-0014: ISRC → normalized exact → fuzzy), so catalog linking of ListenBrainz playlist tracks relies on title/creator (name/artist) matching; the MBID remains available in `remote_id` for de-duplication and future MBID-assisted matching. Tracks without a recording identifier MUST still be delivered (title/creator only). Any other JSON shape for `identifier` is a malformed response (SPEC error-handling REQ-ERR-003).
+- Playlist writes MUST NOT be implemented: the provider MUST NOT implement `PlaylistSyncer`, and because `PlaylistManager` bundles `CreatePlaylist` with `GetPlaylists`, `CreatePlaylist` MUST fail with the sentinel `ErrPlaylistWriteNotSupported` (it is never invoked by the sync system, which only reads via `GetPlaylists`).
+
 ### Navidrome Provider
 
 **REQ-PROV-050** — The Navidrome provider MUST implement `HistoryFetcher`, `PlaylistManager`, and `PlaylistSyncer`.
@@ -198,6 +205,9 @@ classDiagram
     HistoryFetcher <|.. NavidromeProvider
     PlaylistManager <|.. NavidromeProvider
     PlaylistSyncer <|.. NavidromeProvider
+
+    HistoryFetcher <|.. ListenBrainzProvider
+    PlaylistManager <|.. ListenBrainzProvider
 ```
 
 ---
@@ -236,11 +246,24 @@ And calls the callback once per page with the batch of tracks
 And stops when the oldest track in a page is before the since timestamp
 ```
 
+### Scenario 4: ListenBrainz playlist import (read-only)
+
+```gherkin
+Given a user has connected ListenBrainz
+And ListenBrainz has generated a Weekly Jams playlist for them
+When the sync service calls GetPlaylists on the ListenBrainz provider
+Then the provider fetches stubs from /1/user/{username}/playlists and /1/user/{username}/playlists/createdfor
+And fetches each playlist's full JSPF via /1/playlist/{playlist_mbid}
+And extracts each track's recording MBID from its musicbrainz.org/recording identifier URI
+And returns playlists whose tracks carry the recording MBID as the provider track ID
+And no playlist is ever created or modified on ListenBrainz
+```
+
 ---
 
 ## Implementation Notes
 
-- Provider packages: `internal/providers/spotify/`, `internal/providers/lastfm/`, `internal/providers/navidrome/`
+- Provider packages: `internal/providers/spotify/`, `internal/providers/lastfm/`, `internal/providers/navidrome/`, `internal/providers/listenbrainz/`
 - Interface definitions: `internal/providers/providers.go`
 - Factory registration: `cmd/server/main.go` wires factory functions into `services.Syncer`
 - Encrypted credential storage uses Ent hooks (see ADR-0006)
