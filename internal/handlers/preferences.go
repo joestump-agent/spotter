@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/mail"
 	"strconv"
+	"strings"
 	"time"
 
 	"spotter/ent"
@@ -21,6 +22,7 @@ import (
 	"spotter/ent/user"
 	"spotter/internal/events"
 	"spotter/internal/providers"
+	"spotter/internal/services"
 	"spotter/internal/types"
 	"spotter/internal/views/components"
 	"spotter/internal/views/preferences"
@@ -363,7 +365,8 @@ func (h *Handler) SyncNavidrome(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeNavidrome); err != nil {
+		res, err := h.Syncer.SyncProviderWithResult(ctx, freshUser, providers.TypeNavidrome)
+		if err != nil {
 			h.Logger.Error("failed to sync navidrome", "error", err)
 			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
@@ -375,14 +378,7 @@ func (h *Handler) SyncNavidrome(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Sync Complete",
-				Message:  "Navidrome sync complete",
-				IconType: "success",
-			},
-		})
+		h.publishManualSyncResult(userID, providers.TypeNavidrome, res, "Sync Complete", "Navidrome sync complete")
 	}()
 
 	h.Render(w, r, components.Toast("Sync Started", "Syncing Navidrome data in the background...", "info"))
@@ -449,7 +445,8 @@ func (h *Handler) RebuildNavidrome(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeNavidrome); err != nil {
+		res, err := h.Syncer.SyncProviderWithResult(ctx, freshUser, providers.TypeNavidrome)
+		if err != nil {
 			h.Logger.Error("failed to sync navidrome after rebuild", "error", err)
 			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
@@ -461,14 +458,7 @@ func (h *Handler) RebuildNavidrome(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Rebuild Complete",
-				Message:  "Navidrome rebuild complete",
-				IconType: "success",
-			},
-		})
+		h.publishManualSyncResult(userID, providers.TypeNavidrome, res, "Rebuild Complete", "Navidrome rebuild complete")
 	}()
 
 	h.Render(w, r, components.Toast("Rebuild Started", "Deleted Navidrome data. Re-syncing in the background...", "warning"))
@@ -498,7 +488,8 @@ func (h *Handler) SyncSpotify(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeSpotify); err != nil {
+		res, err := h.Syncer.SyncProviderWithResult(ctx, freshUser, providers.TypeSpotify)
+		if err != nil {
 			h.Logger.Error("failed to sync spotify", "error", err)
 			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
@@ -510,14 +501,7 @@ func (h *Handler) SyncSpotify(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Sync Complete",
-				Message:  "Spotify sync complete",
-				IconType: "success",
-			},
-		})
+		h.publishManualSyncResult(userID, providers.TypeSpotify, res, "Sync Complete", "Spotify sync complete")
 	}()
 
 	h.Render(w, r, components.Toast("Sync Started", "Syncing Spotify data in the background...", "info"))
@@ -584,7 +568,8 @@ func (h *Handler) RebuildSpotify(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeSpotify); err != nil {
+		res, err := h.Syncer.SyncProviderWithResult(ctx, freshUser, providers.TypeSpotify)
+		if err != nil {
 			h.Logger.Error("failed to sync spotify after rebuild", "error", err)
 			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
@@ -596,14 +581,7 @@ func (h *Handler) RebuildSpotify(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Rebuild Complete",
-				Message:  "Spotify rebuild complete",
-				IconType: "success",
-			},
-		})
+		h.publishManualSyncResult(userID, providers.TypeSpotify, res, "Rebuild Complete", "Spotify rebuild complete")
 	}()
 
 	h.Render(w, r, components.Toast("Rebuild Started", fmt.Sprintf("Deleted %d listens and %d playlists. Re-syncing...", deleted, deletedPlaylists), "warning"))
@@ -633,7 +611,8 @@ func (h *Handler) SyncLastFM(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeLastFM); err != nil {
+		res, err := h.Syncer.SyncProviderWithResult(ctx, freshUser, providers.TypeLastFM)
+		if err != nil {
 			h.Logger.Error("failed to sync lastfm", "error", err)
 			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
@@ -645,14 +624,7 @@ func (h *Handler) SyncLastFM(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Sync Complete",
-				Message:  "Last.fm sync complete",
-				IconType: "success",
-			},
-		})
+		h.publishManualSyncResult(userID, providers.TypeLastFM, res, "Sync Complete", "Last.fm sync complete")
 	}()
 
 	h.Render(w, r, components.Toast("Sync Started", "Syncing Last.fm data in the background...", "info"))
@@ -706,7 +678,8 @@ func (h *Handler) RebuildLastFM(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeLastFM); err != nil {
+		res, err := h.Syncer.SyncProviderWithResult(ctx, freshUser, providers.TypeLastFM)
+		if err != nil {
 			h.Logger.Error("failed to sync lastfm after rebuild", "error", err)
 			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
@@ -718,14 +691,7 @@ func (h *Handler) RebuildLastFM(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Rebuild Complete",
-				Message:  "Last.fm rebuild complete",
-				IconType: "success",
-			},
-		})
+		h.publishManualSyncResult(userID, providers.TypeLastFM, res, "Rebuild Complete", "Last.fm rebuild complete")
 	}()
 
 	h.Render(w, r, components.Toast("Rebuild Started", fmt.Sprintf("Deleted %d listens. Re-syncing...", deleted), "warning"))
@@ -755,7 +721,8 @@ func (h *Handler) SyncListenBrainz(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeListenBrainz); err != nil {
+		res, err := h.Syncer.SyncProviderWithResult(ctx, freshUser, providers.TypeListenBrainz)
+		if err != nil {
 			h.Logger.Error("failed to sync listenbrainz", "error", err)
 			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
@@ -767,14 +734,7 @@ func (h *Handler) SyncListenBrainz(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Sync Complete",
-				Message:  "ListenBrainz sync complete",
-				IconType: "success",
-			},
-		})
+		h.publishManualSyncResult(userID, providers.TypeListenBrainz, res, "Sync Complete", "ListenBrainz sync complete")
 	}()
 
 	h.Render(w, r, components.Toast("Sync Started", "Syncing ListenBrainz data in the background...", "info"))
@@ -828,7 +788,8 @@ func (h *Handler) RebuildListenBrainz(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeListenBrainz); err != nil {
+		res, err := h.Syncer.SyncProviderWithResult(ctx, freshUser, providers.TypeListenBrainz)
+		if err != nil {
 			h.Logger.Error("failed to sync listenbrainz after rebuild", "error", err)
 			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
@@ -840,14 +801,7 @@ func (h *Handler) RebuildListenBrainz(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.Bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Rebuild Complete",
-				Message:  "ListenBrainz rebuild complete",
-				IconType: "success",
-			},
-		})
+		h.publishManualSyncResult(userID, providers.TypeListenBrainz, res, "Rebuild Complete", "ListenBrainz rebuild complete")
 	}()
 
 	h.Render(w, r, components.Toast("Rebuild Started", fmt.Sprintf("Deleted %d listens. Re-syncing...", deleted), "warning"))
@@ -1323,6 +1277,142 @@ func (h *Handler) TaskSyncAlbumImages(w http.ResponseWriter, r *http.Request) {
 	h.Render(w, r, components.Toast("Task Started", "Syncing all album artwork in the background...", "info"))
 }
 
+// providerLabel maps a provider type to its user-facing display name.
+func providerLabel(t providers.Type) string {
+	switch t {
+	case providers.TypeNavidrome:
+		return "Navidrome"
+	case providers.TypeSpotify:
+		return "Spotify"
+	case providers.TypeLastFM:
+		return "Last.fm"
+	case providers.TypeListenBrainz:
+		return "ListenBrainz"
+	default:
+		return string(t)
+	}
+}
+
+// providerLabels joins provider display names for a toast message.
+func providerLabels(types []providers.Type) string {
+	labels := make([]string, 0, len(types))
+	for _, t := range types {
+		labels = append(labels, providerLabel(t))
+	}
+	return strings.Join(labels, ", ")
+}
+
+// formatRetryAfter renders a backoff retry delay for a toast, rounded to whole
+// seconds (e.g. "30s", "5m0s"). A sub-second delay is shown as "1s".
+func formatRetryAfter(d time.Duration) string {
+	if d < time.Second {
+		d = time.Second
+	}
+	return d.Round(time.Second).String()
+}
+
+// providerBackoffToast builds the toast shown when a manual sync did not run
+// because the provider is in a backoff window, so the UI reports the wait
+// instead of a misleading "sync complete".
+// Governing: SPEC error-handling REQ-BACK-004; issue #36 (sync UX)
+func providerBackoffToast(t providers.Type, retryAfter time.Duration) events.NotificationPayload {
+	return events.NotificationPayload{
+		Title:    "Sync Paused",
+		Message:  fmt.Sprintf("%s is backing off after repeated errors and will retry automatically in about %s.", providerLabel(t), formatRetryAfter(retryAfter)),
+		IconType: "warning",
+	}
+}
+
+// publishManualSyncResult emits the terminal toast for a single-provider manual
+// sync: a "backing off" notice when the provider was skipped for backoff (so it
+// no longer shows a misleading completion though nothing ran), otherwise the
+// provided success toast.
+// Governing: SPEC error-handling REQ-BACK-004; issue #36 (sync UX)
+func (h *Handler) publishManualSyncResult(userID int, t providers.Type, res *services.SyncResult, doneTitle, doneMsg string) {
+	if r, ok := res.BackingOffFor(t); ok {
+		h.Bus.Publish(userID, events.Event{
+			Type:    events.EventTypeNotification,
+			Payload: providerBackoffToast(t, r.RetryAfter),
+		})
+		return
+	}
+	h.Bus.Publish(userID, events.Event{
+		Type: events.EventTypeNotification,
+		Payload: events.NotificationPayload{
+			Title:    doneTitle,
+			Message:  doneMsg,
+			IconType: "success",
+		},
+	})
+}
+
+// resetSyncShouldEnrich reports whether the post-reset re-sync landed enough
+// data to run metadata enrichment. Enrichment runs on full or partial success;
+// only a total failure (nothing synced) skips it.
+// Governing: issue #36 (sync UX)
+func resetSyncShouldEnrich(res *services.SyncResult, syncErr error) bool {
+	if syncErr == nil {
+		return true
+	}
+	return len(res.Succeeded()) > 0
+}
+
+// resetSyncNotification selects the toast for the post-reset re-sync phase from
+// the aggregated sync result, the aggregated sync error, and the metadata
+// enrichment error. It distinguishes total failure ("Reset Failed"), partial
+// success or metadata failure ("Reset Partial", naming the failing providers),
+// and success ("Reset Complete", noting any providers that are backing off).
+// Governing: ADR-0020; issue #36 (sync UX)
+func resetSyncNotification(res *services.SyncResult, syncErr, metadataErr error) events.NotificationPayload {
+	failed := res.Failed()
+
+	// Total failure: nothing synced, so metadata enrichment was skipped too.
+	if syncErr != nil && len(res.Succeeded()) == 0 {
+		msg := "Re-sync after reset failed"
+		if len(failed) > 0 {
+			msg = fmt.Sprintf("Re-sync after reset failed for %s", providerLabels(failed))
+		}
+		return events.NotificationPayload{Title: "Reset Failed", Message: msg, IconType: "error"}
+	}
+
+	// Some data landed but metadata enrichment failed.
+	if metadataErr != nil {
+		return events.NotificationPayload{
+			Title:    "Reset Partial",
+			Message:  "Data re-synced but metadata enrichment failed",
+			IconType: "warning",
+		}
+	}
+
+	// Partial success: some providers failed, others synced (and were enriched).
+	if syncErr != nil {
+		return events.NotificationPayload{
+			Title:    "Reset Partial",
+			Message:  fmt.Sprintf("Data re-synced, but %s failed and were skipped", providerLabels(failed)),
+			IconType: "warning",
+		}
+	}
+
+	// Full success — note any providers that were backing off and did not run.
+	if bo := res.BackingOff(); len(bo) > 0 {
+		types := make([]providers.Type, 0, len(bo))
+		for _, p := range bo {
+			types = append(types, p.Provider)
+		}
+		return events.NotificationPayload{
+			Title:    "Reset Complete",
+			Message:  fmt.Sprintf("Data reset and re-sync complete. %s is backing off and will retry later.", providerLabels(types)),
+			IconType: "success",
+		}
+	}
+
+	return events.NotificationPayload{
+		Title:    "Reset Complete",
+		Message:  "Data reset and re-sync complete",
+		IconType: "success",
+	}
+}
+
 // TaskResetData deletes all user data and re-syncs
 func (h *Handler) TaskResetData(w http.ResponseWriter, r *http.Request) {
 	u := h.RequireUserRedirect(w, r)
@@ -1430,40 +1520,25 @@ func (h *Handler) TaskResetData(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := h.Syncer.Sync(bgCtx, freshUser); err != nil {
-			h.Logger.Error("failed to sync after reset", "error", err)
-			h.Bus.Publish(userID, events.Event{
-				Type: events.EventTypeNotification,
-				Payload: events.NotificationPayload{
-					Title:    "Reset Failed",
-					Message:  "Re-sync after reset failed",
-					IconType: "error",
-				},
-			})
-			return
+		// A partial re-sync (some providers failed) still enriches the data that
+		// landed and names the failing provider(s); only a total failure skips
+		// enrichment and reports "Reset Failed".
+		// Governing: ADR-0020; issue #36 (sync UX)
+		res, syncErr := h.Syncer.SyncWithResult(bgCtx, freshUser)
+		if syncErr != nil {
+			h.Logger.Error("failed to sync after reset", "error", syncErr)
 		}
-		// Also run metadata enrichment if available
-		if h.MetadataSvc != nil {
-			if err := h.MetadataSvc.SyncAll(bgCtx, freshUser); err != nil {
-				h.Logger.Error("failed to run metadata after reset", "error", err)
-				h.Bus.Publish(userID, events.Event{
-					Type: events.EventTypeNotification,
-					Payload: events.NotificationPayload{
-						Title:    "Reset Partial",
-						Message:  "Data re-synced but metadata enrichment failed",
-						IconType: "warning",
-					},
-				})
-				return
+
+		var metadataErr error
+		if resetSyncShouldEnrich(res, syncErr) && h.MetadataSvc != nil {
+			if metadataErr = h.MetadataSvc.SyncAll(bgCtx, freshUser); metadataErr != nil {
+				h.Logger.Error("failed to run metadata after reset", "error", metadataErr)
 			}
 		}
+
 		h.Bus.Publish(userID, events.Event{
-			Type: events.EventTypeNotification,
-			Payload: events.NotificationPayload{
-				Title:    "Reset Complete",
-				Message:  "Data reset and re-sync complete",
-				IconType: "success",
-			},
+			Type:    events.EventTypeNotification,
+			Payload: resetSyncNotification(res, syncErr, metadataErr),
 		})
 	}()
 

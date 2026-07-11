@@ -409,3 +409,77 @@ func TestSyncer_SyncProvider_SurfacesProviderError(t *testing.T) {
 	// A provider that is not active is a no-op, not an error.
 	require.NoError(t, syncer.SyncProvider(context.Background(), user, providers.TypeNavidrome))
 }
+
+// TestSyncer_SyncProviderWithResult_BackingOffSignal is the issue #36 part-3
+// acceptance test: after a provider trips its backoff window, a manual re-sync
+// returns no error (a backoff skip is not a failure) but the SyncResult reports
+// the provider as backing off with a positive retry-after, so the UI can say so
+// instead of showing a false "Sync Complete".
+// Governing: SPEC error-handling REQ-BACK-004; ADR-0020; issue #36 (sync UX)
+func TestSyncer_SyncProviderWithResult_BackingOffSignal(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
+
+	user, err := client.User.Create().SetUsername("testuser").Save(context.Background())
+	require.NoError(t, err)
+
+	failing := &mockProvider{
+		providerType: providers.TypeSpotify,
+		err:          fmt.Errorf("connection timeout"),
+	}
+	syncer.Register(mockFactory(failing))
+
+	// First run fails and trips the (retriable) backoff window.
+	_, err = syncer.SyncProviderWithResult(context.Background(), user, providers.TypeSpotify)
+	require.Error(t, err, "the first run must surface the provider failure")
+
+	// Second run: the provider is backoff-skipped — no error, but the result
+	// reports it is backing off with a positive retry-after.
+	res, err := syncer.SyncProviderWithResult(context.Background(), user, providers.TypeSpotify)
+	require.NoError(t, err, "a backoff skip is deliberate throttling, not a failure")
+	r, ok := res.BackingOffFor(providers.TypeSpotify)
+	require.True(t, ok, "the backoff-skipped provider must be reported as backing off")
+	assert.Greater(t, r.RetryAfter, time.Duration(0), "backing-off result must carry a retry-after")
+	assert.Empty(t, res.Failed(), "a backoff skip is not a failure")
+	assert.Empty(t, res.Succeeded(), "nothing actually synced")
+}
+
+// TestSyncer_SyncWithResult_PartialSuccess asserts that a full sync where one
+// provider fails and another succeeds returns a SyncResult that reports the
+// partial success and names the failing vs succeeding providers, which the
+// reset flow uses to still enrich the data that landed.
+// Governing: ADR-0020; SPEC listen-playlist-sync REQ-SYNC-011; issue #36 (sync UX)
+func TestSyncer_SyncWithResult_PartialSuccess(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, &config.Config{}, logger, bus, nil)
+
+	user, err := client.User.Create().SetUsername("testuser").Save(context.Background())
+	require.NoError(t, err)
+
+	failingSpotify := &mockProvider{
+		providerType: providers.TypeSpotify,
+		err:          fmt.Errorf("connection timeout"),
+	}
+	workingNavidrome := &mockProvider{
+		providerType: providers.TypeNavidrome,
+		tracks: []providers.Track{
+			{ID: "t1", Name: "Track One", Artist: "Artist One", PlayedAt: time.Now()},
+		},
+	}
+	syncer.Register(mockFactory(failingSpotify))
+	syncer.Register(mockFactory(workingNavidrome))
+
+	res, err := syncer.SyncWithResult(context.Background(), user)
+	require.Error(t, err, "partial failure must still surface an error")
+	assert.True(t, res.PartialSuccess(), "one provider succeeded and one failed")
+	assert.Equal(t, []providers.Type{providers.TypeSpotify}, res.Failed())
+	assert.Equal(t, []providers.Type{providers.TypeNavidrome}, res.Succeeded())
+}

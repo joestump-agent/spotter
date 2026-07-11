@@ -277,26 +277,75 @@ func (m *BackoffManager) RecordSuccess(key BackoffKey) {
 	state.NotifiedFatal = false
 }
 
-// ShouldSkip returns true if the provider should be skipped due to backoff or fatal state.
+// SkipKind classifies why a provider is being skipped this run. It lets
+// manual-sync callers tell deliberate throttling (backoff) apart from a hard
+// block (fatal) and a clear-to-sync state, so the UI can report a backing-off
+// provider instead of a misleading no-op success.
 // Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
-func (m *BackoffManager) ShouldSkip(key BackoffKey) (skip bool, reason string) {
+type SkipKind int
+
+const (
+	// SkipNone means the provider is clear to sync.
+	SkipNone SkipKind = iota
+	// SkipBackoff means the provider is in an exponential-backoff window and
+	// will be retried automatically once RetryAfter elapses.
+	SkipBackoff
+	// SkipFatal means the provider is blocked until the user takes corrective
+	// action (reconnect/disconnect).
+	SkipFatal
+)
+
+// SkipStatus describes whether a provider should be skipped, why, and — for a
+// backoff skip — how long remains until it may be retried.
+// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
+type SkipStatus struct {
+	Kind       SkipKind
+	Reason     string
+	RetryAfter time.Duration // > 0 only when Kind == SkipBackoff
+}
+
+// Skip reports whether the provider should be skipped this run.
+func (s SkipStatus) Skip() bool { return s.Kind != SkipNone }
+
+// SkipStatusFor returns the detailed skip status for a provider: whether to
+// skip, why, and (for a backoff skip) the time remaining until the next retry.
+// It is the richer companion to ShouldSkip so manual-sync callers can surface a
+// "backing off (retry in Xs)" outcome instead of a silent no-op.
+// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
+func (m *BackoffManager) SkipStatusFor(key BackoffKey) SkipStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	state, ok := m.states[key]
 	if !ok {
-		return false, ""
+		return SkipStatus{Kind: SkipNone}
 	}
 
 	if state.IsFatal {
-		return true, "fatal error requires user action"
+		return SkipStatus{Kind: SkipFatal, Reason: "fatal error requires user action"}
 	}
 
-	if !state.NextRetryAt.IsZero() && m.nowFunc().Before(state.NextRetryAt) {
-		return true, "backing off until " + state.NextRetryAt.Format(time.RFC3339)
+	if !state.NextRetryAt.IsZero() {
+		now := m.nowFunc()
+		if now.Before(state.NextRetryAt) {
+			return SkipStatus{
+				Kind:       SkipBackoff,
+				Reason:     "backing off until " + state.NextRetryAt.Format(time.RFC3339),
+				RetryAfter: state.NextRetryAt.Sub(now),
+			}
+		}
 	}
 
-	return false, ""
+	return SkipStatus{Kind: SkipNone}
+}
+
+// ShouldSkip returns true if the provider should be skipped due to backoff or
+// fatal state. It is a thin wrapper over SkipStatusFor retained for callers that
+// only need the boolean + reason.
+// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
+func (m *BackoffManager) ShouldSkip(key BackoffKey) (skip bool, reason string) {
+	st := m.SkipStatusFor(key)
+	return st.Skip(), st.Reason
 }
 
 // GetState returns a copy of the current backoff state for a key.

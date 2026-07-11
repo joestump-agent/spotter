@@ -268,6 +268,52 @@ func TestBackoffManager_ShouldSkipDuringBackoff(t *testing.T) {
 	assert.Contains(t, reason, "backing off")
 }
 
+// TestBackoffManager_SkipStatusFor_Backoff asserts that a retriable failure
+// yields a SkipBackoff status carrying a positive RetryAfter so callers can tell
+// the user how long the provider is backing off.
+// Governing: SPEC error-handling REQ-BACK-004; issue #36 (sync UX)
+func TestBackoffManager_SkipStatusFor_Backoff(t *testing.T) {
+	mgr := services.NewBackoffManager()
+	key := services.BackoffKey{UserID: 1, ProviderType: providers.TypeSpotify}
+
+	mgr.RecordFailure(key, fmt.Errorf("connection timeout"), services.ErrorClassRetriable)
+
+	ss := mgr.SkipStatusFor(key)
+	assert.True(t, ss.Skip())
+	assert.Equal(t, services.SkipBackoff, ss.Kind)
+	assert.Contains(t, ss.Reason, "backing off")
+	assert.Greater(t, ss.RetryAfter, time.Duration(0), "backoff skip must carry a positive retry-after")
+	// First failure schedules ~30s out; allow for jitter [0.75, 1.25].
+	assert.LessOrEqual(t, ss.RetryAfter, 40*time.Second)
+}
+
+// TestBackoffManager_SkipStatusFor_Fatal asserts that a fatal failure yields a
+// SkipFatal status with no retry-after (it is blocked until user action).
+// Governing: SPEC error-handling REQ-STATE-004; issue #36 (sync UX)
+func TestBackoffManager_SkipStatusFor_Fatal(t *testing.T) {
+	mgr := services.NewBackoffManager()
+	key := services.BackoffKey{UserID: 1, ProviderType: providers.TypeSpotify}
+
+	mgr.RecordFailure(key, services.NewHTTPStatusError(http.StatusUnauthorized, fmt.Errorf("revoked")), services.ErrorClassFatal)
+
+	ss := mgr.SkipStatusFor(key)
+	assert.True(t, ss.Skip())
+	assert.Equal(t, services.SkipFatal, ss.Kind)
+	assert.Zero(t, ss.RetryAfter, "fatal skip has no retry-after")
+}
+
+// TestBackoffManager_SkipStatusFor_Clear asserts that a healthy provider is not
+// skipped.
+func TestBackoffManager_SkipStatusFor_Clear(t *testing.T) {
+	mgr := services.NewBackoffManager()
+	key := services.BackoffKey{UserID: 1, ProviderType: providers.TypeSpotify}
+
+	ss := mgr.SkipStatusFor(key)
+	assert.False(t, ss.Skip())
+	assert.Equal(t, services.SkipNone, ss.Kind)
+	assert.Zero(t, ss.RetryAfter)
+}
+
 func TestBackoffManager_RecordSuccess_ResetsState(t *testing.T) {
 	mgr := services.NewBackoffManager()
 	key := services.BackoffKey{UserID: 1, ProviderType: providers.TypeSpotify}
