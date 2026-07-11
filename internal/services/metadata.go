@@ -663,8 +663,8 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 }
 
 // enrichArtist runs all enrichers on a single artist.
-// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
-// SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (enricher error logged, pipeline continues),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
 func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *ent.Artist, enricherList enrichers.List, stats map[enrichers.Type]*enricherPassStats) error {
 	s.logger.Debug("enriching artist", "name", art.Name)
@@ -1104,8 +1104,8 @@ func (s *MetadataService) SyncAllAlbumImages(ctx context.Context, u *ent.User) (
 	return syncedCount, nil
 }
 
-// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
-// SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (enricher error logged, pipeline continues),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
 func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent.Album, enricherList enrichers.List, stats map[enrichers.Type]*enricherPassStats) error {
 	s.logger.Debug("enriching album", "name", alb.Name)
@@ -1427,8 +1427,8 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 }
 
 // enrichTrack runs all enrichers on a single track.
-// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012 (enricher error logged, pipeline continues),
-// SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (partial results from earlier enrichers preserved),
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-013 (enricher error logged, pipeline continues),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (partial results from earlier enrichers preserved),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-020 (later enrichers do not overwrite non-empty fields from earlier ones)
 func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.Track, enricherList enrichers.List, stats map[enrichers.Type]*enricherPassStats) error {
 	s.logger.Debug("enriching track", "name", t.Name)
@@ -1617,7 +1617,7 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 
 // DownloadImages downloads all pending images to local storage.
 // Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (image URLs downloaded to local data/ directory),
-// SPEC metadata-enrichment-pipeline REQ-ENRICH-032 (local path stored on entity after download),
+// SPEC metadata-enrichment-pipeline REQ-ENRICH-030 (local path stored on entity after download),
 // SPEC metadata-enrichment-pipeline REQ-ENRICH-033 (failed downloads logged, do not fail enrichment)
 func (s *MetadataService) DownloadImages(ctx context.Context, u *ent.User) (int, error) {
 	s.logger.Info("downloading images", "username", u.Username)

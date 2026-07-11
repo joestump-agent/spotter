@@ -6,7 +6,7 @@ package services
 // and the SyncAll shell. Enrichers are stubbed via the registry so no network
 // is touched.
 //
-// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-010/012/013/020/040/050,
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-010/013/020/040/050,
 // AGENTS.md SRV-AI-001..SRV-AI-006 (AI enrichment selection independence)
 
 import (
@@ -299,7 +299,7 @@ func TestEnrichArtists_AISummaryOnlyDropsOutOfSelection(t *testing.T) {
 // TestEnrichArtists_EnricherErrorDoesNotAbortPass verifies that a failing
 // enricher is logged and skipped while later enrichers still run and the
 // artist still gets its LastEnrichedAt stamp.
-// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012, REQ-ENRICH-013
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-013
 func TestEnrichArtists_EnricherErrorDoesNotAbortPass(t *testing.T) {
 	svc := newOrchestratorTestService(t)
 	u := createTestUser(t, svc, "testuser")
@@ -355,7 +355,7 @@ func TestEnrichArtists_BatchLimit(t *testing.T) {
 // enrichAlbum's merge semantics: first enricher in order wins contested
 // fields, tags from all enrichers are merged and deduplicated, AI fields
 // stamp LastAiEnrichedAt, and a failing enricher does not abort the album.
-// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-012/013/020
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-013/020
 func TestEnrichAlbums_SelectionAndFieldMerge(t *testing.T) {
 	svc := newOrchestratorTestService(t)
 	u := createTestUser(t, svc, "testuser")
