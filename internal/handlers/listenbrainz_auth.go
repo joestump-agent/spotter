@@ -53,7 +53,9 @@ func (h *Handler) ListenBrainzConnect(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/auth/listenbrainz/connect?error=validation_failed", http.StatusSeeOther)
 		return
 	}
-	if !result.Valid {
+	if !result.Valid || result.UserName == "" {
+		// A valid:true response without a user_name would store an auth row
+		// with an empty label, so treat it as invalid too.
 		h.Logger.Warn("ListenBrainz token rejected", "username", u.Username, "message", result.Message)
 		http.Redirect(w, r, "/auth/listenbrainz/connect?error=invalid_token", http.StatusSeeOther)
 		return

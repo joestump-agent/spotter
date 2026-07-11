@@ -66,21 +66,10 @@ func (c LastFMConfig) LogValue() slog.Value {
 // Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
 // ListenBrainzConfig holds ListenBrainz API settings. Unlike Last.fm,
 // ListenBrainz uses a static per-user token (no API key/secret pair) that
-// users paste from listenbrainz.org/settings. Token is an optional
-// instance-level default; per-user tokens are stored encrypted in the
-// database (ADR-0006).
+// users paste from listenbrainz.org/settings; tokens are stored encrypted in
+// the database (ADR-0006), so there is no instance-level token setting.
 type ListenBrainzConfig struct {
 	APIURL string `mapstructure:"api_url"` // Base URL for the ListenBrainz API (default: https://api.listenbrainz.org)
-	Token  string `mapstructure:"token"`   // Optional default user token (users normally paste their own)
-}
-
-// Governing: SPEC user-authentication REQ "Config LogValue Sanitization"
-// LogValue redacts sensitive fields when logging ListenBrainzConfig via slog.
-func (c ListenBrainzConfig) LogValue() slog.Value {
-	return slog.GroupValue(
-		slog.String("api_url", c.APIURL),
-		slog.String("token", "[REDACTED]"),
-	)
 }
 
 // Governing: SPEC-0015 REQ "SMTP Configuration", ADR-0026
@@ -367,7 +356,6 @@ func Load() (*Config, error) {
 	v.SetDefault("lastfm.redirect_url", "http://127.0.0.1:8080/auth/lastfm/callback")
 	// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
 	v.SetDefault("listenbrainz.api_url", "https://api.listenbrainz.org")
-	v.SetDefault("listenbrainz.token", "")
 
 	// OpenAI defaults
 	v.SetDefault("openai.api_key", "")

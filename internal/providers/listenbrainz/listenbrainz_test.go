@@ -10,6 +10,7 @@ import (
 
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/httputil"
 	"spotter/internal/providers"
 
 	"github.com/stretchr/testify/assert"
@@ -106,7 +107,7 @@ func TestValidateToken(t *testing.T) {
 				assert.Equal(t, http.MethodGet, r.Method)
 				assert.Equal(t, "/1/validate-token", r.URL.Path)
 				assert.Equal(t, "Token good-token", r.Header.Get("Authorization"))
-				assert.Equal(t, userAgent, r.Header.Get("User-Agent"))
+				assert.Equal(t, httputil.UserAgent, r.Header.Get("User-Agent"))
 
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -301,14 +302,16 @@ func TestRateLimitWait(t *testing.T) {
 		name    string
 		headers map[string]string
 		want    time.Duration
+		wantOK  bool
 	}{
-		{name: "no headers defaults to 1s", headers: nil, want: time.Second},
-		{name: "Retry-After seconds", headers: map[string]string{"Retry-After": "2"}, want: 2 * time.Second},
-		{name: "X-RateLimit-Reset-In seconds", headers: map[string]string{"X-RateLimit-Reset-In": "3"}, want: 3 * time.Second},
-		{name: "Retry-After preferred over reset-in", headers: map[string]string{"Retry-After": "2", "X-RateLimit-Reset-In": "9"}, want: 2 * time.Second},
-		{name: "zero allowed", headers: map[string]string{"Retry-After": "0"}, want: 0},
-		{name: "capped at maxRateLimitWait", headers: map[string]string{"Retry-After": "3600"}, want: maxRateLimitWait},
-		{name: "garbage falls back to 1s", headers: map[string]string{"Retry-After": "soon"}, want: time.Second},
+		{name: "no headers defaults to 1s", headers: nil, want: time.Second, wantOK: true},
+		{name: "Retry-After seconds", headers: map[string]string{"Retry-After": "2"}, want: 2 * time.Second, wantOK: true},
+		{name: "X-RateLimit-Reset-In seconds", headers: map[string]string{"X-RateLimit-Reset-In": "3"}, want: 3 * time.Second, wantOK: true},
+		{name: "Retry-After preferred over reset-in", headers: map[string]string{"Retry-After": "2", "X-RateLimit-Reset-In": "9"}, want: 2 * time.Second, wantOK: true},
+		{name: "zero allowed", headers: map[string]string{"Retry-After": "0"}, want: 0, wantOK: true},
+		{name: "over cap aborts instead of retrying early", headers: map[string]string{"Retry-After": "3600"}, want: 0, wantOK: false},
+		{name: "over-cap reset-in aborts", headers: map[string]string{"X-RateLimit-Reset-In": "3600"}, want: 0, wantOK: false},
+		{name: "garbage falls back to 1s", headers: map[string]string{"Retry-After": "soon"}, want: time.Second, wantOK: true},
 	}
 
 	for _, tt := range tests {
@@ -317,13 +320,34 @@ func TestRateLimitWait(t *testing.T) {
 			for k, v := range tt.headers {
 				h.Set(k, v)
 			}
-			assert.Equal(t, tt.want, rateLimitWait(h))
+			got, ok := rateLimitWait(h)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantOK, ok)
 		})
 	}
+
+	t.Run("future http-date honored", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("Retry-After", time.Now().Add(10*time.Second).UTC().Format(http.TimeFormat))
+		got, ok := rateLimitWait(h)
+		assert.True(t, ok)
+		assert.InDelta(t, float64(10*time.Second), float64(got), float64(2*time.Second))
+	})
+
+	t.Run("far-future http-date aborts", func(t *testing.T) {
+		h := http.Header{}
+		h.Set("Retry-After", time.Now().Add(time.Hour).UTC().Format(http.TimeFormat))
+		_, ok := rateLimitWait(h)
+		assert.False(t, ok)
+	})
 }
 
 func TestInterfaceImplementation(t *testing.T) {
 	// The foundation provider only implements the base Provider interface;
-	// HistoryFetcher lands in a later PR.
+	// HistoryFetcher lands in a later PR. The negative assertion guards the
+	// syncer's type-assert skip: an accidental GetRecentListens stub would
+	// flip syncHistory from skip to live-call.
 	var _ providers.Provider = (*Provider)(nil)
+	_, isFetcher := interface{}(&Provider{}).(providers.HistoryFetcher)
+	assert.False(t, isFetcher, "foundation provider must not satisfy HistoryFetcher yet")
 }

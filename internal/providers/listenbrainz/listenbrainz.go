@@ -14,15 +14,13 @@ import (
 
 	"spotter/ent"
 	"spotter/internal/config"
+	"spotter/internal/httputil"
 	"spotter/internal/providers"
 )
 
 const (
 	defaultAPIBaseURL = "https://api.listenbrainz.org"
-	// Governing: SPEC music-provider-integration REQ-PROV-047, AGENTS.md
-	// "External API Etiquette" — descriptive User-Agent on every request.
-	userAgent  = "Spotter/1.0.0"
-	maxRetries = 3
+	maxRetries        = 3
 	// maxRateLimitWait caps how long a single 429 Retry-After pause may last
 	// so a misbehaving server cannot stall a sync worker indefinitely.
 	maxRateLimitWait = 30 * time.Second
@@ -75,7 +73,7 @@ func newProvider(logger *slog.Logger, cfg *config.Config) *Provider {
 	return &Provider{
 		logger:     l,
 		baseURL:    baseURL,
-		httpClient: http.DefaultClient,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -161,7 +159,8 @@ func (p *Provider) doRequest(ctx context.Context, method, path, token string, re
 		if err != nil {
 			return err
 		}
-		req.Header.Set("User-Agent", userAgent)
+		// Governing: AGENTS.md "External API Etiquette" — shared descriptive User-Agent.
+		req.Header.Set("User-Agent", httputil.UserAgent)
 		if token != "" {
 			// Governing: SPEC music-provider-integration REQ-PROV-046 (Authorization: Token <token>)
 			req.Header.Set("Authorization", "Token "+token)
@@ -193,9 +192,14 @@ func (p *Provider) doRequest(ctx context.Context, method, path, token string, re
 		lastErr = fmt.Errorf("listenbrainz api returned status %d: %s", resp.StatusCode, string(body))
 
 		if resp.StatusCode == http.StatusTooManyRequests {
-			// Governing: SPEC music-provider-integration REQ-PROV-047 — honor
-			// the server-advertised pause before retrying a 429.
-			wait, waitSet = rateLimitWait(resp.Header), true
+			// Governing: SPEC music-provider-integration REQ-PROV-047 — never
+			// retry before the server-advertised pause. If the advertised
+			// interval exceeds our cap, abort instead of retrying early.
+			w, ok := rateLimitWait(resp.Header)
+			if !ok {
+				return fmt.Errorf("listenbrainz api rate limited and advertised retry interval exceeds the %s cap: %w", maxRateLimitWait, lastErr)
+			}
+			wait, waitSet = w, true
 			p.logger.Warn("listenbrainz rate limit hit, backing off", "wait", wait, "path", path)
 			continue
 		}
@@ -217,20 +221,37 @@ func (p *Provider) closeBody(resp *http.Response) {
 }
 
 // rateLimitWait derives the pause ListenBrainz asks for from a 429 response.
-// It prefers Retry-After, falls back to the ListenBrainz-specific
-// X-RateLimit-Reset-In header, and defaults to 1s when neither is present.
+// It prefers Retry-After (delay-seconds or HTTP-date form), falls back to the
+// ListenBrainz-specific X-RateLimit-Reset-In header, and defaults to 1s when
+// neither is present or parseable. ok is false when the advertised interval
+// exceeds maxRateLimitWait: REQ-PROV-047 forbids retrying earlier than
+// advertised, so the caller must abort rather than retry with a capped wait.
 // Governing: SPEC music-provider-integration REQ-PROV-047
-func rateLimitWait(h http.Header) time.Duration {
-	for _, header := range []string{"Retry-After", "X-RateLimit-Reset-In"} {
-		if v := h.Get(header); v != "" {
-			if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
-				wait := time.Duration(secs) * time.Second
-				if wait > maxRateLimitWait {
-					wait = maxRateLimitWait
-				}
-				return wait
+func rateLimitWait(h http.Header) (wait time.Duration, ok bool) {
+	advertised := time.Duration(-1)
+	if v := h.Get("Retry-After"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
+			advertised = time.Duration(secs) * time.Second
+		} else if t, err := http.ParseTime(v); err == nil {
+			if d := time.Until(t); d > 0 {
+				advertised = d
+			} else {
+				advertised = 0
 			}
 		}
 	}
-	return time.Second
+	if advertised < 0 {
+		if v := h.Get("X-RateLimit-Reset-In"); v != "" {
+			if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
+				advertised = time.Duration(secs) * time.Second
+			}
+		}
+	}
+	if advertised < 0 {
+		return time.Second, true
+	}
+	if advertised > maxRateLimitWait {
+		return 0, false
+	}
+	return advertised, true
 }
