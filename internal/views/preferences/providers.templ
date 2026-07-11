@@ -139,6 +139,12 @@ templ Providers(user *ent.User, spotifyAuth *ent.SpotifyAuth, lastfmAuth *ent.La
 					ModalIDDisconnect:      "listenbrainz-disconnect-modal",
 					RebuildModalContent:    ListenBrainzRebuildModal(),
 					DisconnectModalContent: ListenBrainzDisconnectModal(),
+					ExtraContent: func() templ.Component {
+						if listenbrainzAuth != nil {
+							return ListenBrainzSubmitToggle(listenbrainzAuth.SubmitListens)
+						}
+						return nil
+					}(),
 				})
 			</div>
 		</div>
@@ -300,6 +306,26 @@ templ LastFMDisconnectModal() {
 			<button>close</button>
 		</form>
 	</dialog>
+}
+
+// ListenBrainzSubmitToggle renders the per-connection opt-in toggle for
+// pushing listens from other sources to ListenBrainz. Default OFF; toggling
+// posts immediately via htmx. An unchecked checkbox submits no value, so the
+// handler treats absence as "disabled".
+// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049)
+templ ListenBrainzSubmitToggle(enabled bool) {
+	<label class="label cursor-pointer justify-start gap-3 mt-3" title="Push listens from Navidrome, Spotify, and Last.fm to ListenBrainz">
+		<input
+			type="checkbox"
+			name="submit_listens"
+			class="toggle toggle-sm"
+			checked?={ enabled }
+			hx-post="/preferences/listenbrainz/submit-listens"
+			hx-target="#toasts"
+			hx-swap="beforeend"
+		/>
+		<span class="label-text text-sm">Submit listens from other services</span>
+	</label>
 }
 
 templ ListenBrainzDisconnectModal() {

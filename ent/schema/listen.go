@@ -28,6 +28,17 @@ func (Listen) Fields() []ent.Field {
 			Default("").
 			MaxLen(2048).
 			Comment("Provider-specific track ID used for de-duplication when available"),
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049)
+		// Nullable on purpose: Ent auto-migration adds a NULL-able column safely
+		// on databases that already contain rows (a NOT NULL column with only a
+		// Go-side default would fail to migrate — see the PR #39 regression in
+		// internal/database/backfill_timestamps_test.go). NULL means "not yet
+		// submitted"; repeat syncs only submit rows where this is NULL, making
+		// resubmission idempotent.
+		field.Time("submitted_to_listenbrainz_at").
+			Optional().
+			Nillable().
+			Comment("When this listen was pushed to ListenBrainz (NULL = never submitted)"),
 	}
 }
 

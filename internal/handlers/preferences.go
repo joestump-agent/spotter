@@ -273,6 +273,50 @@ func (h *Handler) DisconnectListenBrainz(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("HX-Redirect", "/preferences/providers")
 }
 
+// ToggleListenBrainzSubmitListens flips the opt-in flag that controls whether
+// listens from other sources are pushed to ListenBrainz during sync.
+// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049)
+func (h *Handler) ToggleListenBrainzSubmitListens(w http.ResponseWriter, r *http.Request) {
+	u := h.RequireUserRedirect(w, r)
+	if u == nil {
+		return
+	}
+
+	u, err := h.Client.User.Query().
+		Where(user.ID(u.ID)).
+		WithListenbrainzAuth().
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to query user", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	if u.Edges.ListenbrainzAuth == nil {
+		http.Error(w, "ListenBrainz is not connected", http.StatusBadRequest)
+		return
+	}
+
+	// An unchecked htmx checkbox submits no value, so absence means OFF.
+	enabled := r.FormValue("submit_listens") != ""
+	if err := h.Client.ListenBrainzAuth.UpdateOneID(u.Edges.ListenbrainzAuth.ID).
+		SetSubmitListens(enabled).
+		Exec(r.Context()); err != nil {
+		h.Logger.Error("failed to update listenbrainz submit_listens", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	h.Logger.Info("updated listenbrainz listen submission preference",
+		"username", u.Username, "submit_listens", enabled)
+
+	if enabled {
+		h.Render(w, r, components.Toast("Listen Submission Enabled",
+			"Listens from other services will be submitted to ListenBrainz on the next sync.", "success"))
+	} else {
+		h.Render(w, r, components.Toast("Listen Submission Disabled",
+			"Listens will no longer be submitted to ListenBrainz.", "info"))
+	}
+}
+
 // SyncNavidrome triggers a sync for Navidrome data
 // Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
 // Governing: SPEC listen-playlist-sync REQ-SYNC-050 (on-demand sync via HTTP), REQ-SYNC-051 (returns immediately, sync in background)

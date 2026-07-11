@@ -19,6 +19,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/events"
 	"spotter/internal/providers"
+	"spotter/internal/providers/listenbrainz"
 )
 
 // SyncNotifier handles email notifications for sync failures with cooldown.
@@ -118,6 +119,13 @@ func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 		s.logger.Error("failed to sync history", "username", refreshedUser.Username, "error", histErr)
 	}
 
+	// 1b. Listen submission: push listens that originated from other sources
+	// to providers that accept them (currently ListenBrainz, opt-in).
+	// Submission failures never fail the sync — unsubmitted listens are
+	// retried on the next run.
+	// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049)
+	s.submitListensToListenBrainz(ctx, refreshedUser, activeProviders)
+
 	// 2. Playlists
 	_, plErr := s.syncPlaylists(ctx, refreshedUser, activeProviders, stats)
 	if plErr != nil {
@@ -181,6 +189,11 @@ func (s *Syncer) SyncProvider(ctx context.Context, u *ent.User, providerType pro
 	if histErr != nil {
 		s.logger.Error("failed to sync history", "username", refreshedUser.Username, "provider", providerType, "error", histErr)
 	}
+
+	// 1b. Listen submission (no-op unless the target provider is a
+	// ListenSubmitter the user opted in to).
+	// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049)
+	s.submitListensToListenBrainz(ctx, refreshedUser, targetProviders)
 
 	// 2. Playlists
 	_, plErr := s.syncPlaylists(ctx, refreshedUser, targetProviders, nil)
@@ -443,6 +456,127 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 	}
 	// Governing: ADR-0020 — aggregated per-provider errors returned via errors.Join
 	return allAdded, errors.Join(errs...)
+}
+
+// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049)
+// submitListensToListenBrainz pushes listens that originated from OTHER
+// sources (navidrome/spotify/lastfm) to ListenBrainz for users who opted in.
+//
+//   - Opt-in gate: requires ListenbrainzAuth with submit_listens=true (default OFF).
+//   - Provenance: listens whose source is "listenbrainz" are NEVER submitted —
+//     echoing ListenBrainz's own listens back would duplicate them upstream.
+//   - Idempotence: only listens with submitted_to_listenbrainz_at IS NULL are
+//     submitted; the timestamp is set per chunk only AFTER ListenBrainz accepts
+//     it, so repeat syncs never resubmit and a failed chunk is retried next run.
+//   - Batching: chunks of listenbrainz.MaxListensPerRequest, so each persisted
+//     chunk maps to exactly one submit-listens API request.
+//   - Failure tolerance: errors are logged and recorded as a sync event, but
+//     never propagated — a submission failure must not fail the whole sync.
+func (s *Syncer) submitListensToListenBrainz(ctx context.Context, u *ent.User, activeProviders []providers.Provider) {
+	// Opt-in gate (default OFF).
+	auth := u.Edges.ListenbrainzAuth
+	if auth == nil || !auth.SubmitListens {
+		return
+	}
+
+	var submitter providers.ListenSubmitter
+	for _, p := range activeProviders {
+		if sub, ok := p.(providers.ListenSubmitter); ok && p.Type() == providers.TypeListenBrainz {
+			submitter = sub
+			break
+		}
+	}
+	if submitter == nil {
+		return
+	}
+
+	providerName := string(providers.TypeListenBrainz)
+
+	// Respect the shared ListenBrainz backoff window: if history sync just
+	// tripped it, do not hammer the API with submissions either.
+	// Governing: SPEC error-handling REQ-BACK-004
+	backoffKey := BackoffKey{UserID: u.ID, ProviderType: providers.TypeListenBrainz}
+	if skip, reason := s.backoff.ShouldSkip(backoffKey); skip {
+		s.logger.Info("skipping listen submission due to backoff", "provider", providerName, "reason", reason)
+		return
+	}
+
+	totalSubmitted := 0
+	for {
+		// Provenance filter + idempotence filter, oldest first so ListenBrainz
+		// receives history in playback order.
+		rows, err := s.client.Listen.Query().
+			Where(
+				listen.HasUserWith(user.ID(u.ID)),
+				listen.SourceNEQ(providerName),
+				listen.SubmittedToListenbrainzAtIsNil(),
+			).
+			Order(ent.Asc(listen.FieldPlayedAt)).
+			Limit(listenbrainz.MaxListensPerRequest).
+			All(ctx)
+		if err != nil {
+			s.logger.Error("failed to query listens for listenbrainz submission", "error", err)
+			return
+		}
+		if len(rows) == 0 {
+			break
+		}
+
+		tracks := make([]providers.Track, 0, len(rows))
+		ids := make([]int, 0, len(rows))
+		for _, row := range rows {
+			tracks = append(tracks, providers.Track{
+				ID:       row.ProviderTrackID,
+				Name:     row.TrackName,
+				Artist:   row.ArtistName,
+				Album:    row.AlbumName,
+				PlayedAt: row.PlayedAt,
+				URL:      row.URL,
+			})
+			ids = append(ids, row.ID)
+		}
+
+		if err := submitter.SubmitListens(ctx, tracks); err != nil {
+			// Do NOT mark the chunk as submitted: the NEXT sync retries it.
+			// Deliberately no backoff.RecordFailure here — submission is
+			// best-effort and must stay retryable on the very next run without
+			// blocking ListenBrainz history sync via shared backoff state.
+			s.logger.Error("failed to submit listens to listenbrainz",
+				"username", u.Username, "count", len(tracks), "error", err)
+			s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName,
+				fmt.Sprintf("Failed to submit %d listens to ListenBrainz: %v", len(tracks), err),
+				map[string]interface{}{"submitted": totalSubmitted, "failed_batch": len(tracks)})
+			return
+		}
+
+		// Mark the accepted chunk so repeat syncs never resubmit it.
+		now := time.Now()
+		if _, err := s.client.Listen.Update().
+			Where(listen.IDIn(ids...)).
+			SetSubmittedToListenbrainzAt(now).
+			Save(ctx); err != nil {
+			// The chunk WAS accepted upstream; failing to persist the flag
+			// means the next sync resubmits it, which ListenBrainz
+			// de-duplicates server-side (idempotent resubmission safety).
+			s.logger.Error("failed to mark listens as submitted to listenbrainz", "error", err)
+			return
+		}
+		totalSubmitted += len(rows)
+
+		if len(rows) < listenbrainz.MaxListensPerRequest {
+			break
+		}
+	}
+
+	if totalSubmitted > 0 {
+		s.logger.Info("submitted listens to listenbrainz", "username", u.Username, "count", totalSubmitted)
+		s.logEvent(ctx, u, syncevent.EventTypeSyncCompleted, providerName,
+			fmt.Sprintf("Submitted %d listens to ListenBrainz", totalSubmitted),
+			map[string]interface{}{"submitted": totalSubmitted})
+		// Governing: SPEC event-bus-sse REQ-BUS-012 (convenience Publish* methods)
+		s.bus.PublishNotification(u.ID, "Listens Submitted",
+			fmt.Sprintf("Submitted %d listens to ListenBrainz", totalSubmitted), "success")
+	}
 }
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-030 (fetch playlists from each PlaylistManager provider)

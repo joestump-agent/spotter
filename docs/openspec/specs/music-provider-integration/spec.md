@@ -111,6 +111,17 @@ type Track struct {
 
 **REQ-PROV-048** — The ListenBrainz provider MUST implement `HistoryFetcher`. `GetRecentListens` MUST use the `GET /1/user/{username}/listens` API endpoint with `count` set to at most 100, paginating backwards via `max_ts` until the `since` timestamp is reached or no more listens remain. Because `max_ts` is exclusive (the endpoint returns only listens with `listened_at` strictly less than it), the next page's `max_ts` MUST be set to the oldest `listened_at` of the previous page **plus one** — setting it to the oldest value itself would permanently drop listens that share the boundary timestamp but fell past the page cut. The resulting re-delivery of boundary-second listens is safe because listen persistence de-duplicates idempotently (SPEC listen-playlist-sync REQ-SYNC-021). Because the endpoint rejects requests combining `min_ts` and `max_ts`, the `since` bound MUST be enforced client-side: listens with `listened_at` strictly before `since` MUST NOT be delivered to the callback, while listens with `listened_at` equal to `since` MUST be delivered (the watermark second may hold ties that were never synced; idempotent persistence absorbs the duplicate). Pagination MUST terminate when a page is empty or shorter than the requested count, when a listen strictly before `since` appears, or when the new cursor fails to strictly decrease relative to the previous `max_ts` (e.g. 100 or more listens sharing one timestamp, or a misbehaving server re-serving a page) — the strict-decrease guard MUST end the fetch rather than loop.
 
+### ListenBrainz Listen Submission
+
+**REQ-PROV-049** — The ListenBrainz provider MUST implement `ListenSubmitter` and push listens to ListenBrainz via `POST /1/submit-listens` with `listen_type: "import"`, subject to ALL of the following rules:
+
+- **Opt-in (default OFF)**: Listens MUST only be submitted for users whose `ListenBrainzAuth.submit_listens` flag is true. The flag MUST default to false — both for new connections (the connect-form checkbox starts unchecked) and for pre-existing connections upgraded by migration (the column carries a constant SQL `DEFAULT false`). The user MUST be able to change the flag from the preferences UI without reconnecting.
+- **Batch limit**: A single `submit-listens` request MUST carry at most 1000 listens (the documented ListenBrainz `MAX_LISTENS_PER_REQUEST`). `SubmitListens` MUST split larger inputs into batches of at most this size. Retries of a failed request (429/5xx) MUST resend the complete request body, rebuilt per attempt, and MUST preserve the REQ-PROV-047 rate-limit semantics (never retry a 429 before the advertised interval).
+- **Provenance (never echo)**: Only listens that originated from OTHER sources (e.g. navidrome, spotify, lastfm) are eligible. A listen whose `source` is `listenbrainz` MUST NEVER be submitted back to ListenBrainz — echoing would duplicate the user's own history upstream.
+- **Idempotent resubmission safety**: The syncer MUST track submission state per listen via the nullable `Listen.submitted_to_listenbrainz_at` timestamp: only listens where it is NULL are submitted, and it is set only AFTER ListenBrainz accepts the containing batch. Repeat syncs therefore never resubmit accepted listens, and a listen resubmitted because the flag write failed (or a mixed-outcome run was retried) is safe because ListenBrainz de-duplicates identical listens (user + `listened_at` + track metadata) server-side.
+- **Failure tolerance**: A submission failure MUST NOT fail the surrounding sync run — it is logged and recorded as a sync event, the affected listens keep a NULL submission timestamp, and the next sync run retries them.
+- Listens that ListenBrainz cannot represent (missing track name, artist name, or played-at timestamp) MUST be skipped, not submitted.
+
 ### Navidrome Provider
 
 **REQ-PROV-050** — The Navidrome provider MUST implement `HistoryFetcher`, `PlaylistManager`, and `PlaylistSyncer`.
@@ -148,6 +159,11 @@ classDiagram
         +UpdatePlaylistTracks(ctx, remoteID, tracks) error
     }
 
+    class ListenSubmitter {
+        <<interface>>
+        +SubmitListens(ctx, listens) error
+    }
+
     class Authenticator {
         <<interface>>
         +SupportsAuth() bool
@@ -183,9 +199,16 @@ classDiagram
         +UpdatePlaylistTracks()
     }
 
+    class ListenBrainzProvider {
+        +Type() "listenbrainz"
+        +GetRecentListens()
+        +SubmitListens()
+    }
+
     Provider <|-- HistoryFetcher
     Provider <|-- PlaylistManager
     Provider <|-- PlaylistSyncer
+    Provider <|-- ListenSubmitter
     Provider <|-- Authenticator
 
     HistoryFetcher <|.. SpotifyProvider
@@ -198,6 +221,9 @@ classDiagram
     HistoryFetcher <|.. NavidromeProvider
     PlaylistManager <|.. NavidromeProvider
     PlaylistSyncer <|.. NavidromeProvider
+
+    HistoryFetcher <|.. ListenBrainzProvider
+    ListenSubmitter <|.. ListenBrainzProvider
 ```
 
 ---

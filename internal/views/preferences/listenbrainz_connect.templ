@@ -59,6 +59,13 @@ templ ListenBrainzConnect(user *ent.User, cfg *config.Config, errorCode string) 
 								required
 							/>
 						</label>
+						<!-- Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049): opt-in, default OFF -->
+						<label class="label cursor-pointer justify-start gap-3 mt-4">
+							<input type="checkbox" name="submit_listens" class="toggle toggle-sm"/>
+							<span class="label-text">
+								Submit listens from other connected services (Navidrome, Spotify, Last.fm) to ListenBrainz
+							</span>
+						</label>
 						<div class="card-actions justify-end mt-6">
 							<a href="/preferences/providers" class="btn btn-ghost">Cancel</a>
 							<button type="submit" class="btn" style="background-color: #EB743B; border-color: #EB743B; color: white;">

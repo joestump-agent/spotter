@@ -3,6 +3,7 @@
 package listenbrainz
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,8 +32,17 @@ const (
 	listensPageSize = 100
 )
 
-// Provider implements the ListenBrainz provider (auth + listen-history sync).
-// Scrobbling and playlist support arrive in later PRs.
+// MaxListensPerRequest is the maximum number of listens a single
+// POST /1/submit-listens request may carry. The ListenBrainz API documents
+// this limit as MAX_LISTENS_PER_REQUEST = 1000; larger payloads are rejected.
+// SubmitListens splits its input into batches of at most this size, and the
+// syncer uses the same constant so each persisted submission chunk maps to
+// exactly one API request.
+// Governing: SPEC music-provider-integration REQ-PROV-049 (batch limit)
+const MaxListensPerRequest = 1000
+
+// Provider implements the ListenBrainz provider (auth, listen-history sync,
+// and listen submission). Playlist support arrives in later PRs.
 type Provider struct {
 	logger     *slog.Logger
 	auth       *ent.ListenBrainzAuth
@@ -41,9 +51,11 @@ type Provider struct {
 }
 
 // Governing: SPEC music-provider-integration REQ-PROV-001 (base Provider interface),
-// REQ-PROV-048 (ListenBrainz implements HistoryFetcher)
+// REQ-PROV-048 (ListenBrainz implements HistoryFetcher),
+// REQ-PROV-049 (ListenBrainz implements ListenSubmitter)
 var _ providers.Provider = (*Provider)(nil)
 var _ providers.HistoryFetcher = (*Provider)(nil)
+var _ providers.ListenSubmitter = (*Provider)(nil)
 
 // Governing: ADR-0016 (pluggable provider factory), SPEC music-provider-integration REQ-PROV-011 (nil,nil if unconfigured),
 // REQ-PROV-012 (credentials from user.Edges.ListenbrainzAuth), REQ-PROV-045
@@ -128,7 +140,7 @@ func (p *Provider) ValidateToken(ctx context.Context, token string) (*ValidateTo
 	}
 
 	var result ValidateTokenResult
-	if err := p.doRequest(ctx, http.MethodGet, "/1/validate-token", token, &result); err != nil {
+	if err := p.doRequest(ctx, http.MethodGet, "/1/validate-token", token, nil, &result); err != nil {
 		return nil, fmt.Errorf("failed to validate listenbrainz token: %w", err)
 	}
 	return &result, nil
@@ -193,7 +205,7 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 		}
 
 		var result listensResponse
-		if err := p.doRequest(ctx, http.MethodGet, basePath+"?"+query.Encode(), p.auth.Token, &result); err != nil {
+		if err := p.doRequest(ctx, http.MethodGet, basePath+"?"+query.Encode(), p.auth.Token, nil, &result); err != nil {
 			return fmt.Errorf("failed to fetch listenbrainz listens: %w", err)
 		}
 
@@ -289,13 +301,105 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 	}
 }
 
+// submitAdditionalInfo carries optional per-listen metadata for submission.
+type submitAdditionalInfo struct {
+	DurationMs       int    `json:"duration_ms,omitempty"`
+	ISRC             string `json:"isrc,omitempty"`
+	OriginURL        string `json:"origin_url,omitempty"`
+	SubmissionClient string `json:"submission_client,omitempty"`
+}
+
+// submitTrackMetadata mirrors the track_metadata object of the
+// POST /1/submit-listens payload.
+type submitTrackMetadata struct {
+	ArtistName     string                `json:"artist_name"`
+	TrackName      string                `json:"track_name"`
+	ReleaseName    string                `json:"release_name,omitempty"`
+	AdditionalInfo *submitAdditionalInfo `json:"additional_info,omitempty"`
+}
+
+// submitListen is one element of the submit-listens payload array.
+type submitListen struct {
+	ListenedAt    int64               `json:"listened_at"`
+	TrackMetadata submitTrackMetadata `json:"track_metadata"`
+}
+
+// submitListensRequest is the POST /1/submit-listens request body.
+type submitListensRequest struct {
+	ListenType string         `json:"listen_type"`
+	Payload    []submitListen `json:"payload"`
+}
+
+// Governing: SPEC music-provider-integration REQ-PROV-049 (submit-listens with
+// listen_type "import", batches of at most MaxListensPerRequest)
+// SubmitListens pushes listens that originated from other sources to
+// ListenBrainz via POST /1/submit-listens. The input is split into batches of
+// at most MaxListensPerRequest listens; listen_type "import" is used because
+// the listens are historical plays, not live "playing now" events. Listens
+// without a track name, artist name, or played-at timestamp are skipped
+// (ListenBrainz requires all three). An error is returned as soon as a batch
+// fails; already-accepted batches stay accepted, and re-submitting them later
+// is safe because ListenBrainz de-duplicates identical listens server-side.
+func (p *Provider) SubmitListens(ctx context.Context, listens []providers.Track) error {
+	// Filter out listens ListenBrainz cannot represent before batching so
+	// batch boundaries line up with what is actually sent.
+	payload := make([]submitListen, 0, len(listens))
+	for _, l := range listens {
+		if l.Name == "" || l.Artist == "" || l.PlayedAt.IsZero() {
+			p.logger.Warn("skipping listen not submittable to listenbrainz",
+				"track", l.Name, "artist", l.Artist, "played_at", l.PlayedAt)
+			continue
+		}
+		payload = append(payload, submitListen{
+			ListenedAt: l.PlayedAt.Unix(),
+			TrackMetadata: submitTrackMetadata{
+				ArtistName:  l.Artist,
+				TrackName:   l.Name,
+				ReleaseName: l.Album,
+				AdditionalInfo: &submitAdditionalInfo{
+					DurationMs:       l.DurationMs,
+					ISRC:             l.ISRC,
+					OriginURL:        l.URL,
+					SubmissionClient: httputil.UserAgent,
+				},
+			},
+		})
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+
+	p.logger.Info("submitting listens to listenbrainz", "username", p.auth.Username, "count", len(payload))
+
+	for start := 0; start < len(payload); start += MaxListensPerRequest {
+		end := start + MaxListensPerRequest
+		if end > len(payload) {
+			end = len(payload)
+		}
+		body, err := json.Marshal(submitListensRequest{
+			ListenType: "import",
+			Payload:    payload[start:end],
+		})
+		if err != nil {
+			return fmt.Errorf("failed to encode listenbrainz submit payload: %w", err)
+		}
+		if err := p.doRequest(ctx, http.MethodPost, "/1/submit-listens", p.auth.Token, body, nil); err != nil {
+			return fmt.Errorf("failed to submit listens to listenbrainz: %w", err)
+		}
+	}
+	return nil
+}
+
 // doRequest performs an authenticated GET/POST against the ListenBrainz API
-// with retry on transient failures.
+// with retry on transient failures. body is the JSON request body (nil for
+// GET); it is kept as a byte slice and a fresh bytes.Reader is built on EVERY
+// attempt, so retries after a 429 or 5xx resend the complete body instead of
+// an already-drained reader.
 // Governing: SPEC music-provider-integration REQ-PROV-047, AGENTS.md "External
 // API Etiquette" — every request carries a descriptive User-Agent, and 429
 // responses are honored by waiting the advertised Retry-After (or
 // X-RateLimit-Reset-In) interval before retrying.
-func (p *Provider) doRequest(ctx context.Context, method, path, token string, result interface{}) error {
+func (p *Provider) doRequest(ctx context.Context, method, path, token string, body []byte, result interface{}) error {
 	var lastErr error
 	var wait time.Duration
 	var waitSet bool
@@ -317,12 +421,21 @@ func (p *Provider) doRequest(ctx context.Context, method, path, token string, re
 		}
 		wait, waitSet = 0, false
 
-		req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, nil)
+		// Rebuild the body reader per attempt: an io.Reader consumed by a
+		// failed attempt cannot be resent, so each retry gets a fresh one.
+		var bodyReader io.Reader
+		if body != nil {
+			bodyReader = bytes.NewReader(body)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, bodyReader)
 		if err != nil {
 			return err
 		}
 		// Governing: AGENTS.md "External API Etiquette" — shared descriptive User-Agent.
 		req.Header.Set("User-Agent", httputil.UserAgent)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
 		if token != "" {
 			// Governing: SPEC music-provider-integration REQ-PROV-046 (Authorization: Token <token>)
 			req.Header.Set("Authorization", "Token "+token)

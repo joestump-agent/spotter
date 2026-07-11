@@ -80,6 +80,26 @@ type PlaylistManager interface {
 	CreatePlaylist(ctx context.Context, name, description string, tracks []Track) error
 }
 
+// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049)
+// ListenSubmitter is implemented by providers that can receive listens
+// (scrobbles) that originated from OTHER sources. It is the write-side
+// counterpart of HistoryFetcher and reuses the normalized Track struct:
+// Track.PlayedAt carries the listen timestamp, so one Track value equals one
+// listen event. Implementations MUST split large slices into API-sized
+// batches internally, and callers may pass any number of listens.
+// Submissions must be idempotent from the caller's perspective: re-submitting
+// a listen that was already submitted must not create duplicates on the
+// provider (ListenBrainz de-duplicates by user + listened_at + track metadata).
+type ListenSubmitter interface {
+	Provider
+	// SubmitListens pushes the given listens to this provider. Listens
+	// missing a name, artist, or played-at timestamp are skipped (the
+	// provider cannot represent them). An error means at least one batch
+	// was not accepted; the caller should retry the unsubmitted listens on
+	// a later sync rather than failing the overall sync.
+	SubmitListens(ctx context.Context, listens []Track) error
+}
+
 // SyncPlaylistRequest contains the data needed to sync a playlist to a provider.
 type SyncPlaylistRequest struct {
 	Name        string  // Playlist name

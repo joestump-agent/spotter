@@ -72,6 +72,11 @@ func (h *Handler) ListenBrainzConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen
+	// Submission" (REQ-PROV-049) — submission is opt-in via the connect-form
+	// checkbox and defaults OFF (an unchecked checkbox submits no value).
+	submitListens := r.FormValue("submit_listens") != ""
+
 	// Governing: ADR-0006 — the token is encrypted at rest by
 	// encryptListenBrainzAuthHook registered in internal/database/hooks.go.
 	if u.Edges.ListenbrainzAuth != nil {
@@ -79,6 +84,7 @@ func (h *Handler) ListenBrainzConnect(w http.ResponseWriter, r *http.Request) {
 		_, err = h.Client.ListenBrainzAuth.UpdateOneID(u.Edges.ListenbrainzAuth.ID).
 			SetToken(token).
 			SetUsername(result.UserName).
+			SetSubmitListens(submitListens).
 			Save(r.Context())
 	} else {
 		// Create new auth
@@ -86,6 +92,7 @@ func (h *Handler) ListenBrainzConnect(w http.ResponseWriter, r *http.Request) {
 			SetUser(u).
 			SetToken(token).
 			SetUsername(result.UserName).
+			SetSubmitListens(submitListens).
 			Save(r.Context())
 	}
 
