@@ -141,3 +141,56 @@ func TestUpsertGeneratedPlaylist_RegenerationPreservesCatalogLinks(t *testing.T)
 	_, err = syncer.UpsertGeneratedPlaylist(ctx, user, providers.TypeListenBrainz, providers.Playlist{ID: "lb-radio:x"})
 	assert.ErrorContains(t, err, "name")
 }
+
+// Governing: ADR-0030, SPEC music-provider-integration REQ-PROV-053 —
+// distinct LB Radio prompts MUST produce distinct playlists. The
+// distinctness is derived from the prompt via RadioRemoteID (lb-radio:<prompt>),
+// so two prompts that differ only by case must not collapse into one row.
+// This locks the requirement directly: the sibling regeneration test proves
+// the SAME prompt updates in place, and this proves DIFFERENT prompts do not.
+// Without it, a future prompt-normalization refactor (e.g. lowercasing in
+// RadioRemoteID) could silently merge case-variant prompts undetected — every
+// other prompt in these tests is already lowercase.
+func TestUpsertGeneratedPlaylist_DistinctPromptsCreateDistinctPlaylists(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent_lb_radio_distinct?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	syncer := services.NewSyncer(client, &config.Config{}, logger, events.NewBus(), nil)
+
+	ctx := context.Background()
+	user := createTestUser(t, client)
+
+	// Case-variant prompts: identical apart from letter case. RadioRemoteID
+	// trims but does not fold case, so these are genuinely different prompts.
+	const (
+		promptUpper = "tag:(Soul)"
+		promptLower = "tag:(soul)"
+	)
+	require.NotEqual(t, listenbrainz.RadioRemoteID(promptUpper), listenbrainz.RadioRemoteID(promptLower),
+		"case-variant prompts must derive distinct remote IDs")
+
+	first, err := syncer.UpsertGeneratedPlaylist(ctx, user, providers.TypeListenBrainz, providers.Playlist{
+		ID:         listenbrainz.RadioRemoteID(promptUpper),
+		Name:       "LB Radio: " + promptUpper,
+		TrackCount: 1,
+		Tracks:     []providers.Track{{Name: "Cold Sweat", Artist: "James Brown"}},
+	})
+	require.NoError(t, err)
+
+	second, err := syncer.UpsertGeneratedPlaylist(ctx, user, providers.TypeListenBrainz, providers.Playlist{
+		ID:         listenbrainz.RadioRemoteID(promptLower),
+		Name:       "LB Radio: " + promptLower,
+		TrackCount: 1,
+		Tracks:     []providers.Track{{Name: "Superstition", Artist: "Stevie Wonder"}},
+	})
+	require.NoError(t, err)
+
+	assert.NotEqual(t, first.ID, second.ID, "distinct prompts must create distinct playlist rows")
+	assert.NotEqual(t, first.RemoteID, second.RemoteID, "distinct prompts must persist distinct remote IDs")
+
+	count, err := client.User.QueryPlaylists(user).
+		Where(playlist.RemoteIDHasPrefix(providers.ListenBrainzRadioRemoteIDPrefix)).
+		Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count, "two distinct prompts must leave two lb-radio: rows for the user")
+}
