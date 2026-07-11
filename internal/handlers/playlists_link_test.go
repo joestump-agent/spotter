@@ -162,19 +162,42 @@ func newPlaylistRequest(method, target string, body string, u *ent.User, params 
 	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 }
 
-// waitForPlaylist polls the playlist until cond returns true or the timeout hits.
-func waitForPlaylist(t *testing.T, client *ent.Client, playlistID int, cond func(*ent.Playlist) bool, msg string) *ent.Playlist {
+// awaitNotification waits for the bus notification with the given title.
+//
+// The PlaylistSyncService publishes its terminal notification ("Playlist
+// Synced", "Playlist Removed", "Playlist Sync Failed") AFTER its final
+// database write, so receiving it is a deterministic signal that the
+// handler's background goroutine has finished mutating state — no polling of
+// DB or mock state that races with the goroutine. Subscribe BEFORE invoking
+// the handler so the event cannot be missed. An "error" notification arriving
+// first fails the test immediately with the async error message.
+func awaitNotification(t *testing.T, ch <-chan events.Event, title string) {
 	t.Helper()
-	var pl *ent.Playlist
-	require.Eventually(t, func() bool {
-		var err error
-		pl, err = client.Playlist.Get(context.Background(), playlistID)
-		if err != nil {
-			return false
+	deadline := time.After(30 * time.Second)
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				t.Fatalf("event bus subscription closed while waiting for notification %q", title)
+			}
+			if ev.Type != events.EventTypeNotification {
+				continue
+			}
+			payload, isNotification := ev.Payload.(events.NotificationPayload)
+			if !isNotification {
+				continue
+			}
+			if payload.Title == title {
+				return
+			}
+			if payload.IconType == "error" {
+				t.Fatalf("async operation failed while waiting for %q: %s: %s",
+					title, payload.Title, payload.Message)
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for notification %q", title)
 		}
-		return cond(pl)
-	}, 5*time.Second, 25*time.Millisecond, msg)
-	return pl
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +337,11 @@ func TestResolveNavidromeConflict_Pair_HappyPath(t *testing.T) {
 		Save(context.Background())
 	require.NoError(t, err)
 
+	// Subscribe before invoking the handler so the async completion event
+	// cannot be missed.
+	notifications, unsubscribe := h.Bus.Subscribe(u.ID)
+	defer unsubscribe()
+
 	req := newPlaylistRequest("POST", "/playlists/"+strconv.Itoa(pl.ID)+"/resolve-navidrome-conflict",
 		"action=pair&existing_id=nav-shared-77", u, map[string]string{"id": strconv.Itoa(pl.ID)})
 	w := httptest.NewRecorder()
@@ -327,16 +355,16 @@ func TestResolveNavidromeConflict_Pair_HappyPath(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	assert.Contains(t, string(body), `id="playlist-sync-dropdown"`)
 
-	// Sync was enabled synchronously
+	// Pairing runs async: the "Playlist Synced" notification is published after
+	// the final DB write, so state below is settled once it arrives.
+	awaitNotification(t, notifications, "Playlist Synced")
+
 	updatedPl, err := client.Playlist.Get(context.Background(), pl.ID)
 	require.NoError(t, err)
 	assert.True(t, updatedPl.SyncToNavidrome)
-
-	// Pairing runs async: wait for navidrome_playlist_id and the immediate sync
-	updatedPl = waitForPlaylist(t, client, pl.ID, func(p *ent.Playlist) bool {
-		return p.NavidromePlaylistID == "nav-shared-77" && p.LastSyncedAt != nil
-	}, "pairing must set navidrome_playlist_id and trigger an immediate sync")
-	assert.Equal(t, "nav-shared-77", updatedPl.NavidromePlaylistID)
+	assert.Equal(t, "nav-shared-77", updatedPl.NavidromePlaylistID,
+		"pairing must set navidrome_playlist_id")
+	assert.NotNil(t, updatedPl.LastSyncedAt, "pairing must trigger an immediate sync")
 	assert.Equal(t, "nav-shared-77", mock.UpdatedID(), "immediate sync must UPDATE the paired playlist")
 
 	// The Navidrome-source duplicate was deleted
@@ -360,6 +388,11 @@ func TestResolveNavidromeConflict_NewName_HappyPath(t *testing.T) {
 		Save(context.Background())
 	require.NoError(t, err)
 
+	// Subscribe before invoking the handler so the async completion event
+	// cannot be missed.
+	notifications, unsubscribe := h.Bus.Subscribe(u.ID)
+	defer unsubscribe()
+
 	req := newPlaylistRequest("POST", "/playlists/"+strconv.Itoa(pl.ID)+"/resolve-navidrome-conflict",
 		"action=new-name&name=Custom+Navidrome+Name", u, map[string]string{"id": strconv.Itoa(pl.ID)})
 	w := httptest.NewRecorder()
@@ -372,16 +405,16 @@ func TestResolveNavidromeConflict_NewName_HappyPath(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	assert.Contains(t, string(body), `id="playlist-sync-dropdown"`)
 
-	// Custom name saved and sync enabled synchronously
+	// Wait for the async sync to finish so the goroutine doesn't outlive the
+	// test DB; the notification is published after the final DB write.
+	awaitNotification(t, notifications, "Playlist Synced")
+
+	// Custom name saved, sync enabled, and the async sync completed
 	updatedPl, err := client.Playlist.Get(context.Background(), pl.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Custom Navidrome Name", updatedPl.NavidromePlaylistName)
 	assert.True(t, updatedPl.SyncToNavidrome)
-
-	// Wait for the async sync to finish so the goroutine doesn't outlive the test DB
-	waitForPlaylist(t, client, pl.ID, func(p *ent.Playlist) bool {
-		return p.LastSyncedAt != nil
-	}, "sync must run after name resolution")
+	assert.NotNil(t, updatedPl.LastSyncedAt, "sync must run after name resolution")
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +466,11 @@ func TestTogglePlaylistSync_DisableSync_DeleteOverride(t *testing.T) {
 		Save(context.Background())
 	require.NoError(t, err)
 
+	// Subscribe before invoking the handler so the async completion event
+	// cannot be missed.
+	notifications, unsubscribe := h.Bus.Subscribe(u.ID)
+	defer unsubscribe()
+
 	req := newPlaylistRequest("POST", "/playlists/"+strconv.Itoa(pl.ID)+"/toggle-sync",
 		"navidrome_action=delete", u, map[string]string{"id": strconv.Itoa(pl.ID)})
 	w := httptest.NewRecorder()
@@ -441,11 +479,15 @@ func TestTogglePlaylistSync_DisableSync_DeleteOverride(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
 
-	// Removal runs async: wait for the Navidrome playlist to be deleted and
-	// the pairing info cleared despite the config default of "keep".
-	waitForPlaylist(t, client, pl.ID, func(p *ent.Playlist) bool {
-		return !p.SyncToNavidrome && p.NavidromePlaylistID == ""
-	}, "explicit delete must remove the Navidrome playlist even when delete_on_unsync=false")
+	// Removal runs async: the "Playlist Removed" notification is published
+	// after the pairing info is cleared in the DB.
+	awaitNotification(t, notifications, "Playlist Removed")
+
+	updatedPl, err := client.Playlist.Get(context.Background(), pl.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedPl.SyncToNavidrome)
+	assert.Empty(t, updatedPl.NavidromePlaylistID,
+		"explicit delete must remove the Navidrome playlist even when delete_on_unsync=false")
 	assert.Equal(t, "nav-delete-override", mock.DeletedID())
 }
 
@@ -705,6 +747,11 @@ func TestLinkWithNavidrome_HappyPath(t *testing.T) {
 		Save(context.Background())
 	require.NoError(t, err)
 
+	// Subscribe before invoking the handler so the async completion event
+	// cannot be missed.
+	notifications, unsubscribe := h.Bus.Subscribe(u.ID)
+	defer unsubscribe()
+
 	req := newPlaylistRequest("POST", "/playlists/"+strconv.Itoa(pl.ID)+"/link/nav-arbitrary-99", "", u,
 		map[string]string{"id": strconv.Itoa(pl.ID), "targetId": "nav-arbitrary-99"})
 	w := httptest.NewRecorder()
@@ -718,15 +765,15 @@ func TestLinkWithNavidrome_HappyPath(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	assert.Contains(t, string(body), `id="playlist-sync-dropdown"`)
 
-	// Sync enabled synchronously
+	// Pairing runs async: the "Playlist Synced" notification is published
+	// after the final DB write, so state below is settled once it arrives.
+	awaitNotification(t, notifications, "Playlist Synced")
+
 	updatedPl, err := client.Playlist.Get(context.Background(), pl.ID)
 	require.NoError(t, err)
 	assert.True(t, updatedPl.SyncToNavidrome)
-
-	// Pairing runs async: wait for the pairing + immediate sync
-	updatedPl = waitForPlaylist(t, client, pl.ID, func(p *ent.Playlist) bool {
-		return p.NavidromePlaylistID == "nav-arbitrary-99" && p.LastSyncedAt != nil
-	}, "linking must pair with the chosen Navidrome playlist and trigger an immediate sync")
-	assert.Equal(t, "nav-arbitrary-99", updatedPl.NavidromePlaylistID)
+	assert.Equal(t, "nav-arbitrary-99", updatedPl.NavidromePlaylistID,
+		"linking must pair with the chosen Navidrome playlist")
+	assert.NotNil(t, updatedPl.LastSyncedAt, "linking must trigger an immediate sync")
 	assert.Equal(t, "nav-arbitrary-99", mock.UpdatedID(), "immediate sync must UPDATE the linked playlist")
 }
