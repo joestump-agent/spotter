@@ -20,6 +20,7 @@ import (
 	"spotter/internal/handlers"
 	"spotter/internal/services"
 
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/go-chi/chi/v5"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
@@ -32,8 +33,17 @@ func setupTestDB(t testing.TB) *ent.Client {
 	// Use a unique DB name per test to prevent cross-test SQLite write-lock races
 	// when background goroutines (e.g. the syncer) outlive a test's cleanup.
 	dbName := strings.NewReplacer("/", "_", " ", "_", "=", "_").Replace(t.Name())
-	client, err := ent.Open("sqlite3", "file:"+dbName+"?mode=memory&cache=shared&_fk=1")
+	drv, err := entsql.Open("sqlite3", "file:"+dbName+"?mode=memory&cache=shared&_fk=1")
 	require.NoError(t, err)
+	// SQLite shared-cache mode uses table-level locks and returns SQLITE_LOCKED
+	// ("database table is locked") IMMEDIATELY on cross-connection contention —
+	// _busy_timeout does not apply to shared-cache locks. Handlers dispatch
+	// sync/pair work in background goroutines that write on one pooled
+	// connection while the test (or the handler's own response path) reads on
+	// another, which makes those errors a coin flip. Cap the pool at a single
+	// connection so all queries on this client serialize instead of erroring.
+	drv.DB().SetMaxOpenConns(1)
+	client := ent.NewClient(ent.Driver(drv))
 	require.NoError(t, client.Schema.Create(context.Background()))
 	t.Cleanup(func() {
 		client.Close()

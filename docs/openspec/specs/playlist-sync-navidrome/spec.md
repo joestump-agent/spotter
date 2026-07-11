@@ -1,8 +1,8 @@
 # Playlist Sync Service with Fuzzy Track Matching and Navidrome Write-Back
 
 **Status:** accepted
-**Version:** 0.1.0
-**Last Updated:** 2026-02-21
+**Version:** 0.2.0
+**Last Updated:** 2026-07-10
 **Governing ADRs:** ADR-0005 (Navidrome auth), ADR-0007 (event bus)
 
 ## Overview
@@ -87,6 +87,14 @@ Out of scope: Provider history fetch (see Listen & Playlist Sync spec), Vibes ge
 
 **REQ-PLSYNC-032** — If `playlist_sync.delete_on_unsync=true` (default `false`), when a user disables sync on a playlist, the system MUST call `DeletePlaylist` to remove it from Navidrome.
 
+**REQ-PLSYNC-033** — The toggle-sync endpoint MUST accept an optional `navidrome_action` parameter when disabling sync, with the values `keep` or `delete`:
+- `keep` — the Navidrome playlist MUST be kept and the pairing info (`navidrome_playlist_id`) MUST be retained, regardless of `playlist_sync.delete_on_unsync`
+- `delete` — the Navidrome playlist MUST be deleted and the sync info cleared, regardless of `playlist_sync.delete_on_unsync`
+- absent — the system MUST fall back to the `playlist_sync.delete_on_unsync` config default (backward-compatible behavior)
+- any other value MUST be rejected with HTTP 400 and MUST NOT change the sync state
+
+The disable-sync UI SHOULD present both choices ("Disable sync & keep Navidrome playlist" / "Disable sync & delete Navidrome playlist") explicitly.
+
 ### Scheduled Sync
 
 **REQ-PLSYNC-040** — The background scheduler MUST sync all playlists with `sync_to_navidrome=true` for all users on a configurable interval (`playlist_sync.sync_interval`, default `1h`).
@@ -101,6 +109,9 @@ Out of scope: Provider history fetch (see Listen & Playlist Sync spec), Vibes ge
 - `POST /playlists/{id}/rebuild-sync` — force re-sync (re-match all tracks, update Navidrome)
 - `GET /playlists/{id}/sync-status` — poll-able status endpoint for HTMX partial updates
 - `GET /playlists/{id}/sync-progress` — progress display during active sync
+- `GET /playlists/{id}/link` — list candidate Navidrome playlists for linking (see REQ-PLSYNC-071)
+- `POST /playlists/{id}/link/{targetId}` — link the playlist to an arbitrary Navidrome playlist (see REQ-PLSYNC-072)
+- `GET /playlists/{id}/sync-dropdown` — re-render the sync dropdown partial (used by the link picker's Cancel action, see REQ-PLSYNC-071)
 
 **REQ-PLSYNC-051** — All on-demand sync operations MUST run in background goroutines. The HTTP response MUST be returned before sync completes.
 
@@ -112,6 +123,24 @@ Out of scope: Provider history fetch (see Listen & Playlist Sync spec), Vibes ge
 - matched count, unmatched count, match rate
 - final status
 - any error message
+
+### Playlist Pairing and Linking
+
+**REQ-PLSYNC-070** — `PairWithNavidrome(ctx, playlistID, navidromeRemoteID)` MUST:
+1. Set `navidrome_playlist_id` on the Spotter playlist to the given remote ID
+2. Delete any cached Navidrome-source duplicate playlist (same user, `remote_id == navidromeRemoteID`) from Spotter's DB, so the pair is not listed twice
+3. Trigger an immediate sync, which per REQ-PLSYNC-031 updates the existing Navidrome playlist in place rather than creating a new one
+
+Callers MUST validate the remote ID before invoking `PairWithNavidrome` — the endpoint-level validation is specified in REQ-PLSYNC-072.
+
+**REQ-PLSYNC-071** — `GET /playlists/{id}/link` MUST list candidate Navidrome playlists fetched live from the user's Navidrome provider via `PlaylistManager.GetPlaylists`. The endpoint MUST enforce user isolation (playlist ownership via traversal) and MUST reject Navidrome-source playlists with HTTP 400 — only non-Navidrome playlists can be linked. The picker UI MUST warn that linking immediately replaces the selected Navidrome playlist's tracks, MUST offer a Cancel action that restores the sync dropdown without making changes, and MUST handle the zero-candidate case with an explanatory message plus the same Cancel action.
+
+**REQ-PLSYNC-072** — `POST /playlists/{id}/link/{targetId}` MUST pair the playlist with ANY user-chosen Navidrome playlist (not only same-name conflicts) by reusing `PairWithNavidrome`. The handler MUST complete ALL validation before making any state change:
+1. Enforce user isolation and the non-Navidrome-source restriction from REQ-PLSYNC-071
+2. Verify the sync service is available
+3. Verify `targetId` appears in the candidate list returned by the user's Navidrome provider (the same list REQ-PLSYNC-071 renders); an unknown `targetId` MUST be rejected with HTTP 404 and MUST NOT modify `sync_to_navidrome` or pairing state
+
+Only after validation passes MUST the handler enable `sync_to_navidrome` (if disabled) and run the pairing asynchronously per REQ-PLSYNC-051.
 
 ---
 
@@ -211,7 +240,7 @@ And MatchMethod is "exact" with confidence=1.0
 | `playlist_sync.sync_interval` | `"1h"` | Scheduled sync interval |
 | `playlist_sync.min_match_confidence` | `0.7` | Fuzzy match threshold (0.0–1.0) |
 | `playlist_sync.include_unmatched_tracks` | `false` | Include unmatched as placeholders |
-| `playlist_sync.delete_on_unsync` | `false` | Delete Navidrome playlist when sync disabled |
+| `playlist_sync.delete_on_unsync` | `false` | Delete Navidrome playlist when sync disabled (overridable per request via `navidrome_action`, see REQ-PLSYNC-033) |
 
 ---
 
