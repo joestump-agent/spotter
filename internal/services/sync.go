@@ -822,72 +822,24 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 		}
 
 		// Governing: SPEC graceful-shutdown REQ-REC-001 (idempotent sync), REQ-REC-003 (existence check before insert)
-		// Check if playlist exists
-		existingPlaylist, err := s.client.Playlist.Query().
-			Where(
-				playlist.HasUserWith(user.ID(u.ID)),
-				playlist.Source(string(source)),
-				playlist.RemoteID(pl.ID),
-			).
-			Only(ctx)
-
-		if err != nil && !ent.IsNotFound(err) {
-			s.logger.Warn("failed to check playlist existence", "error", err)
+		saved, created, err := s.upsertPlaylistRow(ctx, u, source, pl)
+		if err != nil {
+			s.logger.Warn("failed to upsert playlist", "name", pl.Name, "error", err)
 			continue
 		}
-
-		var playlistID int
-		if existingPlaylist != nil {
-			// Update existing playlist
-			// Governing: SPEC listen-playlist-sync REQ-SYNC-032 (reactivate playlists that reappear at the provider)
-			_, err := s.client.Playlist.UpdateOne(existingPlaylist).
-				SetName(pl.Name).
-				SetDescription(pl.Description).
-				SetImageURL(pl.ImageURL).
-				SetExternalURL(pl.ExternalURL).
-				SetTrackCount(pl.TrackCount).
-				SetUniqueArtists(pl.UniqueArtists).
-				SetUniqueAlbums(pl.UniqueAlbums).
-				SetIsActive(true).
-				Save(ctx)
-			if err != nil {
-				s.logger.Warn("failed to update playlist", "name", pl.Name, "error", err)
-				continue
-			}
-			s.logger.Debug("updated playlist", "name", pl.Name, "source", source)
-			playlistID = existingPlaylist.ID
-			updatedCount++
-		} else {
-			// Create new playlist
-			newPlaylist, err := s.client.Playlist.Create().
-				SetUser(u).
-				SetRemoteID(pl.ID).
-				SetName(pl.Name).
-				SetDescription(pl.Description).
-				SetImageURL(pl.ImageURL).
-				SetExternalURL(pl.ExternalURL).
-				SetTrackCount(pl.TrackCount).
-				SetUniqueArtists(pl.UniqueArtists).
-				SetUniqueAlbums(pl.UniqueAlbums).
-				SetSource(string(source)).
-				Save(ctx)
-			if err != nil {
-				s.logger.Warn("failed to create playlist", "name", pl.Name, "error", err)
-				continue
-			}
-			s.logger.Debug("created playlist", "name", pl.Name, "source", source)
-			playlistID = newPlaylist.ID
+		if created {
 			addedCount++
-
 			// Log playlist added event
 			s.logEvent(ctx, u, syncevent.EventTypePlaylistAdded, providerName,
 				fmt.Sprintf("Added playlist: %s", pl.Name),
 				map[string]interface{}{"playlist_name": pl.Name, "playlist_id": pl.ID})
+		} else {
+			updatedCount++
 		}
 
 		// Persist playlist tracks
 		if len(pl.Tracks) > 0 {
-			if err := s.persistPlaylistTracks(ctx, playlistID, pl.Tracks); err != nil {
+			if err := s.persistPlaylistTracks(ctx, saved.ID, pl.Tracks); err != nil {
 				s.logger.Warn("failed to persist playlist tracks", "playlist", pl.Name, "error", err)
 			}
 		}
@@ -899,12 +851,112 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 	return addedCount, updatedCount, nil
 }
 
+// upsertPlaylistRow creates or updates a single playlist row keyed by
+// (user, source, remote ID) and returns the saved row along with whether it
+// was newly created. It is the shared per-playlist persist core used by both
+// provider playlist sync (persistPlaylists) and locally generated playlists
+// (UpsertGeneratedPlaylist) — track persistence is the caller's job.
+// Governing: SPEC listen-playlist-sync REQ-SYNC-031 (upsert Playlist by source+remoteID),
+// REQ-SYNC-032 (reactivate playlists that reappear at the provider)
+func (s *Syncer) upsertPlaylistRow(ctx context.Context, u *ent.User, source providers.Type, pl providers.Playlist) (*ent.Playlist, bool, error) {
+	existing, err := s.client.Playlist.Query().
+		Where(
+			playlist.HasUserWith(user.ID(u.ID)),
+			playlist.Source(string(source)),
+			playlist.RemoteID(pl.ID),
+		).
+		Only(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		return nil, false, fmt.Errorf("failed to check playlist existence: %w", err)
+	}
+
+	if existing != nil {
+		updated, err := s.client.Playlist.UpdateOne(existing).
+			SetName(pl.Name).
+			SetDescription(pl.Description).
+			SetImageURL(pl.ImageURL).
+			SetExternalURL(pl.ExternalURL).
+			SetTrackCount(pl.TrackCount).
+			SetUniqueArtists(pl.UniqueArtists).
+			SetUniqueAlbums(pl.UniqueAlbums).
+			SetIsActive(true).
+			Save(ctx)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to update playlist: %w", err)
+		}
+		s.logger.Debug("updated playlist", "name", pl.Name, "source", source)
+		return updated, false, nil
+	}
+
+	created, err := s.client.Playlist.Create().
+		SetUser(u).
+		SetRemoteID(pl.ID).
+		SetName(pl.Name).
+		SetDescription(pl.Description).
+		SetImageURL(pl.ImageURL).
+		SetExternalURL(pl.ExternalURL).
+		SetTrackCount(pl.TrackCount).
+		SetUniqueArtists(pl.UniqueArtists).
+		SetUniqueAlbums(pl.UniqueAlbums).
+		SetSource(string(source)).
+		Save(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to create playlist: %w", err)
+	}
+	s.logger.Debug("created playlist", "name", pl.Name, "source", source)
+	return created, true, nil
+}
+
+// UpsertGeneratedPlaylist persists a locally generated playlist (e.g. an LB
+// Radio result) through the exact same persist path provider playlist sync
+// uses: the shared (user, source, remote ID) upsert plus
+// persistPlaylistTracks. Regenerating with the same remote ID therefore
+// updates the existing row in place — tracks are replaced (removed rows
+// deleted, surviving rows keep their catalog links), while the playlist ID,
+// sync-to-Navidrome toggle, and Navidrome pairing are preserved. Callers own
+// the remote-ID convention (LB Radio uses the lb-radio:<prompt> prefix that
+// reconcileInactivePlaylists exempts from deactivation).
+// Governing: ADR-0030, SPEC music-provider-integration REQ-PROV-053
+func (s *Syncer) UpsertGeneratedPlaylist(ctx context.Context, u *ent.User, source providers.Type, pl providers.Playlist) (*ent.Playlist, error) {
+	if pl.ID == "" {
+		return nil, fmt.Errorf("generated playlist requires a remote ID")
+	}
+	if pl.Name == "" {
+		return nil, fmt.Errorf("generated playlist requires a name")
+	}
+
+	saved, created, err := s.upsertPlaylistRow(ctx, u, source, pl)
+	if err != nil {
+		return nil, err
+	}
+	if created {
+		s.logEvent(ctx, u, syncevent.EventTypePlaylistAdded, string(source),
+			fmt.Sprintf("Added playlist: %s", pl.Name),
+			map[string]interface{}{"playlist_name": pl.Name, "playlist_id": pl.ID})
+	}
+
+	// NOTE: like persistPlaylists, track persistence is skipped for an empty
+	// track list — persistPlaylistTracks would otherwise delete every existing
+	// row via unseen-row deletion. Callers reject empty generations up front.
+	if len(pl.Tracks) > 0 {
+		if err := s.persistPlaylistTracks(ctx, saved.ID, pl.Tracks); err != nil {
+			return nil, fmt.Errorf("failed to persist generated playlist tracks: %w", err)
+		}
+	}
+	return saved, nil
+}
+
 // Governing: SPEC listen-playlist-sync REQ-SYNC-032 (playlists no longer returned by a provider are deactivated)
 // reconcileInactivePlaylists marks local playlists for this user/source that were not
 // present in the provider's latest response as inactive. Playlists that reappear are
 // reactivated by the upsert path in persistPlaylists. Spotter-managed Navidrome
 // playlists (created via pairing) are still returned by the provider, so their remote
-// IDs remain in the fetched set and they are never deactivated here.
+// IDs remain in the fetched set and they are never deactivated here. Locally
+// generated LB Radio playlists live under the "listenbrainz" source but are
+// NEVER returned by the ListenBrainz playlist endpoints, so their lb-radio:
+// remote-ID prefix is exempted — without this they would be deactivated on
+// every ListenBrainz playlist sync.
+// Governing: ADR-0030, SPEC music-provider-integration REQ-PROV-053 (reconciler exemption)
 func (s *Syncer) reconcileInactivePlaylists(ctx context.Context, u *ent.User, source providers.Type, fetched []providers.Playlist) {
 	remoteIDs := make([]string, 0, len(fetched))
 	for _, pl := range fetched {
@@ -918,6 +970,7 @@ func (s *Syncer) reconcileInactivePlaylists(ctx context.Context, u *ent.User, so
 			playlist.HasUserWith(user.ID(u.ID)),
 			playlist.Source(string(source)),
 			playlist.IsActive(true),
+			playlist.Not(playlist.RemoteIDHasPrefix(providers.ListenBrainzRadioRemoteIDPrefix)),
 		)
 	if len(remoteIDs) > 0 {
 		update = update.Where(playlist.RemoteIDNotIn(remoteIDs...))
