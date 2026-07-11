@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-templ Providers(user *ent.User, spotifyAuth *ent.SpotifyAuth, lastfmAuth *ent.LastFMAuth, navidromeAuth *ent.NavidromeAuth, cfg *config.Config) {
+templ Providers(user *ent.User, spotifyAuth *ent.SpotifyAuth, lastfmAuth *ent.LastFMAuth, listenbrainzAuth *ent.ListenBrainzAuth, navidromeAuth *ent.NavidromeAuth, cfg *config.Config) {
 	@layouts.Dashboard("Providers | Spotter", cfg, "/preferences/providers") {
 		<div class="max-w-7xl mx-auto">
 			<div class="mb-8">
@@ -103,6 +103,36 @@ templ Providers(user *ent.User, spotifyAuth *ent.SpotifyAuth, lastfmAuth *ent.La
 					ModalIDDisconnect:      "lastfm-disconnect-modal",
 					RebuildModalContent:    LastFMRebuildModal(),
 					DisconnectModalContent: LastFMDisconnectModal(),
+				})
+				<!-- ListenBrainz -->
+				<!-- Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046) -->
+				@components.ProviderTile(components.ProviderProps{
+					Name:           "ListenBrainz",
+					Description:    "Connect your ListenBrainz account with your user token to sync your listen history.",
+					IconClass:      "icon-[simple-icons--listenbrainz]",
+					IconColorStyle: "#EB743B",
+					ButtonStyle:    "background-color: #EB743B; border-color: #EB743B; color: white;",
+					IsConnected:    listenbrainzAuth != nil,
+					DisplayName: func() string {
+						if listenbrainzAuth != nil {
+							return listenbrainzAuth.Username
+						} else {
+							return ""
+						}
+					}(),
+					LastSyncedAt: func() time.Time {
+						if listenbrainzAuth != nil {
+							return listenbrainzAuth.LastSyncedAt
+						} else {
+							return time.Time{}
+						}
+					}(),
+					ConnectURL:             "/auth/listenbrainz/connect",
+					SyncURL:                "/preferences/listenbrainz/sync",
+					ModalIDRebuild:         "listenbrainz-rebuild-modal",
+					ModalIDDisconnect:      "listenbrainz-disconnect-modal",
+					RebuildModalContent:    ListenBrainzRebuildModal(),
+					DisconnectModalContent: ListenBrainzDisconnectModal(),
 				})
 			</div>
 		</div>
@@ -257,6 +287,62 @@ templ LastFMDisconnectModal() {
 				>
 					<span class="icon-[heroicons--x-mark] w-5 h-5"></span>
 					Disconnect
+				</button>
+			</div>
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button>close</button>
+		</form>
+	</dialog>
+}
+
+templ ListenBrainzDisconnectModal() {
+	<dialog id="listenbrainz-disconnect-modal" class="modal">
+		<div class="modal-box">
+			<h3 class="font-bold text-lg">Disconnect from ListenBrainz</h3>
+			<p class="py-4">Are you sure you want to disconnect your ListenBrainz account? Your synced data will remain, but no new data will be imported.</p>
+			<div class="modal-action">
+				<form method="dialog">
+					<button class="btn btn-ghost">Cancel</button>
+				</form>
+				<button
+					class="btn btn-error"
+					hx-post="/preferences/listenbrainz/disconnect"
+					hx-target="body"
+					onclick="document.getElementById('listenbrainz-disconnect-modal').close()"
+				>
+					<span class="icon-[heroicons--x-mark] w-5 h-5"></span>
+					Disconnect
+				</button>
+			</div>
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button>close</button>
+		</form>
+	</dialog>
+}
+
+templ ListenBrainzRebuildModal() {
+	<dialog id="listenbrainz-rebuild-modal" class="modal">
+		<div class="modal-box">
+			<h3 class="font-bold text-lg flex items-center gap-2">
+				<span class="icon-[heroicons--exclamation-triangle] w-6 h-6 text-warning"></span>
+				Rebuild ListenBrainz Data
+			</h3>
+			<p class="py-4">This will <strong>delete all listening history</strong> from ListenBrainz and re-sync everything from scratch. This action cannot be undone.</p>
+			<div class="modal-action">
+				<form method="dialog">
+					<button class="btn btn-ghost">Cancel</button>
+				</form>
+				<button
+					class="btn btn-warning"
+					hx-post="/preferences/listenbrainz/rebuild"
+					hx-target="#toasts"
+					hx-swap="beforeend"
+					onclick="document.getElementById('listenbrainz-rebuild-modal').close()"
+				>
+					<span class="icon-[heroicons--trash] w-5 h-5"></span>
+					Delete &amp; Rebuild
 				</button>
 			</div>
 		</div>

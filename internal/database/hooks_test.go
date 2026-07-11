@@ -474,6 +474,117 @@ func TestLastFMAuthEncryption(t *testing.T) {
 	}
 }
 
+// TestListenBrainzAuthEncryption tests that the ListenBrainzAuth token is
+// encrypted at rest and transparently decrypted on read.
+// Governing: ADR-0006 (AES-256-GCM at rest), SPEC music-provider-integration
+// REQ "ListenBrainz Provider" (REQ-PROV-046)
+func TestListenBrainzAuthEncryption(t *testing.T) {
+	// Create test encryption key
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	encryptor, err := crypto.NewEncryptor(key)
+	if err != nil {
+		t.Fatalf("failed to create encryptor: %v", err)
+	}
+
+	// Create in-memory database
+	client, err := ent.Open("sqlite3", "file:ent_listenbrainz?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer client.Close()
+
+	// Register encryption hooks
+	RegisterEncryptionHooks(client, encryptor, testLogger())
+
+	// Run migrations
+	if err := client.Schema.Create(context.Background()); err != nil {
+		t.Fatalf("failed to create schema: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Create a user
+	user, err := client.User.Create().
+		SetUsername("testuser").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	// Create ListenBrainzAuth with plaintext token
+	token := "test_listenbrainz_token_12345"
+	username := "listenbrainz_user"
+
+	auth, err := client.ListenBrainzAuth.Create().
+		SetUser(user).
+		SetToken(token).
+		SetUsername(username).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("failed to create listenbrainz auth: %v", err)
+	}
+
+	// Verify token is decrypted in the returned entity
+	if auth.Token != token {
+		t.Errorf("token after create = %q, want %q", auth.Token, token)
+	}
+
+	// Query from database
+	authFromDB, err := client.ListenBrainzAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("failed to query listenbrainz auth: %v", err)
+	}
+
+	// Verify token is properly decrypted
+	if authFromDB.Token != token {
+		t.Errorf("token after query = %q, want %q", authFromDB.Token, token)
+	}
+
+	// Verify the token is actually stored encrypted at rest by reading the
+	// same shared in-memory database through a second client WITHOUT the
+	// decrypt interceptor registered.
+	rawClient, err := ent.Open("sqlite3", "file:ent_listenbrainz?mode=memory&cache=shared&_fk=1")
+	if err != nil {
+		t.Fatalf("failed to open raw database client: %v", err)
+	}
+	defer rawClient.Close()
+
+	rawAuth, err := rawClient.ListenBrainzAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("failed to query raw listenbrainz auth: %v", err)
+	}
+	if rawAuth.Token == token {
+		t.Error("token is stored in plaintext; want ciphertext at rest (ADR-0006)")
+	}
+	if !encryptor.IsCiphertext(rawAuth.Token) {
+		t.Errorf("stored token %q is not recognized as ciphertext", rawAuth.Token)
+	}
+
+	// Test update
+	newToken := "new_listenbrainz_token_xyz"
+	_, err = client.ListenBrainzAuth.UpdateOne(auth).
+		SetToken(newToken).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("failed to update token: %v", err)
+	}
+
+	// Query updated auth
+	updatedAuth, err := client.ListenBrainzAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("failed to query updated auth: %v", err)
+	}
+
+	// Verify new token round-trips
+	if updatedAuth.Token != newToken {
+		t.Errorf("updated token = %q, want %q", updatedAuth.Token, newToken)
+	}
+}
+
 // TestMultipleAuthRecords tests decryption with multiple records
 func TestMultipleAuthRecords(t *testing.T) {
 	// Create test encryption key

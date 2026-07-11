@@ -153,6 +153,7 @@ func (h *Handler) PreferencesProviders(w http.ResponseWriter, r *http.Request) {
 		Where(user.ID(u.ID)).
 		WithSpotifyAuth().
 		WithLastfmAuth().
+		WithListenbrainzAuth().
 		WithNavidromeAuth().
 		Only(r.Context())
 	if err != nil {
@@ -161,7 +162,7 @@ func (h *Handler) PreferencesProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Render(w, r, preferences.Providers(u, u.Edges.SpotifyAuth, u.Edges.LastfmAuth, u.Edges.NavidromeAuth, h.Config))
+	h.Render(w, r, preferences.Providers(u, u.Edges.SpotifyAuth, u.Edges.LastfmAuth, u.Edges.ListenbrainzAuth, u.Edges.NavidromeAuth, h.Config))
 }
 
 func (h *Handler) DisconnectSpotify(w http.ResponseWriter, r *http.Request) {
@@ -226,6 +227,42 @@ func (h *Handler) DisconnectLastFM(w http.ResponseWriter, r *http.Request) {
 		// corrective action; clear stale fatal state so a later reconnect syncs again.
 		if h.Syncer != nil {
 			h.Syncer.ClearProviderBackoff(u.ID, providers.TypeLastFM)
+		}
+	}
+
+	w.Header().Set("HX-Redirect", "/preferences/providers")
+}
+
+// DisconnectListenBrainz removes the user's ListenBrainz connection.
+// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+func (h *Handler) DisconnectListenBrainz(w http.ResponseWriter, r *http.Request) {
+	u := h.RequireUserRedirect(w, r)
+	if u == nil {
+		return
+	}
+
+	u, err := h.Client.User.Query().
+		Where(user.ID(u.ID)).
+		WithListenbrainzAuth().
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to query user", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if u.Edges.ListenbrainzAuth != nil {
+		if err := h.Client.ListenBrainzAuth.DeleteOne(u.Edges.ListenbrainzAuth).Exec(r.Context()); err != nil {
+			h.Logger.Error("failed to delete listenbrainz auth", "error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		h.Logger.Info("disconnected user from ListenBrainz", "username", u.Username)
+
+		// Governing: SPEC error-handling REQ-STATE-004 — disconnecting is the user's
+		// corrective action; clear stale fatal state so a later reconnect syncs again.
+		if h.Syncer != nil {
+			h.Syncer.ClearProviderBackoff(u.ID, providers.TypeListenBrainz)
 		}
 	}
 
@@ -625,6 +662,133 @@ func (h *Handler) RebuildLastFM(w http.ResponseWriter, r *http.Request) {
 	h.Render(w, r, components.Toast("Rebuild Started", fmt.Sprintf("Deleted %d listens. Re-syncing...", deleted), "warning"))
 }
 
+// SyncListenBrainz triggers a sync for ListenBrainz data
+// Governing: SPEC graceful-shutdown REQ "background goroutines must not capture *ent.User pointer"
+func (h *Handler) SyncListenBrainz(w http.ResponseWriter, r *http.Request) {
+	u := h.RequireUserRedirect(w, r)
+	if u == nil {
+		return
+	}
+
+	userID := u.ID
+	go func() {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for listenbrainz sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "ListenBrainz sync failed: could not load user",
+					IconType: "error",
+				},
+			})
+			return
+		}
+		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeListenBrainz); err != nil {
+			h.Logger.Error("failed to sync listenbrainz", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Sync Failed",
+					Message:  "ListenBrainz sync failed",
+					IconType: "error",
+				},
+			})
+			return
+		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title: "Sync Complete",
+				// The provider does not implement HistoryFetcher yet, so no
+				// listens are imported; keep the messaging honest until the
+				// listen-sync PR lands.
+				Message:  "ListenBrainz connection checked — listen history sync arrives in an upcoming update",
+				IconType: "info",
+			},
+		})
+	}()
+
+	h.Render(w, r, components.Toast("Sync Started", "Syncing ListenBrainz data in the background...", "info"))
+}
+
+// RebuildListenBrainz deletes all ListenBrainz data and re-syncs
+func (h *Handler) RebuildListenBrainz(w http.ResponseWriter, r *http.Request) {
+	u := h.RequireUserRedirect(w, r)
+	if u == nil {
+		return
+	}
+
+	ctx := r.Context()
+
+	// Delete all listens from listenbrainz
+	deleted, err := h.Client.Listen.Delete().
+		Where(
+			listen.HasUserWith(user.ID(u.ID)),
+			listen.Source("listenbrainz"),
+		).Exec(ctx)
+	if err != nil {
+		h.Logger.Error("failed to delete listenbrainz listens", "error", err)
+		http.Error(w, "Failed to delete data", http.StatusInternalServerError)
+		return
+	}
+	h.Logger.Info("deleted listenbrainz listens", "count", deleted, "username", u.Username)
+
+	// Delete all sync events from listenbrainz
+	_, err = h.Client.SyncEvent.Delete().
+		Where(
+			syncevent.HasUserWith(user.ID(u.ID)),
+			syncevent.Provider("listenbrainz"),
+		).Exec(ctx)
+	if err != nil {
+		h.Logger.Error("failed to delete listenbrainz sync events", "error", err)
+	}
+
+	userID := u.ID
+	go func() {
+		ctx := context.Background()
+		freshUser, err := h.Client.User.Get(ctx, userID)
+		if err != nil {
+			h.Logger.Error("failed to fetch user for listenbrainz rebuild sync", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Rebuild Failed",
+					Message:  "ListenBrainz rebuild failed: could not load user",
+					IconType: "error",
+				},
+			})
+			return
+		}
+		if err := h.Syncer.SyncProvider(ctx, freshUser, providers.TypeListenBrainz); err != nil {
+			h.Logger.Error("failed to sync listenbrainz after rebuild", "error", err)
+			h.Bus.Publish(userID, events.Event{
+				Type: events.EventTypeNotification,
+				Payload: events.NotificationPayload{
+					Title:    "Rebuild Failed",
+					Message:  "ListenBrainz rebuild sync failed",
+					IconType: "error",
+				},
+			})
+			return
+		}
+		h.Bus.Publish(userID, events.Event{
+			Type: events.EventTypeNotification,
+			Payload: events.NotificationPayload{
+				Title: "Rebuild Complete",
+				// No listens are re-imported until the provider implements
+				// HistoryFetcher; keep the messaging honest until then.
+				Message:  "ListenBrainz data cleared — listen history sync arrives in an upcoming update",
+				IconType: "info",
+			},
+		})
+	}()
+
+	h.Render(w, r, components.Toast("Rebuild Started", fmt.Sprintf("Deleted %d listens. Re-syncing...", deleted), "warning"))
+}
+
 // PreferencesTasks shows the tasks management page with event history
 func (h *Handler) PreferencesTasks(w http.ResponseWriter, r *http.Request) {
 	u := h.RequireUserRedirect(w, r)
@@ -665,7 +829,7 @@ func (h *Handler) PreferencesTasks(w http.ResponseWriter, r *http.Request) {
 	tasksList := h.getTasksWithLastRun(ctx, u)
 
 	// Get distinct providers for filter dropdown
-	providersList := []string{"spotify", "navidrome", "lastfm", "metadata", "system"}
+	providersList := []string{"spotify", "navidrome", "lastfm", "listenbrainz", "metadata", "system"}
 
 	// Get all event types for filter dropdown
 	eventTypes := []syncevent.EventType{

@@ -63,6 +63,15 @@ func (c LastFMConfig) LogValue() slog.Value {
 	)
 }
 
+// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+// ListenBrainzConfig holds ListenBrainz API settings. Unlike Last.fm,
+// ListenBrainz uses a static per-user token (no API key/secret pair) that
+// users paste from listenbrainz.org/settings; tokens are stored encrypted in
+// the database (ADR-0006), so there is no instance-level token setting.
+type ListenBrainzConfig struct {
+	APIURL string `mapstructure:"api_url"` // Base URL for the ListenBrainz API (default: https://api.listenbrainz.org)
+}
+
 // Governing: SPEC-0015 REQ "SMTP Configuration", ADR-0026
 // SMTPConfig holds SMTP server configuration for email notifications.
 type SMTPConfig struct {
@@ -152,8 +161,9 @@ type Config struct {
 		ClientSecret string `mapstructure:"client_secret"`
 		RedirectURL  string `mapstructure:"redirect_url"`
 	} `mapstructure:"spotify"`
-	LastFM LastFMConfig `mapstructure:"lastfm"`
-	OpenAI struct {
+	LastFM       LastFMConfig       `mapstructure:"lastfm"`
+	ListenBrainz ListenBrainzConfig `mapstructure:"listenbrainz"`
+	OpenAI       struct {
 		APIKey  string `mapstructure:"api_key"`  // OpenAI API key (required for AI enrichment)
 		BaseURL string `mapstructure:"base_url"` // Base URL for API (for LiteLLM or compatible proxies)
 		Model   string `mapstructure:"model"`    // Model to use for enrichment (e.g., gpt-4o, gpt-4-turbo)
@@ -344,6 +354,8 @@ func Load() (*Config, error) {
 	v.SetDefault("lastfm.api_key", "")
 	v.SetDefault("lastfm.shared_secret", "")
 	v.SetDefault("lastfm.redirect_url", "http://127.0.0.1:8080/auth/lastfm/callback")
+	// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+	v.SetDefault("listenbrainz.api_url", "https://api.listenbrainz.org")
 
 	// OpenAI defaults
 	v.SetDefault("openai.api_key", "")

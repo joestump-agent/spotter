@@ -230,6 +230,7 @@ func (s *Syncer) getActiveProviders(ctx context.Context, u *ent.User) (*ent.User
 		WithSpotifyAuth().
 		WithNavidromeAuth().
 		WithLastfmAuth().
+		WithListenbrainzAuth().
 		Only(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to refresh user data: %w", err)
@@ -760,6 +761,11 @@ func (s *Syncer) updateLastSyncedAt(ctx context.Context, u *ent.User, providerTy
 	case providers.TypeLastFM:
 		if u.Edges.LastfmAuth != nil {
 			return s.client.LastFMAuth.UpdateOneID(u.Edges.LastfmAuth.ID).SetLastSyncedAt(now).Exec(ctx)
+		}
+	case providers.TypeListenBrainz:
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-045)
+		if u.Edges.ListenbrainzAuth != nil {
+			return s.client.ListenBrainzAuth.UpdateOneID(u.Edges.ListenbrainzAuth.ID).SetLastSyncedAt(now).Exec(ctx)
 		}
 	}
 	return nil
