@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"spotter/ent/listen"
 	"spotter/ent/playlist"
 	"spotter/ent/playlisttrack"
+	"spotter/ent/predicate"
 	"spotter/ent/syncevent"
 	"spotter/ent/user"
 	"spotter/internal/config"
@@ -458,6 +460,110 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 	return allAdded, errors.Join(errs...)
 }
 
+// isPermanentSubmitRejection reports whether a SubmitListens error is a
+// permanent ListenBrainz rejection — a non-429 4xx status. Retrying the
+// identical payload can never succeed, so the caller must isolate and stamp
+// the rejected listens instead of retrying the chunk forever. 429, 5xx, and
+// network errors are NOT permanent: they are retried on a later sync.
+// Governing: PR #55 review MAJOR 1 (poison-batch recovery)
+func isPermanentSubmitRejection(err error) bool {
+	var statusErr *providers.StatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	return statusErr.StatusCode >= 400 && statusErr.StatusCode < 500 &&
+		statusErr.StatusCode != http.StatusTooManyRequests
+}
+
+// listenRowsToTracks converts persisted listen rows to provider tracks for
+// submission.
+func listenRowsToTracks(rows []*ent.Listen) []providers.Track {
+	tracks := make([]providers.Track, 0, len(rows))
+	for _, row := range rows {
+		tracks = append(tracks, providers.Track{
+			ID:       row.ProviderTrackID,
+			Name:     row.TrackName,
+			Artist:   row.ArtistName,
+			Album:    row.AlbumName,
+			PlayedAt: row.PlayedAt,
+			URL:      row.URL,
+		})
+	}
+	return tracks
+}
+
+// stampListensProcessed sets submitted_to_listenbrainz_at on the given rows.
+// The stamp means "processed for ListenBrainz submission" — submitted and
+// accepted, permanently rejected as unsubmittable, or already present in LB —
+// NOT strictly "accepted" (see the Listen schema comment). It reports whether
+// persisting succeeded; on failure the caller must abort the submission phase
+// so the next sync retries (ListenBrainz's server-side dedup absorbs any
+// resulting resubmission of already-accepted listens).
+func (s *Syncer) stampListensProcessed(ctx context.Context, ids []int) bool {
+	if len(ids) == 0 {
+		return true
+	}
+	if _, err := s.client.Listen.Update().
+		Where(listen.IDIn(ids...)).
+		SetSubmittedToListenbrainzAt(time.Now()).
+		Save(ctx); err != nil {
+		s.logger.Error("failed to mark listens as processed for listenbrainz submission", "error", err)
+		return false
+	}
+	return true
+}
+
+// submitListensIndividually is the poison-batch recovery path: after
+// ListenBrainz permanently rejected a whole chunk (non-429 4xx on
+// POST /1/submit-listens, which rejects the ENTIRE request when ANY listen is
+// invalid), each listen is resubmitted on its own so one bad row cannot block
+// its valid neighbors. Individually rejected listens are stamped as processed
+// anyway — leaving them NULL would make the oldest-first NULL-flag query
+// re-select the same poison listen on every sync and wedge submission forever.
+// Transient errors (429/5xx/network) keep the current semantics: no stamp,
+// abort, retry on the next sync.
+// It returns the accepted and permanently-rejected counts, and ok=false when
+// a transient error (or a failed stamp) aborted the run mid-chunk.
+// Governing: PR #55 review MAJOR 1 (poison-batch recovery)
+func (s *Syncer) submitListensIndividually(ctx context.Context, u *ent.User, submitter providers.ListenSubmitter, rows []*ent.Listen) (submitted, rejected int, ok bool) {
+	providerName := string(providers.TypeListenBrainz)
+	s.logger.Warn("listenbrainz rejected a submission chunk, retrying listens individually to isolate the rejected ones",
+		"username", u.Username, "count", len(rows))
+
+	for _, row := range rows {
+		err := submitter.SubmitListens(ctx, listenRowsToTracks([]*ent.Listen{row}))
+		switch {
+		case err == nil:
+			if !s.stampListensProcessed(ctx, []int{row.ID}) {
+				return submitted, rejected, false
+			}
+			submitted++
+		case isPermanentSubmitRejection(err):
+			// "Processed, not accepted": the listen is unsubmittable, so stamp
+			// it to keep it out of every future submission query.
+			s.logger.Warn("listenbrainz permanently rejected listen, marking it processed so it cannot wedge submission",
+				"track", row.TrackName, "artist", row.ArtistName, "played_at", row.PlayedAt, "error", err)
+			s.logEvent(ctx, u, syncevent.EventTypeTrackSkipped, providerName,
+				fmt.Sprintf("ListenBrainz rejected listen: %s by %s", row.TrackName, row.ArtistName),
+				map[string]interface{}{"track": row.TrackName, "artist": row.ArtistName, "reason": "listenbrainz_rejected"})
+			if !s.stampListensProcessed(ctx, []int{row.ID}) {
+				return submitted, rejected, false
+			}
+			rejected++
+		default:
+			// Transient failure: leave this and all remaining rows unstamped
+			// so the next sync retries them.
+			s.logger.Error("failed to submit listen to listenbrainz",
+				"username", u.Username, "track", row.TrackName, "error", err)
+			s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName,
+				fmt.Sprintf("Failed to submit listens to ListenBrainz: %v", err),
+				map[string]interface{}{"submitted": submitted, "rejected": rejected})
+			return submitted, rejected, false
+		}
+	}
+	return submitted, rejected, true
+}
+
 // Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049)
 // submitListensToListenBrainz pushes listens that originated from OTHER
 // sources (navidrome/spotify/lastfm) to ListenBrainz for users who opted in.
@@ -465,9 +571,20 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 //   - Opt-in gate: requires ListenbrainzAuth with submit_listens=true (default OFF).
 //   - Provenance: listens whose source is "listenbrainz" are NEVER submitted —
 //     echoing ListenBrainz's own listens back would duplicate them upstream.
+//     Listens from other sources that have a listenbrainz-source SIBLING row
+//     (same track identity within the cross-provider dedup window) are skipped
+//     too: the sibling proves LB already has that play natively, so submitting
+//     the surviving spotify/navidrome copy would duplicate it upstream. Such
+//     listens are stamped as processed without being submitted.
 //   - Idempotence: only listens with submitted_to_listenbrainz_at IS NULL are
-//     submitted; the timestamp is set per chunk only AFTER ListenBrainz accepts
-//     it, so repeat syncs never resubmit and a failed chunk is retried next run.
+//     selected; the stamp means "processed" (accepted, unsubmittable, or
+//     already present in LB — see the Listen schema comment) and is set per
+//     chunk only AFTER the outcome is known, so repeat syncs never resubmit
+//     and a transiently-failed chunk is retried next run.
+//   - Poison recovery: when ListenBrainz permanently rejects a chunk (non-429
+//     4xx — the API 400s the WHOLE request if ANY listen is invalid), the
+//     chunk falls back to per-listen submission via submitListensIndividually
+//     so one bad listen cannot wedge submission forever.
 //   - Batching: chunks of listenbrainz.MaxListensPerRequest, so each persisted
 //     chunk maps to exactly one submit-listens API request.
 //   - Failure tolerance: errors are logged and recorded as a sync event, but
@@ -502,6 +619,8 @@ func (s *Syncer) submitListensToListenBrainz(ctx context.Context, u *ent.User, a
 	}
 
 	totalSubmitted := 0
+	totalRejected := 0
+	totalAlreadyPresent := 0
 	for {
 		// Provenance filter + idempotence filter, oldest first so ListenBrainz
 		// receives history in playback order.
@@ -522,57 +641,86 @@ func (s *Syncer) submitListensToListenBrainz(ctx context.Context, u *ent.User, a
 			break
 		}
 
-		tracks := make([]providers.Track, 0, len(rows))
-		ids := make([]int, 0, len(rows))
+		// Governing: PR #55 review MAJOR 2 — a listenbrainz-source sibling row
+		// (same track identity within the cross-provider dedup window, the
+		// same match rule persistListens uses via isDuplicateListen) proves
+		// ListenBrainz already has this play natively; submitting the
+		// surviving other-source copy would duplicate it in the user's LB
+		// history. Skip and stamp those as processed instead of submitting.
+		submitRows := make([]*ent.Listen, 0, len(rows))
+		alreadyPresentIDs := make([]int, 0)
 		for _, row := range rows {
-			tracks = append(tracks, providers.Track{
-				ID:       row.ProviderTrackID,
-				Name:     row.TrackName,
-				Artist:   row.ArtistName,
-				Album:    row.AlbumName,
-				PlayedAt: row.PlayedAt,
-				URL:      row.URL,
-			})
-			ids = append(ids, row.ID)
+			if s.duplicateListenExists(ctx, u, row.TrackName, row.ArtistName, row.PlayedAt,
+				listen.Source(string(providers.TypeListenBrainz))) {
+				s.logger.Debug("skipping listen already present in listenbrainz via sibling row",
+					"track", row.TrackName, "artist", row.ArtistName, "played_at", row.PlayedAt)
+				alreadyPresentIDs = append(alreadyPresentIDs, row.ID)
+				continue
+			}
+			submitRows = append(submitRows, row)
 		}
-
-		if err := submitter.SubmitListens(ctx, tracks); err != nil {
-			// Do NOT mark the chunk as submitted: the NEXT sync retries it.
-			// Deliberately no backoff.RecordFailure here — submission is
-			// best-effort and must stay retryable on the very next run without
-			// blocking ListenBrainz history sync via shared backoff state.
-			s.logger.Error("failed to submit listens to listenbrainz",
-				"username", u.Username, "count", len(tracks), "error", err)
-			s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName,
-				fmt.Sprintf("Failed to submit %d listens to ListenBrainz: %v", len(tracks), err),
-				map[string]interface{}{"submitted": totalSubmitted, "failed_batch": len(tracks)})
+		if !s.stampListensProcessed(ctx, alreadyPresentIDs) {
 			return
 		}
+		totalAlreadyPresent += len(alreadyPresentIDs)
 
-		// Mark the accepted chunk so repeat syncs never resubmit it.
-		now := time.Now()
-		if _, err := s.client.Listen.Update().
-			Where(listen.IDIn(ids...)).
-			SetSubmittedToListenbrainzAt(now).
-			Save(ctx); err != nil {
-			// The chunk WAS accepted upstream; failing to persist the flag
-			// means the next sync resubmits it, which ListenBrainz
-			// de-duplicates server-side (idempotent resubmission safety).
-			s.logger.Error("failed to mark listens as submitted to listenbrainz", "error", err)
-			return
+		if len(submitRows) > 0 {
+			if err := submitter.SubmitListens(ctx, listenRowsToTracks(submitRows)); err != nil {
+				if !isPermanentSubmitRejection(err) {
+					// Transient (429/5xx/network): do NOT mark the chunk as
+					// submitted, the NEXT sync retries it. Deliberately no
+					// backoff.RecordFailure here — submission is best-effort
+					// and must stay retryable on the very next run without
+					// blocking ListenBrainz history sync via shared backoff
+					// state.
+					s.logger.Error("failed to submit listens to listenbrainz",
+						"username", u.Username, "count", len(submitRows), "error", err)
+					s.logEvent(ctx, u, syncevent.EventTypeSyncFailed, providerName,
+						fmt.Sprintf("Failed to submit %d listens to ListenBrainz: %v", len(submitRows), err),
+						map[string]interface{}{"submitted": totalSubmitted, "failed_batch": len(submitRows)})
+					return
+				}
+				// Permanent rejection (non-429 4xx): the API rejects the WHOLE
+				// request when ANY listen is invalid, so isolate the poison
+				// listens by falling back to per-listen submission.
+				// Governing: PR #55 review MAJOR 1 (poison-batch recovery)
+				submitted, rejected, ok := s.submitListensIndividually(ctx, u, submitter, submitRows)
+				totalSubmitted += submitted
+				totalRejected += rejected
+				if !ok {
+					return
+				}
+			} else {
+				// Mark the accepted chunk so repeat syncs never resubmit it.
+				// (If stamping fails, the chunk WAS accepted upstream; the
+				// next sync resubmits it, which ListenBrainz de-duplicates
+				// server-side — idempotent resubmission safety.)
+				ids := make([]int, 0, len(submitRows))
+				for _, row := range submitRows {
+					ids = append(ids, row.ID)
+				}
+				if !s.stampListensProcessed(ctx, ids) {
+					return
+				}
+				totalSubmitted += len(submitRows)
+			}
 		}
-		totalSubmitted += len(rows)
 
 		if len(rows) < listenbrainz.MaxListensPerRequest {
 			break
 		}
 	}
 
+	if totalRejected > 0 {
+		s.logger.Warn("listenbrainz permanently rejected listens; they were marked processed and will not be retried",
+			"username", u.Username, "count", totalRejected)
+	}
 	if totalSubmitted > 0 {
-		s.logger.Info("submitted listens to listenbrainz", "username", u.Username, "count", totalSubmitted)
+		s.logger.Info("submitted listens to listenbrainz", "username", u.Username,
+			"count", totalSubmitted, "rejected", totalRejected, "already_present", totalAlreadyPresent)
 		s.logEvent(ctx, u, syncevent.EventTypeSyncCompleted, providerName,
 			fmt.Sprintf("Submitted %d listens to ListenBrainz", totalSubmitted),
-			map[string]interface{}{"submitted": totalSubmitted})
+			map[string]interface{}{"submitted": totalSubmitted, "rejected": totalRejected, "already_present": totalAlreadyPresent})
 		// Governing: SPEC event-bus-sse REQ-BUS-012 (convenience Publish* methods)
 		s.bus.PublishNotification(u.ID, "Listens Submitted",
 			fmt.Sprintf("Submitted %d listens to ListenBrainz", totalSubmitted), "success")
@@ -853,31 +1001,40 @@ func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source provide
 	return savedCount, skippedCount, nil
 }
 
-// isDuplicateListen checks if a similar listen already exists across all providers.
-// It uses a time window to account for slight timing differences between providers.
-func (s *Syncer) isDuplicateListen(ctx context.Context, u *ent.User, track providers.Track) bool {
-	// Use a 2-minute window to catch duplicates from different providers
-	// that might have slightly different timestamps for the same play
-	timeWindow := 2 * time.Minute
-	startTime := track.PlayedAt.Add(-timeWindow)
-	endTime := track.PlayedAt.Add(timeWindow)
+// listenDedupWindow is the ± window within which two listens with the same
+// track identity (track name + artist name) count as the SAME play across
+// providers, absorbing slight timestamp differences between services. It is
+// shared by persist-time cross-provider dedup (isDuplicateListen) and the
+// ListenBrainz-sibling check in submitListensToListenBrainz so the two stay
+// consistent.
+const listenDedupWindow = 2 * time.Minute
 
-	exists, err := s.client.Listen.Query().
-		Where(
-			listen.HasUserWith(user.ID(u.ID)),
-			listen.TrackName(track.Name),
-			listen.ArtistName(track.Artist),
-			listen.PlayedAtGTE(startTime),
-			listen.PlayedAtLTE(endTime),
-		).
-		Exist(ctx)
+// duplicateListenExists reports whether a listen with the same track identity
+// exists for the user within ±listenDedupWindow of playedAt. Extra predicates
+// narrow the match (e.g. listen.Source(...) for the ListenBrainz-sibling
+// check). Query failures are logged and treated as "no duplicate".
+func (s *Syncer) duplicateListenExists(ctx context.Context, u *ent.User, trackName, artistName string, playedAt time.Time, extra ...predicate.Listen) bool {
+	preds := []predicate.Listen{
+		listen.HasUserWith(user.ID(u.ID)),
+		listen.TrackName(trackName),
+		listen.ArtistName(artistName),
+		listen.PlayedAtGTE(playedAt.Add(-listenDedupWindow)),
+		listen.PlayedAtLTE(playedAt.Add(listenDedupWindow)),
+	}
+	preds = append(preds, extra...)
 
+	exists, err := s.client.Listen.Query().Where(preds...).Exist(ctx)
 	if err != nil {
 		s.logger.Warn("failed to check for duplicate listen", "error", err)
 		return false
 	}
-
 	return exists
+}
+
+// isDuplicateListen checks if a similar listen already exists across all providers.
+// It uses a time window to account for slight timing differences between providers.
+func (s *Syncer) isDuplicateListen(ctx context.Context, u *ent.User, track providers.Track) bool {
+	return s.duplicateListenExists(ctx, u, track.Name, track.Artist, track.PlayedAt)
 }
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-012 (sync cursor updated after each provider sync)
