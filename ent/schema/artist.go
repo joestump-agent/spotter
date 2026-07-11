@@ -36,9 +36,11 @@ func (Artist) Fields() []ent.Field {
 		// in Indexes() below — artists are per-user rows, so two users may
 		// each have an artist with the same MBID/Spotify ID.
 		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-040 (per-user catalog entities)
+		// Governing: AGENTS.md VAL-007 (MusicBrainz IDs MUST be in correct UUID format)
 		field.String("musicbrainz_id").
 			Optional().
 			MaxLen(36). // UUID format
+			Validate(validateOptionalMusicBrainzID).
 			Comment("MusicBrainz artist MBID"),
 		field.String("spotify_id").
 			Optional().

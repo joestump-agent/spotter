@@ -24,7 +24,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	errorMsg := r.URL.Query().Get("error")
+	// Map the ?error= code to a known message; never echo the raw query value.
+	errorMsg := getOAuthErrorMessage(r.URL.Query().Get("error"))
 	h.Render(w, r, auth.Login(h.Config.Navidrome.BaseURL, errorMsg))
 }
 

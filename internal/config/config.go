@@ -13,6 +13,9 @@ import (
 type PlaylistSyncConfig struct {
 	// SyncInterval is how often to sync playlists to Navidrome (e.g., "1h", "30m", "6h")
 	SyncInterval string `mapstructure:"sync_interval"`
+	// InitialDelay is how long to wait after startup before the first playlist
+	// sync run (e.g., "1m", "30s"). "0s" skips the delay entirely.
+	InitialDelay string `mapstructure:"initial_delay"`
 	// DeleteOnUnsync determines whether to delete Navidrome playlist when sync is disabled
 	DeleteOnUnsync bool `mapstructure:"delete_on_unsync"`
 	// MinMatchConfidence is the minimum confidence for track matching (0.0-1.0)
@@ -173,9 +176,10 @@ type Config struct {
 	PlaylistSync  PlaylistSyncConfig  `mapstructure:"playlist_sync"`
 	Vibes         VibesConfig         `mapstructure:"vibes"`
 	Metadata      struct {
-		Enabled  bool   `mapstructure:"enabled"`  // Enable/disable metadata enrichment
-		Interval string `mapstructure:"interval"` // Sync interval (e.g., "1h", "30m")
-		Order    string `mapstructure:"order"`    // Comma-separated enricher order (e.g., "musicbrainz,navidrome,spotify,lastfm,fanart,openai")
+		Enabled      bool   `mapstructure:"enabled"`       // Enable/disable metadata enrichment
+		Interval     string `mapstructure:"interval"`      // Sync interval (e.g., "1h", "30m")
+		InitialDelay string `mapstructure:"initial_delay"` // Startup delay before first run (e.g., "30s"); "0s" skips the delay
+		Order        string `mapstructure:"order"`         // Comma-separated enricher order (e.g., "musicbrainz,navidrome,spotify,lastfm,fanart,openai")
 
 		MusicBrainz struct {
 			UserAgent string `mapstructure:"user_agent"` // Required by MusicBrainz API - should include app name and contact
@@ -259,6 +263,38 @@ func (c *Config) HistoryLookbackDuration() time.Duration {
 		return defaultLookback
 	}
 	return d
+}
+
+// Default startup delays for the background loops. Duration strings so the
+// same values feed viper defaults and the accessor fallbacks below.
+const (
+	defaultMetadataInitialDelay     = "30s"
+	defaultPlaylistSyncInitialDelay = "1m"
+)
+
+// parseInitialDelay parses an initial-delay duration string, falling back to
+// the given default when the value is empty or invalid. Zero is a valid
+// result and means "skip the startup delay". Load rejects invalid or
+// negative values up front, so the fallback only matters for hand-built
+// Config values (e.g., in tests).
+func parseInitialDelay(value, fallback string) time.Duration {
+	d, err := time.ParseDuration(value)
+	if err != nil || d < 0 {
+		d, _ = time.ParseDuration(fallback)
+	}
+	return d
+}
+
+// MetadataInitialDelay returns metadata.initial_delay parsed as a duration.
+// A zero duration means the metadata enrichment loop starts without delay.
+func (c *Config) MetadataInitialDelay() time.Duration {
+	return parseInitialDelay(c.Metadata.InitialDelay, defaultMetadataInitialDelay)
+}
+
+// PlaylistSyncInitialDelay returns playlist_sync.initial_delay parsed as a
+// duration. A zero duration means the playlist sync loop starts without delay.
+func (c *Config) PlaylistSyncInitialDelay() time.Duration {
+	return parseInitialDelay(c.PlaylistSync.InitialDelay, defaultPlaylistSyncInitialDelay)
 }
 
 // IsOpenAIEnabled returns true if OpenAI API key is configured.
@@ -376,6 +412,8 @@ func Load() (*Config, error) {
 
 	// Playlist sync defaults
 	v.SetDefault("playlist_sync.sync_interval", "1h")
+	// Governing: ADR-0009 (Viper configuration) — startup delay before first playlist sync run
+	v.SetDefault("playlist_sync.initial_delay", defaultPlaylistSyncInitialDelay)
 	v.SetDefault("playlist_sync.delete_on_unsync", false)
 	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-003, ADR-0014 (default fuzzy match threshold 0.7)
 	v.SetDefault("playlist_sync.min_match_confidence", 0.7)
@@ -397,6 +435,8 @@ func Load() (*Config, error) {
 	// Metadata enrichment defaults
 	v.SetDefault("metadata.enabled", true)
 	v.SetDefault("metadata.interval", "1h")
+	// Governing: ADR-0009 (Viper configuration) — startup delay before first enrichment run
+	v.SetDefault("metadata.initial_delay", defaultMetadataInitialDelay)
 	v.SetDefault("metadata.order", "musicbrainz,lidarr,navidrome,spotify,lastfm,fanart,openai")
 	v.SetDefault("metadata.musicbrainz.user_agent", "Spotter/1.0.0 (https://github.com/spotter)")
 	v.SetDefault("metadata.fanart.api_key", "")
@@ -432,6 +472,34 @@ func Load() (*Config, error) {
 	}
 	if cfg.OpenAI.Model == "" {
 		cfg.OpenAI.Model = "gpt-4o"
+	}
+
+	// Apply defaults for initial delays when env vars are empty strings
+	// (Viper treats empty string env vars as "set", overriding defaults)
+	if cfg.Metadata.InitialDelay == "" {
+		cfg.Metadata.InitialDelay = defaultMetadataInitialDelay
+	}
+	if cfg.PlaylistSync.InitialDelay == "" {
+		cfg.PlaylistSync.InitialDelay = defaultPlaylistSyncInitialDelay
+	}
+
+	// Validate startup delays: must parse as durations and must not be
+	// negative. Zero is allowed and skips the startup delay entirely.
+	initialDelays := []struct {
+		key   string
+		value string
+	}{
+		{"metadata.initial_delay", cfg.Metadata.InitialDelay},
+		{"playlist_sync.initial_delay", cfg.PlaylistSync.InitialDelay},
+	}
+	for _, delay := range initialDelays {
+		d, err := time.ParseDuration(delay.value)
+		if err != nil {
+			return nil, fmt.Errorf("%s must be a valid duration string (e.g. \"30s\"): %w", delay.key, err)
+		}
+		if d < 0 {
+			return nil, fmt.Errorf("%s must not be negative, got %q", delay.key, delay.value)
+		}
 	}
 
 	if cfg.Navidrome.BaseURL == "" {

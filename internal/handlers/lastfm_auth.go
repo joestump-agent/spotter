@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"spotter/ent/user"
@@ -97,23 +98,19 @@ func (h *Handler) LastFMCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse state cookie to extract encrypted user ID (format: "state:encrypted_user_id")
-	stateValue := stateCookie.Value
-	colonIdx := -1
-	for i := len(stateValue) - 1; i >= 0; i-- {
-		if stateValue[i] == ':' {
-			colonIdx = i
-			break
-		}
-	}
-
-	if colonIdx == -1 {
+	// Parse state cookie to extract encrypted user ID (format: "state:encrypted_user_id").
+	// Split at the FIRST colon: the state token is base64.URLEncoding output
+	// and can never contain ':', while the encrypted user ID carries the
+	// versioned "enc:v1:" ciphertext marker and therefore contains colons.
+	// The previous last-colon split only kept working here by accident (the
+	// base64 tail still decrypted via the legacy path); see the matching fix
+	// in spotify_auth.go, where the same parse broke the flow (spotter-h1y).
+	_, encryptedUserID, ok := strings.Cut(stateCookie.Value, ":")
+	if !ok {
 		h.Logger.Error("Last.fm callback: invalid state format (missing colon)", "remote_ip", r.RemoteAddr)
 		http.Redirect(w, r, "/auth/login?error=invalid_state", http.StatusSeeOther)
 		return
 	}
-
-	encryptedUserID := stateValue[colonIdx+1:]
 
 	// Decrypt user ID from state
 	userID, err := h.Encryptor.DecryptInt(encryptedUserID)

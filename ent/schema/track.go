@@ -19,9 +19,12 @@ func (Track) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("name").
 			NotEmpty(),
+		// Governing: AGENTS.md VAL-007 (MusicBrainz IDs MUST be in correct UUID format)
 		field.String("musicbrainz_id").
 			Optional().
-			Nillable(),
+			Nillable().
+			Validate(validateOptionalMusicBrainzID).
+			Comment("MusicBrainz recording MBID"),
 		field.String("spotify_id").
 			Optional().
 			Nillable(),
