@@ -23,6 +23,8 @@ const (
 	TypeNavidrome   Type = "navidrome"
 	TypeOpenAI      Type = "openai"
 	TypeLidarr      Type = "lidarr"
+	// Governing: SPEC metadata-enrichment-pipeline REQ "ListenBrainz Enricher" (REQ-ENRICH-060)
+	TypeListenBrainz Type = "listenbrainz"
 )
 
 // ArtistData contains enrichment data for an artist.
@@ -296,7 +298,7 @@ func (l List) IDMatchers() []IDMatcher {
 // ParseType converts a string to an enricher Type.
 func ParseType(s string) (Type, bool) {
 	switch Type(s) {
-	case TypeMusicBrainz, TypeSpotify, TypeFanart, TypeLastFM, TypeNavidrome, TypeOpenAI, TypeLidarr:
+	case TypeMusicBrainz, TypeSpotify, TypeFanart, TypeLastFM, TypeNavidrome, TypeOpenAI, TypeLidarr, TypeListenBrainz:
 		return Type(s), true
 	default:
 		return "", false
@@ -315,6 +317,11 @@ func DefaultOrder() []Type {
 		TypeNavidrome,
 		TypeSpotify,
 		TypeLastFM,
+		// ListenBrainz runs after MusicBrainz (needs MBIDs) and after
+		// Spotify/Last.fm so Spotify remains the primary popularity source
+		// per REQ-ENRICH-020 (first writer wins on non-empty fields).
+		// Governing: SPEC metadata-enrichment-pipeline REQ "ListenBrainz Enricher" (REQ-ENRICH-064)
+		TypeListenBrainz,
 		TypeFanart,
 		TypeOpenAI,
 	}
