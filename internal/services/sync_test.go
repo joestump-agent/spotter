@@ -2,8 +2,11 @@ package services_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/events"
 	"spotter/internal/providers"
+	"spotter/internal/providers/listenbrainz"
 	"spotter/internal/services"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -244,6 +248,113 @@ func TestSyncer_UpdatesLastSyncedAt_ListenBrainz(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated after sync")
 	assert.WithinDuration(t, time.Now(), updatedAuth.LastSyncedAt, 5*time.Second)
+}
+
+// Governing: SPEC music-provider-integration REQ-PROV-049 (ListenBrainz playlists
+// synced read-only into Spotter), SPEC listen-playlist-sync REQ-SYNC-030/031
+// (PlaylistManager discovery + upsert), REQ-SYNC-012 (sync cursor updated).
+// This exercises the REAL ListenBrainz provider through the syncer (factory
+// registration, PlaylistManager type assertion, JSPF fetch, persistence),
+// mirroring how listen history was proven end-to-end in the #47 tests.
+func TestSyncer_PersistsPlaylists_ListenBrainz(t *testing.T) {
+	const (
+		playlistMBID  = "11111111-2222-3333-4444-555555555555"
+		jamsMBID      = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+		recordingMBID = "2cfad207-3f55-4aec-8120-86cf66e34d59"
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/1/user/lb_user/playlists":
+			fmt.Fprintf(w, `{"playlists": [{"playlist": {
+				"title": "My Mix",
+				"identifier": "https://listenbrainz.org/playlist/%s"
+			}}], "playlist_count": 1, "count": 1, "offset": 0}`, playlistMBID)
+		case "/1/user/lb_user/playlists/createdfor":
+			// Generated playlists (Weekly Jams) come from the createdfor endpoint.
+			fmt.Fprintf(w, `{"playlists": [{"playlist": {
+				"title": "Weekly Jams",
+				"identifier": "https://listenbrainz.org/playlist/%s"
+			}}], "playlist_count": 1, "count": 1, "offset": 0}`, jamsMBID)
+		case "/1/playlist/" + playlistMBID:
+			fmt.Fprintf(w, `{"playlist": {
+				"title": "My Mix",
+				"annotation": "<p>hand picked</p>",
+				"identifier": "https://listenbrainz.org/playlist/%s",
+				"track": [{
+					"title": "Song One",
+					"creator": "Artist A",
+					"album": "Album X",
+					"duration": 215000,
+					"identifier": ["https://musicbrainz.org/recording/%s"]
+				}]
+			}}`, playlistMBID, recordingMBID)
+		case "/1/playlist/" + jamsMBID:
+			fmt.Fprintf(w, `{"playlist": {
+				"title": "Weekly Jams",
+				"identifier": "https://listenbrainz.org/playlist/%s",
+				"track": [{"title": "Jam Track", "creator": "Artist B"}]
+			}}`, jamsMBID)
+		default:
+			t.Errorf("unexpected request path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := enttest.Open(t, "sqlite3", "file:ent_lb_playlists?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.ListenBrainz.APIURL = server.URL
+	syncer := services.NewSyncer(client, cfg, logger, events.NewBus(), nil)
+
+	ctx := context.Background()
+	user := createTestUser(t, client)
+	lbAuth, err := client.ListenBrainzAuth.Create().
+		SetUser(user).
+		SetUsername("lb_user").
+		SetToken("test_token").
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Register the real provider factory, exactly as cmd/server/main.go does.
+	syncer.Register(listenbrainz.New(logger, cfg))
+
+	require.NoError(t, syncer.SyncPlaylists(ctx, user))
+
+	// Both the user-created playlist and the generated (createdfor) playlist persist.
+	saved, err := client.Playlist.Query().
+		Where(playlist.Source(string(providers.TypeListenBrainz))).
+		Order(ent.Asc(playlist.FieldName)).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, saved, 2)
+
+	mix, jams := saved[0], saved[1]
+	assert.Equal(t, "My Mix", mix.Name)
+	assert.Equal(t, playlistMBID, mix.RemoteID, "playlist MBID is the remote ID")
+	assert.Equal(t, "hand picked", mix.Description, "annotation HTML stripped")
+	assert.Equal(t, "https://listenbrainz.org/playlist/"+playlistMBID, mix.ExternalURL)
+	assert.Equal(t, 1, mix.TrackCount)
+	assert.Equal(t, "Weekly Jams", jams.Name)
+	assert.Equal(t, jamsMBID, jams.RemoteID)
+
+	// Track rows carry the recording MBID in remote_id (the provider track ID slot).
+	tracks, err := client.PlaylistTrack.Query().
+		Where(playlisttrack.HasPlaylistWith(playlist.ID(mix.ID))).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, tracks, 1)
+	assert.Equal(t, "Song One", tracks[0].TrackName)
+	assert.Equal(t, "Artist A", tracks[0].ArtistName)
+	assert.Equal(t, "Album X", tracks[0].AlbumName)
+	assert.Equal(t, recordingMBID, tracks[0].RemoteID)
+
+	// Sync cursor advanced through the TypeListenBrainz case of updateLastSyncedAt.
+	updatedAuth, err := client.ListenBrainzAuth.Get(ctx, lbAuth.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedAuth.LastSyncedAt.IsZero(), "LastSyncedAt should be updated after playlist sync")
 }
 
 func TestSyncer_UpdatesLastSyncedAt_EvenWithNoNewTracks(t *testing.T) {

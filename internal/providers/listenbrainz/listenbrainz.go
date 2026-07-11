@@ -31,8 +31,9 @@ const (
 	listensPageSize = 100
 )
 
-// Provider implements the ListenBrainz provider (auth + listen-history sync).
-// Scrobbling and playlist support arrive in later PRs.
+// Provider implements the ListenBrainz provider (auth, listen-history sync,
+// and read-only playlist import — see playlists.go). Scrobbling arrives in a
+// later PR.
 type Provider struct {
 	logger     *slog.Logger
 	auth       *ent.ListenBrainzAuth
