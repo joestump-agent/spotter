@@ -8,13 +8,19 @@ import (
 	"time"
 )
 
-templ Providers(user *ent.User, spotifyAuth *ent.SpotifyAuth, lastfmAuth *ent.LastFMAuth, listenbrainzAuth *ent.ListenBrainzAuth, navidromeAuth *ent.NavidromeAuth, cfg *config.Config) {
+templ Providers(user *ent.User, spotifyAuth *ent.SpotifyAuth, lastfmAuth *ent.LastFMAuth, listenbrainzAuth *ent.ListenBrainzAuth, navidromeAuth *ent.NavidromeAuth, cfg *config.Config, errorMsg string) {
 	@layouts.Dashboard("Providers | Spotter", cfg, "/preferences/providers") {
 		<div class="max-w-7xl mx-auto">
 			<div class="mb-8">
 				<h2 class="text-3xl font-bold">Providers</h2>
 				<p class="text-base-content/60 mt-2">Manage your connected music services</p>
 			</div>
+			if errorMsg != "" {
+				<div class="alert alert-error shadow-sm mb-6">
+					<span class="icon-[heroicons--exclamation-triangle] w-5 h-5"></span>
+					<span>{ errorMsg }</span>
+				</div>
+			}
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 				<!-- Navidrome -->
 				@components.ProviderTile(components.ProviderProps{
