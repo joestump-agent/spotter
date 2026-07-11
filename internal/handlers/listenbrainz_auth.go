@@ -19,14 +19,28 @@ import (
 	"spotter/internal/views/preferences"
 )
 
-// ListenBrainzConnectForm renders the paste-token form.
+// ListenBrainzConnectForm renders the paste-token form. The submit-listens
+// opt-in checkbox is pre-checked from the saved auth state so that
+// reconnecting (e.g. to rotate a token) does not silently reset the opt-in
+// when the form is saved.
 func (h *Handler) ListenBrainzConnectForm(w http.ResponseWriter, r *http.Request) {
 	u := h.RequireUserRedirect(w, r)
 	if u == nil {
 		return
 	}
 
-	h.Render(w, r, preferences.ListenBrainzConnect(u, h.Config, r.URL.Query().Get("error")))
+	refreshed, err := h.Client.User.Query().
+		Where(user.ID(u.ID)).
+		WithListenbrainzAuth().
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to query user", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	submitListens := refreshed.Edges.ListenbrainzAuth != nil && refreshed.Edges.ListenbrainzAuth.SubmitListens
+
+	h.Render(w, r, preferences.ListenBrainzConnect(u, h.Config, r.URL.Query().Get("error"), submitListens))
 }
 
 // ListenBrainzConnect validates the submitted token and stores it.

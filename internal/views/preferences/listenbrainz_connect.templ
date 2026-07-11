@@ -24,7 +24,7 @@ func listenBrainzErrorMessage(code string) string {
 	}
 }
 
-templ ListenBrainzConnect(user *ent.User, cfg *config.Config, errorCode string) {
+templ ListenBrainzConnect(user *ent.User, cfg *config.Config, errorCode string, submitListens bool) {
 	@layouts.Dashboard("Connect ListenBrainz | Spotter", cfg, "/preferences/providers") {
 		<div class="max-w-xl mx-auto">
 			<div class="mb-8">
@@ -59,11 +59,13 @@ templ ListenBrainzConnect(user *ent.User, cfg *config.Config, errorCode string) 
 								required
 							/>
 						</label>
-						<!-- Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049): opt-in, default OFF -->
+						<!-- Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049): opt-in, default OFF.
+						Pre-checked from the saved auth state so a reconnect does not silently reset the opt-in. -->
 						<label class="label cursor-pointer justify-start gap-3 mt-4">
-							<input type="checkbox" name="submit_listens" class="toggle toggle-sm"/>
+							<input type="checkbox" name="submit_listens" class="toggle toggle-sm" checked?={ submitListens }/>
 							<span class="label-text">
-								Submit listens from other connected services (Navidrome, Spotify, Last.fm) to ListenBrainz
+								Submit listens from other connected services (Navidrome, Spotify, Last.fm) to ListenBrainz.
+								This includes your entire existing listening history that has not been submitted yet, not just new listens.
 							</span>
 						</label>
 						<div class="card-actions justify-end mt-6">
