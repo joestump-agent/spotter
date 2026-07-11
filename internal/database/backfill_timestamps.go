@@ -44,28 +44,37 @@ func BackfillAuthTimestamps(ctx context.Context, driver string, db *sql.DB, logg
 			if err != nil {
 				return fmt.Errorf("failed to check %s.%s column existence: %w", table, column, err)
 			}
-			if hasColumn {
-				continue
+
+			if !hasColumn {
+				// Add the column nullable (no DEFAULT) so the ALTER succeeds
+				// on non-empty tables. Identifiers come from the
+				// package-level allowlists above, so interpolation is safe
+				// across drivers.
+				addColumn := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s NULL`,
+					table, column, timestampColumnType(driver))
+				if _, err := db.ExecContext(ctx, addColumn); err != nil {
+					return fmt.Errorf("failed to add %s.%s column: %w", table, column, err)
+				}
 			}
 
-			// Add the column nullable (no DEFAULT) so the ALTER succeeds on
-			// non-empty tables, then backfill existing rows. Identifiers come
-			// from the package-level allowlists above, so interpolation is
-			// safe across drivers.
-			addColumn := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s NULL`,
-				table, column, timestampColumnType(driver))
-			if _, err := db.ExecContext(ctx, addColumn); err != nil {
-				return fmt.Errorf("failed to add %s.%s column: %w", table, column, err)
-			}
+			// Backfill unconditionally, even when the column already existed:
+			// a crash between the ALTER and this UPDATE would otherwise leave
+			// NULL rows behind forever (the column-exists check would skip
+			// them on restart) and Schema.Create's NOT NULL tightening would
+			// crash-loop. The UPDATE touches zero rows when already
+			// backfilled, so re-runs stay idempotent and never overwrite
+			// existing values.
 			backfill := fmt.Sprintf(`UPDATE %s SET %s = CURRENT_TIMESTAMP WHERE %s IS NULL`,
 				table, column, column)
 			if _, err := db.ExecContext(ctx, backfill); err != nil {
 				return fmt.Errorf("failed to backfill %s.%s: %w", table, column, err)
 			}
 
-			logger.Info("backfilled timestamp column before schema migration",
-				"table", table,
-				"column", column)
+			if !hasColumn {
+				logger.Info("backfilled timestamp column before schema migration",
+					"table", table,
+					"column", column)
+			}
 		}
 	}
 	return nil
@@ -90,7 +99,8 @@ func columnExists(ctx context.Context, driver string, db *sql.DB, table, column 
 	var query string
 	switch driver {
 	case driverPostgres:
-		query = `SELECT COUNT(*) FROM information_schema.columns WHERE table_name = $1 AND column_name = $2`
+		query = `SELECT COUNT(*) FROM information_schema.columns
+			WHERE table_schema = ANY (current_schemas(false)) AND table_name = $1 AND column_name = $2`
 	case "mysql":
 		query = `SELECT COUNT(*) FROM information_schema.columns
 			WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`
