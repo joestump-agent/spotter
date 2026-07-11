@@ -256,6 +256,25 @@ func (h *Handler) DisconnectListenBrainz(w http.ResponseWriter, r *http.Request)
 	}
 
 	if u.Edges.ListenbrainzAuth != nil {
+		// Clear the submission stamps BEFORE removing the auth row (a failed
+		// clear aborts the disconnect so the user can retry). A later
+		// reconnect may target a DIFFERENT ListenBrainz account, which must
+		// receive the full history; stale stamps would silently withhold every
+		// pre-existing listen. Re-submitting to the SAME account after a
+		// reconnect is harmless: ListenBrainz documents server-side dedup of
+		// identical listens (user + listened_at + track metadata).
+		if _, err := h.Client.Listen.Update().
+			Where(
+				listen.HasUserWith(user.ID(u.ID)),
+				listen.SubmittedToListenbrainzAtNotNil(),
+			).
+			ClearSubmittedToListenbrainzAt().
+			Save(r.Context()); err != nil {
+			h.Logger.Error("failed to clear listenbrainz submission stamps", "error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
 		if err := h.Client.ListenBrainzAuth.DeleteOne(u.Edges.ListenbrainzAuth).Exec(r.Context()); err != nil {
 			h.Logger.Error("failed to delete listenbrainz auth", "error", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -309,8 +328,10 @@ func (h *Handler) ToggleListenBrainzSubmitListens(w http.ResponseWriter, r *http
 		"username", u.Username, "submit_listens", enabled)
 
 	if enabled {
+		// Full-history disclosure: enabling drains the user's ENTIRE
+		// unsubmitted history, not just listens from now on.
 		h.Render(w, r, components.Toast("Listen Submission Enabled",
-			"Listens from other services will be submitted to ListenBrainz on the next sync.", "success"))
+			"Listens from other services — including your entire existing history that has not been submitted yet — will be submitted to ListenBrainz starting with the next sync.", "success"))
 	} else {
 		h.Render(w, r, components.Toast("Listen Submission Disabled",
 			"Listens will no longer be submitted to ListenBrainz.", "info"))
