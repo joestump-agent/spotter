@@ -151,8 +151,11 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 		if err != nil {
 			// Keep the stub (without tracks) instead of failing the whole
 			// sync or dropping the playlist: dropping it would cause the
-			// reconciler to deactivate it locally, and persistPlaylistTracks
-			// leaves existing tracks untouched when none are provided.
+			// reconciler to deactivate it locally. NOTE the no-wipe guarantee
+			// lives in the CALLER: persistPlaylists skips track persistence
+			// entirely when len(pl.Tracks) == 0 (internal/services/sync.go);
+			// persistPlaylistTracks itself, if called with an empty list,
+			// WOULD delete every existing row via unseen-row deletion.
 			// Governing: AGENTS.md ERR-004 (external API failures degrade gracefully)
 			p.logger.Warn("failed to fetch full listenbrainz playlist, keeping stub without tracks",
 				"playlist_mbid", mbid, "title", stub.Title, "error", err)
