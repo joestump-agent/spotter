@@ -3,6 +3,7 @@
 package listenbrainz
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"spotter/ent"
@@ -29,11 +31,31 @@ const (
 	// caps count at MAX_ITEMS_PER_GET (100).
 	// Governing: SPEC music-provider-integration REQ-PROV-048
 	listensPageSize = 100
+	// listenMinimumUnix mirrors ListenBrainz's minimum accepted listened_at:
+	// LISTEN_MINIMUM_TS = 1033430400 (2002-10-01T00:00:00Z, approximately when
+	// Audioscrobbler — the first scrobbling service — launched), defined in
+	// listenbrainz-server's listenstore. POST /1/submit-listens rejects the
+	// ENTIRE request with 400 when ANY listen is older, so such listens must be
+	// filtered out before batching or one bad row poisons its whole batch.
+	listenMinimumUnix int64 = 1033430400
+	// maxFutureListenSkew is the clock-skew allowance for future-dated listens.
+	// ListenBrainz rejects listens timestamped in the future (again 400-ing the
+	// whole request), but a small allowance avoids dropping legitimate listens
+	// from clients whose clocks run slightly ahead.
+	maxFutureListenSkew = 10 * time.Minute
 )
 
-// Provider implements the ListenBrainz provider (auth, listen-history sync,
-// and read-only playlist import — see playlists.go). Scrobbling arrives in a
-// later PR.
+// MaxListensPerRequest is the maximum number of listens a single
+// POST /1/submit-listens request may carry. The ListenBrainz API documents
+// this limit as MAX_LISTENS_PER_REQUEST = 1000; larger payloads are rejected.
+// SubmitListens splits its input into batches of at most this size, and the
+// syncer uses the same constant so each persisted submission chunk maps to
+// exactly one API request.
+// Governing: SPEC music-provider-integration REQ-PROV-054 (batch limit)
+const MaxListensPerRequest = 1000
+
+// Provider implements the ListenBrainz provider: auth, listen-history sync,
+// read-only playlist import (see playlists.go), and listen submission.
 type Provider struct {
 	logger     *slog.Logger
 	auth       *ent.ListenBrainzAuth
@@ -42,9 +64,11 @@ type Provider struct {
 }
 
 // Governing: SPEC music-provider-integration REQ-PROV-001 (base Provider interface),
-// REQ-PROV-048 (ListenBrainz implements HistoryFetcher)
+// REQ-PROV-048 (ListenBrainz implements HistoryFetcher),
+// REQ-PROV-054 (ListenBrainz implements ListenSubmitter)
 var _ providers.Provider = (*Provider)(nil)
 var _ providers.HistoryFetcher = (*Provider)(nil)
+var _ providers.ListenSubmitter = (*Provider)(nil)
 
 // Governing: ADR-0016 (pluggable provider factory), SPEC music-provider-integration REQ-PROV-011 (nil,nil if unconfigured),
 // REQ-PROV-012 (credentials from user.Edges.ListenbrainzAuth), REQ-PROV-045
@@ -129,7 +153,7 @@ func (p *Provider) ValidateToken(ctx context.Context, token string) (*ValidateTo
 	}
 
 	var result ValidateTokenResult
-	if err := p.doRequest(ctx, http.MethodGet, "/1/validate-token", token, &result); err != nil {
+	if err := p.doRequest(ctx, http.MethodGet, "/1/validate-token", token, nil, &result); err != nil {
 		return nil, fmt.Errorf("failed to validate listenbrainz token: %w", err)
 	}
 	return &result, nil
@@ -194,7 +218,7 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 		}
 
 		var result listensResponse
-		if err := p.doRequest(ctx, http.MethodGet, basePath+"?"+query.Encode(), p.auth.Token, &result); err != nil {
+		if err := p.doRequest(ctx, http.MethodGet, basePath+"?"+query.Encode(), p.auth.Token, nil, &result); err != nil {
 			return fmt.Errorf("failed to fetch listenbrainz listens: %w", err)
 		}
 
@@ -290,13 +314,133 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 	}
 }
 
+// submitAdditionalInfo carries optional per-listen metadata for submission.
+// submission_client and submission_client_version are the split name/version
+// fields the ListenBrainz payload spec defines (not a single combined string).
+type submitAdditionalInfo struct {
+	DurationMs              int    `json:"duration_ms,omitempty"`
+	ISRC                    string `json:"isrc,omitempty"`
+	OriginURL               string `json:"origin_url,omitempty"`
+	SubmissionClient        string `json:"submission_client,omitempty"`
+	SubmissionClientVersion string `json:"submission_client_version,omitempty"`
+}
+
+// submitTrackMetadata mirrors the track_metadata object of the
+// POST /1/submit-listens payload.
+type submitTrackMetadata struct {
+	ArtistName     string                `json:"artist_name"`
+	TrackName      string                `json:"track_name"`
+	ReleaseName    string                `json:"release_name,omitempty"`
+	AdditionalInfo *submitAdditionalInfo `json:"additional_info,omitempty"`
+}
+
+// submitListen is one element of the submit-listens payload array.
+type submitListen struct {
+	ListenedAt    int64               `json:"listened_at"`
+	TrackMetadata submitTrackMetadata `json:"track_metadata"`
+}
+
+// submitListensRequest is the POST /1/submit-listens request body.
+type submitListensRequest struct {
+	ListenType string         `json:"listen_type"`
+	Payload    []submitListen `json:"payload"`
+}
+
+// Governing: SPEC music-provider-integration REQ-PROV-054 (submit-listens with
+// listen_type "import", batches of at most MaxListensPerRequest)
+// SubmitListens pushes listens that originated from other sources to
+// ListenBrainz via POST /1/submit-listens. The input is split into batches of
+// at most MaxListensPerRequest listens; listen_type "import" is used because
+// the listens are historical plays, not live "playing now" events.
+//
+// POST /1/submit-listens rejects the ENTIRE request with 400 when ANY listen
+// is invalid, so listens ListenBrainz is known to reject are filtered out
+// before batching — otherwise one bad listen poisons its whole batch forever:
+//   - missing/whitespace-only track or artist name, or a zero timestamp
+//     (ListenBrainz requires all three; names are submitted trimmed);
+//   - listened_at before listenMinimumUnix (the LB-side minimum, ~Oct 2002);
+//   - listened_at further than maxFutureListenSkew in the future (clock skew).
+//
+// An error is returned as soon as a batch fails; already-accepted batches stay
+// accepted, and re-submitting them later is safe because ListenBrainz
+// de-duplicates identical listens server-side.
+func (p *Provider) SubmitListens(ctx context.Context, listens []providers.Track) error {
+	// Filter out listens ListenBrainz cannot represent before batching so
+	// batch boundaries line up with what is actually sent.
+	payload := make([]submitListen, 0, len(listens))
+	for _, l := range listens {
+		name := strings.TrimSpace(l.Name)
+		artist := strings.TrimSpace(l.Artist)
+		if name == "" || artist == "" || l.PlayedAt.IsZero() {
+			p.logger.Warn("skipping listen not submittable to listenbrainz",
+				"track", l.Name, "artist", l.Artist, "played_at", l.PlayedAt)
+			continue
+		}
+		// Governing: PR #55 review MAJOR 1 — timestamps outside the range
+		// ListenBrainz accepts 400 the whole request; skip them up front.
+		if l.PlayedAt.Unix() < listenMinimumUnix {
+			p.logger.Warn("skipping listen older than the listenbrainz minimum timestamp",
+				"track", name, "artist", artist, "played_at", l.PlayedAt)
+			continue
+		}
+		if l.PlayedAt.After(time.Now().Add(maxFutureListenSkew)) {
+			p.logger.Warn("skipping listen with a future timestamp",
+				"track", name, "artist", artist, "played_at", l.PlayedAt)
+			continue
+		}
+		payload = append(payload, submitListen{
+			ListenedAt: l.PlayedAt.Unix(),
+			TrackMetadata: submitTrackMetadata{
+				ArtistName:  artist,
+				TrackName:   name,
+				ReleaseName: strings.TrimSpace(l.Album),
+				AdditionalInfo: &submitAdditionalInfo{
+					DurationMs: l.DurationMs,
+					ISRC:       l.ISRC,
+					OriginURL:  l.URL,
+					// The ListenBrainz payload spec splits the submitting
+					// client into separate name and version fields.
+					SubmissionClient:        httputil.ClientName,
+					SubmissionClientVersion: httputil.ClientVersion,
+				},
+			},
+		})
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+
+	p.logger.Info("submitting listens to listenbrainz", "username", p.auth.Username, "count", len(payload))
+
+	for start := 0; start < len(payload); start += MaxListensPerRequest {
+		end := start + MaxListensPerRequest
+		if end > len(payload) {
+			end = len(payload)
+		}
+		body, err := json.Marshal(submitListensRequest{
+			ListenType: "import",
+			Payload:    payload[start:end],
+		})
+		if err != nil {
+			return fmt.Errorf("failed to encode listenbrainz submit payload: %w", err)
+		}
+		if err := p.doRequest(ctx, http.MethodPost, "/1/submit-listens", p.auth.Token, body, nil); err != nil {
+			return fmt.Errorf("failed to submit listens to listenbrainz: %w", err)
+		}
+	}
+	return nil
+}
+
 // doRequest performs an authenticated GET/POST against the ListenBrainz API
-// with retry on transient failures.
+// with retry on transient failures. body is the JSON request body (nil for
+// GET); it is kept as a byte slice and a fresh bytes.Reader is built on EVERY
+// attempt, so retries after a 429 or 5xx resend the complete body instead of
+// an already-drained reader.
 // Governing: SPEC music-provider-integration REQ-PROV-047, AGENTS.md "External
 // API Etiquette" — every request carries a descriptive User-Agent, and 429
 // responses are honored by waiting the advertised Retry-After (or
 // X-RateLimit-Reset-In) interval before retrying.
-func (p *Provider) doRequest(ctx context.Context, method, path, token string, result interface{}) error {
+func (p *Provider) doRequest(ctx context.Context, method, path, token string, body []byte, result interface{}) error {
 	var lastErr error
 	var wait time.Duration
 	var waitSet bool
@@ -318,12 +462,21 @@ func (p *Provider) doRequest(ctx context.Context, method, path, token string, re
 		}
 		wait, waitSet = 0, false
 
-		req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, nil)
+		// Rebuild the body reader per attempt: an io.Reader consumed by a
+		// failed attempt cannot be resent, so each retry gets a fresh one.
+		var bodyReader io.Reader
+		if body != nil {
+			bodyReader = bytes.NewReader(body)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, bodyReader)
 		if err != nil {
 			return err
 		}
 		// Governing: AGENTS.md "External API Etiquette" — shared descriptive User-Agent.
 		req.Header.Set("User-Agent", httputil.UserAgent)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
 		if token != "" {
 			// Governing: SPEC music-provider-integration REQ-PROV-046 (Authorization: Token <token>)
 			req.Header.Set("Authorization", "Token "+token)
@@ -350,9 +503,13 @@ func (p *Provider) doRequest(ctx context.Context, method, path, token string, re
 
 		// Try to read body for error details (bounded so a huge error page
 		// cannot balloon memory).
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		p.closeBody(resp)
-		lastErr = fmt.Errorf("listenbrainz api returned status %d: %s", resp.StatusCode, string(body))
+		// The typed StatusError lets the syncer distinguish permanent
+		// rejections (non-429 4xx) from transient failures when deciding
+		// whether to fall back to per-listen submission.
+		lastErr = fmt.Errorf("listenbrainz api returned %w",
+			&providers.StatusError{StatusCode: resp.StatusCode, Body: string(errBody)})
 
 		if resp.StatusCode == http.StatusTooManyRequests {
 			// Governing: SPEC music-provider-integration REQ-PROV-047 — never
