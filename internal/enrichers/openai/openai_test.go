@@ -337,6 +337,36 @@ func TestEnrichAlbum_MockAPI(t *testing.T) {
 	assert.Contains(t, data.AITags, "70s")
 }
 
+// TestEnrichAlbum_SkipRecentlyEnriched proves an album enriched within the
+// re-enrich window is skipped without hitting the OpenAI API (no billing).
+// Governing: AGENTS.md ENR-AI-004.
+func TestEnrichAlbum_SkipRecentlyEnriched(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("OpenAI API must not be called for a recently enriched album (path=%s)", r.URL.Path)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{}
+	cfg.OpenAI.APIKey = "test-key"
+	cfg.OpenAI.BaseURL = server.URL
+	cfg.Metadata.AI.PromptsDirectory = "./nonexistent"
+
+	factory := New(nil, cfg)
+	enricher, err := factory(context.Background(), nil)
+	require.NoError(t, err)
+
+	recent := time.Now().Add(-24 * time.Hour)
+	album := &ent.Album{
+		Name:             "Test Album",
+		LastAiEnrichedAt: &recent,
+	}
+
+	albumEnricher := enricher.(enrichers.AlbumEnricher)
+	data, err := albumEnricher.EnrichAlbum(context.Background(), album)
+	assert.NoError(t, err)
+	assert.Nil(t, data)
+}
+
 func TestEnrichTrack_MockAPI(t *testing.T) {
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -385,6 +415,37 @@ func TestEnrichTrack_MockAPI(t *testing.T) {
 	assert.Equal(t, "An energetic track", data.AISummary)
 	assert.Contains(t, data.AITags, "upbeat")
 	assert.Contains(t, data.AITags, "energetic")
+}
+
+// TestEnrichTrack_SkipRecentlyEnriched proves a track enriched within the
+// re-enrich window is skipped without hitting the OpenAI API (no billing).
+// This is the hot path when Lidarr is unconfigured and every track is selected
+// each hourly metadata pass. Governing: AGENTS.md ENR-AI-004.
+func TestEnrichTrack_SkipRecentlyEnriched(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("OpenAI API must not be called for a recently enriched track (path=%s)", r.URL.Path)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{}
+	cfg.OpenAI.APIKey = "test-key"
+	cfg.OpenAI.BaseURL = server.URL
+	cfg.Metadata.AI.PromptsDirectory = "./nonexistent"
+
+	factory := New(nil, cfg)
+	enricher, err := factory(context.Background(), nil)
+	require.NoError(t, err)
+
+	recent := time.Now().Add(-24 * time.Hour)
+	track := &ent.Track{
+		Name:             "Test Track",
+		LastAiEnrichedAt: &recent,
+	}
+
+	trackEnricher := enricher.(enrichers.TrackEnricher)
+	data, err := trackEnricher.EnrichTrack(context.Background(), track)
+	assert.NoError(t, err)
+	assert.Nil(t, data)
 }
 
 func TestEnrichArtist_APIError(t *testing.T) {
