@@ -8,6 +8,7 @@ package services_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,11 +24,15 @@ import (
 )
 
 // mockListenSubmitter implements providers.Provider and
-// providers.ListenSubmitter, recording every batch it receives.
+// providers.ListenSubmitter, recording every batch it receives. submitFn, when
+// set, decides per call whether the batch is accepted (nil) or rejected
+// (non-nil error); accepted batches are recorded.
 type mockListenSubmitter struct {
 	providerType providers.Type
 	batches      [][]providers.Track
 	err          error
+	submitFn     func(listens []providers.Track) error
+	calls        int
 }
 
 func (m *mockListenSubmitter) Type() providers.Type {
@@ -35,7 +40,12 @@ func (m *mockListenSubmitter) Type() providers.Type {
 }
 
 func (m *mockListenSubmitter) SubmitListens(_ context.Context, listens []providers.Track) error {
-	if m.err != nil {
+	m.calls++
+	if m.submitFn != nil {
+		if err := m.submitFn(listens); err != nil {
+			return err
+		}
+	} else if m.err != nil {
 		return m.err
 	}
 	batch := make([]providers.Track, len(listens))
@@ -241,6 +251,152 @@ func TestSyncer_SubmitListens_FailureToleratedAndRetriedNextRound(t *testing.T) 
 		Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 1, flagged)
+}
+
+// Regression: PR #55 adversarial review MAJOR 1 — a "poison" listen that
+// ListenBrainz permanently rejects (400 on the whole batch) used to wedge
+// submission forever: the chunk error stamped nothing, so the oldest-first
+// NULL-flag query re-selected the SAME chunk on every sync, sending one doomed
+// request per run. The syncer must fall back to per-listen submission on a
+// non-429 4xx, submit every valid listen, stamp the rejected row as processed
+// (the flag means "processed", not "accepted"), and leave nothing behind for
+// the next round.
+func TestSyncer_SubmitListens_Regression_PoisonListenDoesNotWedgeSubmission(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+	u := createListenBrainzUser(t, client, true)
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	seedListen(t, client, u, "navidrome", "Valid Before", base)
+	poison := seedListen(t, client, u, "spotify", "Poison Track", base.Add(time.Hour))
+	seedListen(t, client, u, "lastfm", "Valid After", base.Add(2*time.Hour))
+
+	// Rejects any batch containing the poison listen with the non-retryable
+	// 4xx that POST /1/submit-listens returns for invalid listens.
+	rejection := fmt.Errorf("failed to submit listens to listenbrainz: listenbrainz api returned %w",
+		&providers.StatusError{StatusCode: 400, Body: `{"code":400,"error":"invalid listen"}`})
+	submitter := &mockListenSubmitter{
+		providerType: providers.TypeListenBrainz,
+		submitFn: func(listens []providers.Track) error {
+			for _, l := range listens {
+				if l.Name == "Poison Track" {
+					return rejection
+				}
+			}
+			return nil
+		},
+	}
+	syncer.Register(mockFactory(submitter))
+
+	// Round 1: the sync itself succeeds and every valid listen is submitted
+	// despite the poison listen sitting mid-chunk.
+	require.NoError(t, syncer.Sync(ctx, u), "a rejected listen must not fail the sync")
+	got := submitter.received()
+	require.Len(t, got, 2, "all valid listens in the chunk must be submitted")
+	names := map[string]bool{}
+	for _, tr := range got {
+		names[tr.Name] = true
+	}
+	assert.True(t, names["Valid Before"])
+	assert.True(t, names["Valid After"])
+	assert.False(t, names["Poison Track"], "the rejected listen is never recorded as accepted")
+
+	// The poison row is stamped as processed so it can never wedge the queue.
+	refreshed, err := client.Listen.Get(ctx, poison.ID)
+	require.NoError(t, err)
+	assert.NotNil(t, refreshed.SubmittedToListenbrainzAt,
+		"a permanently rejected listen must be stamped as processed")
+
+	unflagged, err := client.Listen.Query().
+		Where(listen.HasUserWith(user.ID(u.ID)), listen.SubmittedToListenbrainzAtIsNil()).
+		Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, unflagged, "every listen in the chunk must be processed")
+
+	// Round 2: nothing is selected — the poison chunk is not retried.
+	submitter.batches = nil
+	submitter.calls = 0
+	require.NoError(t, syncer.Sync(ctx, u))
+	assert.Zero(t, submitter.calls, "next sync must not re-select the poisoned chunk")
+}
+
+// Regression: PR #55 adversarial review MAJOR 2 — cross-provider dedup defeats
+// provenance. When the user's player scrobbles to ListenBrainz natively, the
+// play exists locally twice conceptually but only the spotify/navidrome row
+// survives persistence dedup, or both rows coexist; either way the non-LB row
+// (NULL flag) used to be submitted BACK to ListenBrainz, duplicating every
+// play in the user's LB history. A listen with a listenbrainz-source sibling
+// (same track identity within the ±2min dedup window) must be skipped and
+// stamped as processed instead of submitted.
+func TestSyncer_SubmitListens_Regression_ListenBrainzSiblingNotEchoedBack(t *testing.T) {
+	client, syncer, _ := setupTestSyncer(t)
+	ctx := context.Background()
+	u := createListenBrainzUser(t, client, true)
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	// A spotify play whose LB-source sibling (same track identity, 30s apart)
+	// proves ListenBrainz already has this listen natively.
+	shared, err := client.Listen.Create().
+		SetUser(u).
+		SetTrackName("Shared Song").
+		SetArtistName("Shared Artist").
+		SetAlbumName("Shared Album").
+		SetSource("spotify").
+		SetPlayedAt(base).
+		Save(ctx)
+	require.NoError(t, err)
+	sibling, err := client.Listen.Create().
+		SetUser(u).
+		SetTrackName("Shared Song").
+		SetArtistName("Shared Artist").
+		SetAlbumName("Shared Album").
+		SetSource("listenbrainz").
+		SetPlayedAt(base.Add(30 * time.Second)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// A spotify play with no LB sibling: must be submitted as usual.
+	solo, err := client.Listen.Create().
+		SetUser(u).
+		SetTrackName("Solo Song").
+		SetArtistName("Solo Artist").
+		SetAlbumName("Solo Album").
+		SetSource("spotify").
+		SetPlayedAt(base.Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	submitter := &mockListenSubmitter{providerType: providers.TypeListenBrainz}
+	syncer.Register(mockFactory(submitter))
+
+	require.NoError(t, syncer.Sync(ctx, u))
+
+	got := submitter.received()
+	require.Len(t, got, 1, "only the listen WITHOUT a ListenBrainz sibling is submitted")
+	assert.Equal(t, "Solo Song", got[0].Name)
+
+	// The sibling-suppressed row is stamped as processed (never selected again).
+	refreshedShared, err := client.Listen.Get(ctx, shared.ID)
+	require.NoError(t, err)
+	assert.NotNil(t, refreshedShared.SubmittedToListenbrainzAt,
+		"a listen already present in LB via its sibling must be stamped as processed")
+
+	refreshedSolo, err := client.Listen.Get(ctx, solo.ID)
+	require.NoError(t, err)
+	assert.NotNil(t, refreshedSolo.SubmittedToListenbrainzAt)
+
+	// The listenbrainz-origin sibling itself stays out of the pipeline
+	// entirely (provenance filter) and is never stamped.
+	refreshedSibling, err := client.Listen.Get(ctx, sibling.ID)
+	require.NoError(t, err)
+	assert.Nil(t, refreshedSibling.SubmittedToListenbrainzAt)
+
+	// Round 2: nothing left to submit.
+	submitter.batches = nil
+	submitter.calls = 0
+	require.NoError(t, syncer.Sync(ctx, u))
+	assert.Zero(t, submitter.calls)
 }
 
 // Governing: SPEC music-provider-integration REQ-PROV-049 (submission is

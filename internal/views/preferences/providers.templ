@@ -314,7 +314,7 @@ templ LastFMDisconnectModal() {
 // handler treats absence as "disabled".
 // Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-049)
 templ ListenBrainzSubmitToggle(enabled bool) {
-	<label class="label cursor-pointer justify-start gap-3 mt-3" title="Push listens from Navidrome, Spotify, and Last.fm to ListenBrainz">
+	<label class="label cursor-pointer justify-start gap-3 mt-3" title="Push listens from Navidrome, Spotify, and Last.fm to ListenBrainz — including your entire existing unsubmitted history, not just new listens">
 		<input
 			type="checkbox"
 			name="submit_listens"
@@ -324,7 +324,7 @@ templ ListenBrainzSubmitToggle(enabled bool) {
 			hx-target="#toasts"
 			hx-swap="beforeend"
 		/>
-		<span class="label-text text-sm">Submit listens from other services</span>
+		<span class="label-text text-sm">Submit listens from other services (includes your existing history)</span>
 	</label>
 }
 
