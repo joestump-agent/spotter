@@ -414,6 +414,33 @@ func (s *PlaylistSyncService) PairWithNavidrome(ctx context.Context, playlistID 
 	return s.SyncPlaylistToNavidrome(ctx, playlistID)
 }
 
+// ListNavidromePlaylists returns the user's playlists straight from the
+// Navidrome provider, for use as pairing candidates when linking a Spotter
+// playlist to an arbitrary Navidrome playlist.
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-071 (candidate listing via provider GetPlaylists)
+func (s *PlaylistSyncService) ListNavidromePlaylists(ctx context.Context, userID int) ([]providers.Playlist, error) {
+	u, err := s.client.User.Get(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load user: %w", err)
+	}
+
+	navidromeProvider, err := s.getNavidromeProvider(ctx, u)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Navidrome provider: %w", err)
+	}
+
+	manager, ok := navidromeProvider.(providers.PlaylistManager)
+	if !ok {
+		return nil, fmt.Errorf("Navidrome provider does not implement PlaylistManager")
+	}
+
+	playlists, err := manager.GetPlaylists(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch Navidrome playlists: %w", err)
+	}
+	return playlists, nil
+}
+
 // SyncAllEnabledPlaylists syncs all playlists with sync_to_navidrome=true for a user.
 // Called by the scheduler.
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-040 (scheduled sync of all enabled playlists)
@@ -495,13 +522,22 @@ func (s *PlaylistSyncService) SyncAllEnabledPlaylists(ctx context.Context, userI
 // Called when user disables sync (if configured to delete on unsync).
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-032 (delete-on-unsync option)
 func (s *PlaylistSyncService) RemovePlaylistFromNavidrome(ctx context.Context, playlistID int) error {
+	return s.RemovePlaylistFromNavidromeWithChoice(ctx, playlistID, s.config.PlaylistSync.DeleteOnUnsync)
+}
+
+// RemovePlaylistFromNavidromeWithChoice removes a synced playlist from Navidrome
+// according to an explicit per-request choice, overriding the server-wide
+// delete_on_unsync config. When deleteRemote is false the Navidrome playlist is
+// kept (and its pairing info retained so a later re-enable updates it in place).
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-033 (per-request keep/delete override)
+func (s *PlaylistSyncService) RemovePlaylistFromNavidromeWithChoice(ctx context.Context, playlistID int, deleteRemote bool) error {
 	s.logger.Info("remove playlist from Navidrome requested",
 		"playlist_id", playlistID,
-		"delete_on_unsync", s.config.PlaylistSync.DeleteOnUnsync)
+		"delete_remote", deleteRemote)
 
-	// Check if deletion is enabled
-	if !s.config.PlaylistSync.DeleteOnUnsync {
-		s.logger.Debug("delete on unsync is disabled, keeping Navidrome playlist",
+	// Check if deletion is requested
+	if !deleteRemote {
+		s.logger.Debug("delete not requested, keeping Navidrome playlist",
 			"playlist_id", playlistID)
 		return nil
 	}

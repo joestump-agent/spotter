@@ -723,6 +723,245 @@ func TestPlaylistSyncService_RebuildPlaylistSync_NoExistingNavidromeID(t *testin
 	assert.Equal(t, "nav-playlist-123", updatedPl.NavidromePlaylistID)
 }
 
+// mockPlaylistManagerSyncer extends mockPlaylistSyncer with the
+// providers.PlaylistManager read interface so ListNavidromePlaylists can be
+// exercised against a provider that supports both reading and write-back.
+type mockPlaylistManagerSyncer struct {
+	mockPlaylistSyncer
+	playlists       []providers.Playlist
+	getPlaylistsErr error
+}
+
+func (m *mockPlaylistManagerSyncer) GetPlaylists(ctx context.Context) ([]providers.Playlist, error) {
+	if m.getPlaylistsErr != nil {
+		return nil, m.getPlaylistsErr
+	}
+	return m.playlists, nil
+}
+
+func (m *mockPlaylistManagerSyncer) CreatePlaylist(ctx context.Context, name, description string, tracks []providers.Track) error {
+	return nil
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-070 (PairWithNavidrome)
+func TestPlaylistSyncService_PairWithNavidrome_Success(t *testing.T) {
+	client, svc, _, mockSyncer := setupPlaylistSyncService(t)
+	ctx := context.Background()
+
+	user := createTestUserWithNavidromeAuth(t, client)
+	createNavidromeTracksForMatching(t, client, user)
+
+	// Spotify playlist with sync enabled but not yet paired
+	pl := createTestPlaylistForSync(t, client, user, "spotify", true)
+	createTestPlaylistTracksForSync(t, client, pl)
+
+	// A Navidrome-source duplicate cached in Spotter's DB for the same remote playlist
+	duplicate, err := client.Playlist.Create().
+		SetUser(user).
+		SetRemoteID("nav-existing-42").
+		SetName("Test Playlist").
+		SetSource("navidrome").
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Pair with the existing Navidrome playlist
+	err = svc.PairWithNavidrome(ctx, pl.ID, "nav-existing-42")
+	require.NoError(t, err)
+
+	// navidrome_playlist_id is set to the chosen remote ID
+	updatedPl, err := client.Playlist.Get(ctx, pl.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "nav-existing-42", updatedPl.NavidromePlaylistID)
+
+	// An immediate sync was triggered and took the UPDATE path (existing playlist)
+	assert.Equal(t, "nav-existing-42", mockSyncer.updatedID)
+	assert.Nil(t, mockSyncer.syncedPlaylist, "pairing must not create a new Navidrome playlist")
+	assert.NotNil(t, updatedPl.LastSyncedAt, "pairing must trigger an immediate sync")
+	assert.Len(t, mockSyncer.updatedTracks, 3, "all matched tracks should be pushed to the paired playlist")
+
+	// The Navidrome-source duplicate was removed from Spotter's DB
+	exists, err := client.Playlist.Query().
+		Where(playlist.ID(duplicate.ID)).
+		Exist(ctx)
+	require.NoError(t, err)
+	assert.False(t, exists, "Navidrome-source duplicate must be deleted after pairing")
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-070 (PairWithNavidrome)
+func TestPlaylistSyncService_PairWithNavidrome_NoDuplicate(t *testing.T) {
+	client, svc, _, mockSyncer := setupPlaylistSyncService(t)
+	ctx := context.Background()
+
+	user := createTestUserWithNavidromeAuth(t, client)
+	createNavidromeTracksForMatching(t, client, user)
+
+	pl := createTestPlaylistForSync(t, client, user, "spotify", true)
+	createTestPlaylistTracksForSync(t, client, pl)
+
+	// Pair with a remote ID that has no cached Navidrome-source duplicate
+	err := svc.PairWithNavidrome(ctx, pl.ID, "nav-arbitrary-target")
+	require.NoError(t, err)
+
+	updatedPl, err := client.Playlist.Get(ctx, pl.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "nav-arbitrary-target", updatedPl.NavidromePlaylistID)
+	assert.Equal(t, "nav-arbitrary-target", mockSyncer.updatedID)
+	assert.NotNil(t, updatedPl.LastSyncedAt)
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-070 (PairWithNavidrome)
+func TestPlaylistSyncService_PairWithNavidrome_SyncDisabled(t *testing.T) {
+	client, svc, _, mockSyncer := setupPlaylistSyncService(t)
+	ctx := context.Background()
+
+	user := createTestUserWithNavidromeAuth(t, client)
+
+	// Sync disabled: pairing still records the remote ID, but the follow-up
+	// sync is a no-op until sync is enabled (handlers enable sync first).
+	pl := createTestPlaylistForSync(t, client, user, "spotify", false)
+
+	err := svc.PairWithNavidrome(ctx, pl.ID, "nav-disabled-target")
+	require.NoError(t, err)
+
+	updatedPl, err := client.Playlist.Get(ctx, pl.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "nav-disabled-target", updatedPl.NavidromePlaylistID)
+	assert.Empty(t, mockSyncer.updatedID, "sync must not run while sync_to_navidrome is false")
+}
+
+func TestPlaylistSyncService_PairWithNavidrome_PlaylistNotFound(t *testing.T) {
+	_, svc, _, _ := setupPlaylistSyncService(t)
+	ctx := context.Background()
+
+	err := svc.PairWithNavidrome(ctx, 99999, "nav-whatever")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to load playlist")
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-033 (per-request keep/delete override)
+func TestPlaylistSyncService_RemovePlaylistFromNavidromeWithChoice_KeepOverridesConfig(t *testing.T) {
+	// Config says delete on unsync...
+	client, svc, _, mockSyncer := setupPlaylistSyncService(t) // DeleteOnUnsync = true
+	ctx := context.Background()
+
+	user := createTestUserWithNavidromeAuth(t, client)
+
+	pl, err := client.Playlist.Create().
+		SetUser(user).
+		SetRemoteID("remote-keep-choice").
+		SetName("Keep Me Anyway").
+		SetSource("spotify").
+		SetSyncToNavidrome(false).
+		SetNavidromePlaylistID("nav-keep-choice").
+		Save(ctx)
+	require.NoError(t, err)
+
+	// ...but the explicit per-request choice is to keep.
+	err = svc.RemovePlaylistFromNavidromeWithChoice(ctx, pl.ID, false)
+	require.NoError(t, err)
+
+	// Delete was NOT called and the pairing info is retained.
+	assert.Empty(t, mockSyncer.deletedID)
+	updatedPl, err := client.Playlist.Get(ctx, pl.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "nav-keep-choice", updatedPl.NavidromePlaylistID)
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-033 (per-request keep/delete override)
+func TestPlaylistSyncService_RemovePlaylistFromNavidromeWithChoice_DeleteOverridesConfig(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.PlaylistSync.MinMatchConfidence = 0.8
+	cfg.PlaylistSync.DeleteOnUnsync = false // Config says keep on unsync...
+
+	bus := events.NewBus()
+	svc := services.NewPlaylistSyncService(client, cfg, logger, bus)
+
+	mockSyncer := &mockPlaylistSyncer{
+		providerType: providers.TypeNavidrome,
+	}
+	svc.Register(mockPlaylistSyncerFactory(mockSyncer))
+
+	ctx := context.Background()
+	user := createTestUserWithNavidromeAuth(t, client)
+
+	pl, err := client.Playlist.Create().
+		SetUser(user).
+		SetRemoteID("remote-delete-choice").
+		SetName("Delete Me Anyway").
+		SetSource("spotify").
+		SetSyncToNavidrome(false).
+		SetNavidromePlaylistID("nav-delete-choice").
+		Save(ctx)
+	require.NoError(t, err)
+
+	// ...but the explicit per-request choice is to delete.
+	err = svc.RemovePlaylistFromNavidromeWithChoice(ctx, pl.ID, true)
+	require.NoError(t, err)
+
+	// Delete WAS called and sync info was cleared.
+	assert.Equal(t, "nav-delete-choice", mockSyncer.deletedID)
+	updatedPl, err := client.Playlist.Get(ctx, pl.ID)
+	require.NoError(t, err)
+	assert.Empty(t, updatedPl.NavidromePlaylistID)
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-071 (candidate listing via provider GetPlaylists)
+func TestPlaylistSyncService_ListNavidromePlaylists_Success(t *testing.T) {
+	client := enttest.Open(t, "sqlite3", "file:ent?mode=memory&cache=shared&_fk=1")
+	t.Cleanup(func() { client.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := &config.Config{}
+	cfg.PlaylistSync.MinMatchConfidence = 0.8
+
+	bus := events.NewBus()
+	svc := services.NewPlaylistSyncService(client, cfg, logger, bus)
+
+	mockManager := &mockPlaylistManagerSyncer{
+		mockPlaylistSyncer: mockPlaylistSyncer{providerType: providers.TypeNavidrome},
+		playlists: []providers.Playlist{
+			{ID: "nav-1", Name: "Morning Coffee", TrackCount: 12},
+			{ID: "nav-2", Name: "Late Night", TrackCount: 30},
+		},
+	}
+	svc.Register(mockPlaylistSyncerFactory(mockManager))
+
+	ctx := context.Background()
+	user := createTestUserWithNavidromeAuth(t, client)
+
+	playlists, err := svc.ListNavidromePlaylists(ctx, user.ID)
+	require.NoError(t, err)
+	require.Len(t, playlists, 2)
+	assert.Equal(t, "nav-1", playlists[0].ID)
+	assert.Equal(t, "Morning Coffee", playlists[0].Name)
+	assert.Equal(t, "nav-2", playlists[1].ID)
+}
+
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-071 (candidate listing via provider GetPlaylists)
+func TestPlaylistSyncService_ListNavidromePlaylists_NotAPlaylistManager(t *testing.T) {
+	client, svc, _, _ := setupPlaylistSyncService(t) // mockPlaylistSyncer is not a PlaylistManager
+	ctx := context.Background()
+
+	user := createTestUserWithNavidromeAuth(t, client)
+
+	_, err := svc.ListNavidromePlaylists(ctx, user.ID)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "does not implement PlaylistManager")
+}
+
+func TestPlaylistSyncService_ListNavidromePlaylists_UserNotFound(t *testing.T) {
+	_, svc, _, _ := setupPlaylistSyncService(t)
+	ctx := context.Background()
+
+	_, err := svc.ListNavidromePlaylists(ctx, 99999)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to load user")
+}
+
 // libraryQueryFailingDriver wraps an Ent driver and, when enabled, fails any
 // read query against the "tracks" table (the library query issued by
 // TrackMatcher.LoadLibraryIndex) while letting every other statement through,

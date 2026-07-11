@@ -338,8 +338,10 @@ func main() {
 			logger.Error("invalid metadata interval, using default 1h", "error", err, "value", cfg.Metadata.Interval)
 			metadataInterval = 1 * time.Hour
 		}
+		metadataInitialDelay := cfg.MetadataInitialDelay()
 		logger.Info("metadata enrichment configured",
 			"interval", metadataInterval,
+			"initial_delay", metadataInitialDelay,
 			"order", cfg.MetadataEnricherOrder())
 
 		wg.Add(1)
@@ -354,13 +356,16 @@ func main() {
 				})
 			}
 
-			// Initial delay to let the app start up
-			select {
-			case <-ctx.Done():
-				// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
-				logger.Info("loop shutting down", "loop", "metadata")
-				return
-			case <-time.After(30 * time.Second):
+			// Initial delay to let the app start up (metadata.initial_delay;
+			// zero skips the delay entirely)
+			if metadataInitialDelay > 0 {
+				select {
+				case <-ctx.Done():
+					// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
+					logger.Info("loop shutting down", "loop", "metadata")
+					return
+				case <-time.After(metadataInitialDelay):
+				}
 			}
 
 			// Run immediately on startup
@@ -393,18 +398,24 @@ func main() {
 		logger.Error("invalid playlist sync interval, using default 1h", "error", err, "value", cfg.PlaylistSync.SyncInterval)
 		playlistSyncInterval = 1 * time.Hour
 	}
-	logger.Info("playlist sync configured", "interval", playlistSyncInterval)
+	playlistSyncInitialDelay := cfg.PlaylistSyncInitialDelay()
+	logger.Info("playlist sync configured",
+		"interval", playlistSyncInterval,
+		"initial_delay", playlistSyncInitialDelay)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// Initial delay to let the app start up
-		select {
-		case <-ctx.Done():
-			// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
-			logger.Info("loop shutting down", "loop", "playlist_sync")
-			return
-		case <-time.After(1 * time.Minute):
+		// Initial delay to let the app start up (playlist_sync.initial_delay;
+		// zero skips the delay entirely)
+		if playlistSyncInitialDelay > 0 {
+			select {
+			case <-ctx.Done():
+				// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
+				logger.Info("loop shutting down", "loop", "playlist_sync")
+				return
+			case <-time.After(playlistSyncInitialDelay):
+			}
 		}
 
 		ticker := time.NewTicker(playlistSyncInterval)
@@ -490,14 +501,14 @@ func main() {
 	// stream is not force-closed every 60s (which also dropped any events
 	// published during the reconnect gap). All other middleware still applies.
 	r.Group(func(r chi.Router) {
-		r.Use(AuthMiddleware(client, jwtManager, logger))
+		r.Use(internalMiddleware.AuthMiddleware(client, jwtManager, logger))
 		r.Get("/events", h.Events)
 	})
 
 	// Protected Routes
 	r.Group(func(r chi.Router) {
 		r.Use(requestTimeout)
-		r.Use(AuthMiddleware(client, jwtManager, logger))
+		r.Use(internalMiddleware.AuthMiddleware(client, jwtManager, logger))
 
 		// Governing: issue #155 — /data/* moved behind auth to prevent unauthenticated access
 		dataFileServer := http.FileServer(http.Dir("./data"))
@@ -559,6 +570,10 @@ func main() {
 		r.Get("/playlists/{id}/sync-progress", h.GetPlaylistSyncProgress)
 		r.Post("/playlists/{id}/debug-sync", h.DebugPlaylistSync)
 		r.Post("/playlists/{id}/resolve-navidrome-conflict", h.ResolveNavidromeConflict)
+		// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-071, REQ-PLSYNC-072 (arbitrary-target linking)
+		r.Get("/playlists/{id}/link", h.LinkNavidromePicker)
+		r.Post("/playlists/{id}/link/{targetId}", h.LinkWithNavidrome)
+		r.Get("/playlists/{id}/sync-dropdown", h.GetPlaylistSyncDropdown)
 		r.Post("/playlists/{id}/ai/generate-metadata", h.PlaylistGenerateMetadata)
 		r.Post("/playlists/{id}/ai/generate-artwork", h.PlaylistGenerateArtwork)
 		r.Get("/playlists/{id}/enhance-vibes-modal", h.EnhanceVibesModal)
@@ -701,62 +716,5 @@ func main() {
 		logger.Info("all background jobs finished cleanly")
 	case <-shutdownCtx.Done():
 		logger.Warn("shutdown timeout exceeded")
-	}
-}
-
-// Governing: ADR-0005 (Navidrome primary identity), ADR-0002 (Chi router), SPEC user-authentication REQ "MIDDLEWARE-001", REQ "MIDDLEWARE-002", REQ "MIDDLEWARE-003", REQ "MIDDLEWARE-004"
-func AuthMiddleware(client *ent.Client, jwtManager *auth.JWTManager, logger *slog.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Helper to redirect to login, handling HTMX requests
-			redirectToLogin := func() {
-				// Clear any invalid cookie
-				http.SetCookie(w, &http.Cookie{
-					Name:     handlers.CookieName,
-					Value:    "",
-					Path:     "/",
-					HttpOnly: true,
-					MaxAge:   -1,
-				})
-
-				if r.Header.Get("HX-Request") == "true" {
-					w.Header().Set("HX-Redirect", "/auth/login")
-					w.WriteHeader(http.StatusUnauthorized)
-					return
-				}
-				// EventSource requests (SSE) must not be redirected — browsers
-				// follow redirects transparently and then reconnect on error,
-				// creating a tight polling loop against /auth/login. Return 401
-				// instead so the browser's EventSource closes without retrying.
-				if r.Header.Get("Accept") == "text/event-stream" {
-					w.WriteHeader(http.StatusUnauthorized)
-					return
-				}
-				http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-			}
-
-			cookie, err := r.Cookie(handlers.CookieName)
-			if err != nil {
-				redirectToLogin()
-				return
-			}
-
-			claims, err := jwtManager.ValidateToken(cookie.Value)
-			if err != nil {
-				logger.Info("auth: invalid JWT token", "path", r.URL.Path, "method", r.Method, "error", err)
-				redirectToLogin()
-				return
-			}
-
-			u, err := client.User.Get(r.Context(), claims.UserID)
-			if err != nil {
-				logger.Warn("auth: user not found for JWT claims", "user_id", claims.UserID, "path", r.URL.Path, "error", err)
-				redirectToLogin()
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), handlers.UserContextKey, u)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
 	}
 }
