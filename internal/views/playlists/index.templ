@@ -71,24 +71,31 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 					<h2 class="text-3xl font-bold">Playlists</h2>
 					<p class="text-base-content/60 mt-2">All playlists synced from your connected music services</p>
 				</div>
-				<!-- View Toggle -->
-				<div class="join">
-					<button
-						id="table-view-btn"
-						class="join-item btn btn-sm btn-square"
-						onclick="setView('table')"
-						title="Table view"
-					>
-						<span class="icon-[heroicons--table-cells] w-4 h-4"></span>
-					</button>
-					<button
-						id="tile-view-btn"
-						class="join-item btn btn-sm btn-square btn-active"
-						onclick="setView('tile')"
-						title="Tile view"
-					>
-						<span class="icon-[heroicons--squares-2x2] w-4 h-4"></span>
-					</button>
+				<div class="flex items-center gap-3">
+					<!-- Governing: ADR-0030 — LB Radio entry point lives on the playlists page -->
+					<a href="/playlists/lb-radio" class="btn btn-sm btn-outline gap-2" title="Generate a playlist with ListenBrainz Radio">
+						<span class="icon-[simple-icons--listenbrainz] w-4 h-4"></span>
+						LB Radio
+					</a>
+					<!-- View Toggle -->
+					<div class="join">
+						<button
+							id="table-view-btn"
+							class="join-item btn btn-sm btn-square"
+							onclick="setView('table')"
+							title="Table view"
+						>
+							<span class="icon-[heroicons--table-cells] w-4 h-4"></span>
+						</button>
+						<button
+							id="tile-view-btn"
+							class="join-item btn btn-sm btn-square btn-active"
+							onclick="setView('tile')"
+							title="Tile view"
+						>
+							<span class="icon-[heroicons--squares-2x2] w-4 h-4"></span>
+						</button>
+					</div>
 				</div>
 			</div>
 			if len(playlists) == 0 {
@@ -273,39 +280,39 @@ templ Index(playlists []*ent.Playlist, currentPage int, totalPages int, cfg *con
 		<script>
 			// View toggle functionality
 			function setView(view) {
-				const tableView = document.getElementById('table-view');
-				const tileView = document.getElementById('tile-view');
-				const tableBtn = document.getElementById('table-view-btn');
-				const tileBtn = document.getElementById('tile-view-btn');
+				const tableView = document.getElementById("table-view");
+				const tileView = document.getElementById("tile-view");
+				const tableBtn = document.getElementById("table-view-btn");
+				const tileBtn = document.getElementById("tile-view-btn");
 
-				if (view === 'table') {
-					tableView.classList.remove('hidden');
-					tileView.classList.add('hidden');
-					tableBtn.classList.add('btn-active');
-					tileBtn.classList.remove('btn-active');
+				if (view === "table") {
+					tableView.classList.remove("hidden");
+					tileView.classList.add("hidden");
+					tableBtn.classList.add("btn-active");
+					tileBtn.classList.remove("btn-active");
 				} else {
-					tableView.classList.add('hidden');
-					tileView.classList.remove('hidden');
-					tableBtn.classList.remove('btn-active');
-					tileBtn.classList.add('btn-active');
+					tableView.classList.add("hidden");
+					tileView.classList.remove("hidden");
+					tableBtn.classList.remove("btn-active");
+					tileBtn.classList.add("btn-active");
 				}
 
 				// Save preference
-				localStorage.setItem('spotter-playlists-view', view);
+				localStorage.setItem("spotter-playlists-view", view);
 			}
 
 			// Restore saved preference (default is tile)
-			(function() {
-				const savedView = localStorage.getItem('spotter-playlists-view');
-				if (savedView === 'table') {
-					setView('table');
+			(function () {
+				const savedView = localStorage.getItem("spotter-playlists-view");
+				if (savedView === "table") {
+					setView("table");
 				}
 			})();
 
 			// Initialize timeago
-			(function() {
-				if (typeof timeago !== 'undefined') {
-					const nodes = document.querySelectorAll('.timeago');
+			(function () {
+				if (typeof timeago !== "undefined") {
+					const nodes = document.querySelectorAll(".timeago");
 					if (nodes.length > 0) {
 						timeago.render(nodes);
 					}

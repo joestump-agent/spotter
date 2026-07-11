@@ -564,6 +564,10 @@ func main() {
 
 		r.Get("/recent", h.RecentListens)
 		r.Get("/playlists", h.Playlists)
+		// Governing: ADR-0030, SPEC music-provider-integration REQ-PROV-053 (LB Radio
+		// lives under the playlists section; the static segment wins over /playlists/{id})
+		r.Get("/playlists/lb-radio", h.ListenBrainzRadioForm)
+		r.Post("/playlists/lb-radio", h.ListenBrainzRadioGenerate)
 		r.Get("/playlists/{id}", h.PlaylistShow)
 		r.Get("/playlists/{id}.png", h.PlaylistImage)
 		r.Post("/playlists/{id}/toggle-sync", h.TogglePlaylistSync)

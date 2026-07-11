@@ -27,6 +27,16 @@ const (
 	TypeListenBrainz Type = "listenbrainz"
 )
 
+// ListenBrainzRadioRemoteIDPrefix prefixes the deterministic remote_id
+// (`lb-radio:<prompt>`) of playlists generated locally via ListenBrainz LB
+// Radio. These rows live under Source "listenbrainz" but are never returned
+// by the ListenBrainz playlist endpoints, so the playlist sync reconciler
+// exempts remote IDs with this prefix from missing-from-provider
+// deactivation. The prefix is also the upsert key that makes regeneration
+// update-in-place instead of duplicating.
+// Governing: ADR-0030, SPEC music-provider-integration REQ-PROV-053
+const ListenBrainzRadioRemoteIDPrefix = "lb-radio:"
+
 // Governing: SPEC music-provider-integration REQ-PROV-020 (normalized Track struct), REQ-PROV-022 (ISRC for cross-provider matching)
 // Track represents a normalized audio track across services.
 type Track struct {

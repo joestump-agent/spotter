@@ -118,6 +118,14 @@ type Track struct {
 - JSPF tracks identify recordings by MusicBrainz MBID carried in `identifier` URIs of the form `http(s)://musicbrainz.org/recording/<mbid>`. The `identifier` field MUST be accepted in both encodings: a single URI string (the JSPF spec form) and a list of URI strings (the form ListenBrainz emits for tracks). The recording MBID MUST be parsed out of the identifier URI, validated as a well-formed UUID, and carried as the provider track ID (`providers.Track.ID`, persisted as `PlaylistTrack.remote_id`). The track-matching pipeline has no MBID tier (ADR-0014: ISRC → normalized exact → fuzzy), so catalog linking of ListenBrainz playlist tracks relies on title/creator (name/artist) matching; the MBID remains available in `remote_id` for de-duplication and future MBID-assisted matching. Tracks without a recording identifier MUST still be delivered (title/creator only). Any other JSON shape for `identifier` is a malformed response (SPEC error-handling REQ-ERR-003).
 - Playlist writes MUST NOT be implemented: the provider MUST NOT implement `PlaylistSyncer`, and because `PlaylistManager` bundles `CreatePlaylist` with `GetPlaylists`, `CreatePlaylist` MUST fail with the sentinel `ErrPlaylistWriteNotSupported` (it is never invoked by the sync system, which only reads via `GetPlaylists`).
 
+**REQ-PROV-053** — The ListenBrainz provider MUST support LB Radio playlist generation (ADR-0030) via `RadioPlaylist(ctx, prompt, mode)`:
+
+- `RadioPlaylist` MUST call `GET /1/explore/lb-radio` with the `prompt` and `mode` query parameters URL-encoded. `mode` MUST be one of `easy`, `medium`, or `hard`; an empty mode defaults to `easy` and any other value MUST be rejected before the request is made. An empty prompt MUST be rejected. The endpoint is anonymous, but the user's token MUST be sent when available (authenticated requests get a higher rate limit); all requests follow the shared request discipline (REQ-PROV-047: User-Agent, strict 429 Retry-After semantics).
+- The response payload (`payload.jspf.playlist`) is JSPF and MUST be parsed with the same rules as REQ-PROV-049: recording MBIDs are extracted from `identifier` URIs (string or list form), validated as UUIDs, and carried as `providers.Track.ID` (persisted as `PlaylistTrack.remote_id`); tracks without a recording identifier MUST still be delivered. A response with zero usable tracks is NOT an error at the provider layer — the caller decides how to surface it. Unparseable payloads are malformed responses (SPEC error-handling REQ-ERR-003).
+- Generated playlists MUST be persisted as regular playlists with `Source = "listenbrainz"`, `Name = "LB Radio: <prompt>"`, and the deterministic remote ID `lb-radio:<prompt>` (the shared prefix constant `providers.ListenBrainzRadioRemoteIDPrefix`), flowing through the same upsert + track-persist path as provider playlist sync (`Syncer.UpsertGeneratedPlaylist`). Regenerating with the same trimmed prompt — in any mode — MUST update the existing playlist row in place (tracks replaced; playlist ID, sync-to-Navidrome toggle, and Navidrome pairing preserved) rather than create a duplicate. The prompt MUST be capped at 200 characters so the derived remote ID fits the 255-character column.
+- The playlist sync reconciler MUST NOT deactivate locally generated radio playlists: `listenbrainz`-source rows whose `remote_id` starts with `lb-radio:` are exempt from missing-from-provider deactivation, because the provider never returns them.
+- Non-goals (ADR-0030): no vibes/mixtape integration, no scheduled regeneration, no playback surface. Catalog linking and Navidrome matching MUST reuse the existing pipelines (no duplicated matcher code).
+
 ### Navidrome Provider
 
 **REQ-PROV-050** — The Navidrome provider MUST implement `HistoryFetcher`, `PlaylistManager`, and `PlaylistSyncer`.
@@ -259,6 +267,19 @@ And returns playlists whose tracks carry the recording MBID as the provider trac
 And no playlist is ever created or modified on ListenBrainz
 ```
 
+### Scenario 5: LB Radio generation persisted as a regular playlist
+
+```gherkin
+Given a user has connected ListenBrainz
+When they submit the prompt "artist:(nina simone)" in easy mode on /playlists/lb-radio
+Then the provider calls GET /1/explore/lb-radio with the URL-encoded prompt and mode
+And the JSPF tracks are normalized with recording MBIDs as provider track IDs
+And a playlist named "LB Radio: artist:(nina simone)" with source "listenbrainz"
+    and remote_id "lb-radio:artist:(nina simone)" is upserted
+And submitting the same prompt again updates that playlist instead of creating a new one
+And the ListenBrainz playlist sync reconciler never deactivates it
+```
+
 ---
 
 ## Implementation Notes
@@ -268,3 +289,4 @@ And no playlist is ever created or modified on ListenBrainz
 - Factory registration: `cmd/server/main.go` wires factory functions into `services.Syncer`
 - Encrypted credential storage uses Ent hooks (see ADR-0006)
 - The `ISRC` field is key for the playlist sync track matching algorithm (see Playlist Sync spec)
+- LB Radio: `internal/providers/listenbrainz/radio.go`, `internal/handlers/listenbrainz_radio.go`, `internal/views/playlists/radio.templ` (ADR-0030)
