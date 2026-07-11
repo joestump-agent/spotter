@@ -16,16 +16,54 @@
 package handlers_test
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
+	"log/slog"
+
+	"spotter/ent"
+	"spotter/internal/auth"
+	"spotter/internal/config"
+	"spotter/internal/crypto"
+	"spotter/internal/events"
 	"spotter/internal/handlers"
+	"spotter/internal/services"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+// newLoggedAuthHandler wires a Handler like newFuzzAuthHandler but with a slog
+// logger writing to a captured buffer, so tests can use the handler's distinct
+// log messages as an oracle to tell apart failure paths that share a redirect
+// (e.g. decrypt failure vs deleted-user lookup, both -> session_expired).
+func newLoggedAuthHandler(t *testing.T) (*handlers.Handler, *ent.Client, *crypto.Encryptor, *bytes.Buffer) {
+	t.Helper()
+	client := setupTestDB(t)
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	cfg := &config.Config{}
+	cfg.Navidrome.BaseURL = "http://navidrome.invalid"
+	bus := events.NewBus()
+	syncer := services.NewSyncer(client, cfg, logger, bus, nil)
+	encryptor, err := crypto.NewEncryptor(make([]byte, 32))
+	require.NoError(t, err)
+	jwtManager := auth.NewJWTManager(testJWTSecret)
+	h := handlers.New(client, cfg, logger, encryptor, jwtManager, syncer, nil, nil, nil, nil, nil, bus, nil)
+	return h, client, encryptor, &logBuf
+}
+
+// Exact production log messages from LastFMCallback (lastfm_auth.go). Keep in
+// sync with the handler; the regression tests below use them as oracles.
+const (
+	lastfmDecryptFailLog = "Last.fm callback: failed to decrypt user ID from state"
+	lastfmUserLoadLog    = "Last.fm callback: failed to load user from database"
 )
 
 // TestSpotifyCallback_Regression_StateSurvivesEncV1Prefix drives the real
@@ -89,11 +127,26 @@ func TestSpotifyCallback_Regression_StateSurvivesEncV1Prefix(t *testing.T) {
 // TestLastFMCallback_Regression_LoginCookieRoundTrip drives the real
 // LastFMLogin → LastFMCallback round trip with the state cookie produced by
 // the login handler. The user is deleted between the two steps so the callback
-// stops at the user lookup (session_expired) instead of reaching the
-// network-bound Last.fm token exchange. If state parsing or decryption ever
-// regresses, this surfaces as invalid_state instead.
+// stops at the user lookup — the last observable stage before the
+// network-bound Last.fm token exchange.
+//
+// The terminal redirect alone is an ambiguous oracle: decrypt failure and the
+// deleted-user lookup both redirect to session_expired. This test therefore
+// captures the handler's slog output and asserts on the distinct per-stage log
+// messages: the decrypt-failure message must be absent and the user-lookup
+// failure message must be present with exactly the user ID that LastFMLogin
+// encrypted — proving the parsed ciphertext decrypted successfully to the
+// right value and the flow proceeded past decryption.
+//
+// Note: for a login-issued cookie ("<state>:enc:v1:<base64>") a last-colon
+// parse is behaviorally EQUIVALENT to the first-colon parse, because the
+// legacy bare-base64 decrypt path accepts the post-last-colon tail and yields
+// the same user ID. This test pins the correct end-to-end behavior; the
+// parse-boundary mutant itself is killed by
+// TestLastFMCallback_Regression_FirstColonParseBoundary below, which uses an
+// input where the two parses diverge.
 func TestLastFMCallback_Regression_LoginCookieRoundTrip(t *testing.T) {
-	h, client, _, _ := newFuzzAuthHandler(t, "http://navidrome.invalid")
+	h, client, _, logBuf := newLoggedAuthHandler(t)
 	h.Config.LastFM.APIKey = "test-api-key"
 	h.Config.LastFM.SharedSecret = "test-shared-secret"
 
@@ -118,7 +171,8 @@ func TestLastFMCallback_Regression_LoginCookieRoundTrip(t *testing.T) {
 	}
 	require.NotNil(t, stateCookie, "login must set the Last.fm state cookie")
 
-	// 2. Delete the user so the callback must stop before the token exchange.
+	// 2. Delete the user so the callback must stop at the user lookup instead
+	// of reaching the network-bound token exchange.
 	require.NoError(t, client.User.DeleteOneID(u.ID).Exec(ctx))
 
 	cbReq := httptest.NewRequest("GET", "/auth/lastfm/callback?token=sometoken", nil)
@@ -128,7 +182,66 @@ func TestLastFMCallback_Regression_LoginCookieRoundTrip(t *testing.T) {
 
 	cbRes := cbW.Result()
 	require.Equal(t, http.StatusSeeOther, cbRes.StatusCode)
-	assert.Equal(t, "/auth/login?error=session_expired", cbRes.Header.Get("Location"),
-		"the login-issued cookie must parse and decrypt (failing only at the "+
-			"deleted-user lookup) — invalid_state here means state parsing regressed")
+	assert.Equal(t, "/auth/login?error=session_expired", cbRes.Header.Get("Location"))
+
+	logs := logBuf.String()
+	assert.NotContains(t, logs, lastfmDecryptFailLog,
+		"the login-issued state cookie must decrypt cleanly — a decrypt failure "+
+			"here means state parsing or ciphertext handling regressed")
+	assert.Contains(t, logs, lastfmUserLoadLog,
+		"the flow must get past decryption all the way to the user lookup")
+	assert.Contains(t, logs, fmt.Sprintf("user_id=%d", u.ID),
+		"the decrypted user ID must be exactly the one LastFMLogin encrypted")
+}
+
+// TestLastFMCallback_Regression_FirstColonParseBoundary pins the state-parse
+// contract itself: everything after the FIRST colon is the ciphertext and must
+// decrypt AS A WHOLE. It crafts the one input class where a first-colon and a
+// last-colon parse diverge observably: a cookie whose post-first-colon tail is
+// corrupted but whose post-last-colon tail is a valid legacy (bare base64)
+// ciphertext:
+//
+//	"<state>:corrupted:<bare-base64-ciphertext>"
+//
+// Correct (first-colon) behavior: the ciphertext is "corrupted:<base64>",
+// which fails base64 decoding — the handler must log the decrypt failure and
+// stop before any user lookup.
+//
+// Under a last-colon mutant the parser salvages just "<base64>", which the
+// legacy decrypt path accepts, so the flow wrongly proceeds to the user lookup
+// (an attacker-mangled cookie treated as valid). The log assertions below then
+// fail on both counts, killing the mutant (verified by applying the mutant to
+// lastfm_auth.go and watching this test fail).
+func TestLastFMCallback_Regression_FirstColonParseBoundary(t *testing.T) {
+	h, _, encryptor, logBuf := newLoggedAuthHandler(t)
+	h.Config.LastFM.APIKey = "test-api-key"
+	h.Config.LastFM.SharedSecret = "test-shared-secret"
+
+	// A real ciphertext, stripped to the legacy bare-base64 form the decryptor
+	// still accepts. The encrypted ID deliberately matches no user so that even
+	// a mutant that wrongly decrypts the tail stops at the user lookup and
+	// never reaches the network-bound token exchange.
+	enc, err := encryptor.EncryptInt(424242)
+	require.NoError(t, err)
+	bare := strings.TrimPrefix(enc, crypto.EncPrefixV1)
+	require.NotEqual(t, enc, bare, "ciphertexts must carry the enc:v1: marker")
+
+	cookieVal := "csrfstatetoken:corrupted:" + bare
+
+	cbReq := httptest.NewRequest("GET", "/auth/lastfm/callback?token=sometoken", nil)
+	cbReq.AddCookie(&http.Cookie{Name: lastfmStateCookieName, Value: cookieVal})
+	cbW := httptest.NewRecorder()
+	h.LastFMCallback(cbW, cbReq)
+
+	cbRes := cbW.Result()
+	require.Equal(t, http.StatusSeeOther, cbRes.StatusCode)
+	assert.Equal(t, "/auth/login?error=session_expired", cbRes.Header.Get("Location"))
+
+	logs := logBuf.String()
+	assert.Contains(t, logs, lastfmDecryptFailLog,
+		"the full post-first-colon tail is corrupted and must fail decryption — "+
+			"its absence means the parser salvaged a trailing ciphertext fragment "+
+			"(last-colon split) instead of splitting at the first colon")
+	assert.NotContains(t, logs, lastfmUserLoadLog,
+		"a cookie whose ciphertext fails decryption must never reach the user lookup")
 }

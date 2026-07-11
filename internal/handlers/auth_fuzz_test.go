@@ -29,6 +29,7 @@ import (
 	"spotter/internal/crypto"
 	"spotter/internal/events"
 	"spotter/internal/handlers"
+	"spotter/internal/middleware"
 	"spotter/internal/services"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -166,54 +167,6 @@ func FuzzLoginRawBody(f *testing.F) {
 	})
 }
 
-// testAuthMiddleware mirrors AuthMiddleware in cmd/server/main.go (which lives
-// in package main and cannot be imported), the same way auth_router_test.go
-// mirrors the route registration. Keep in sync with cmd/server/main.go.
-func testAuthMiddleware(client *ent.Client, jwtManager *auth.JWTManager, logger *slog.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			redirectToLogin := func() {
-				http.SetCookie(w, &http.Cookie{
-					Name:     handlers.CookieName,
-					Value:    "",
-					Path:     "/",
-					HttpOnly: true,
-					MaxAge:   -1,
-				})
-				if r.Header.Get("HX-Request") == "true" {
-					w.Header().Set("HX-Redirect", "/auth/login")
-					w.WriteHeader(http.StatusUnauthorized)
-					return
-				}
-				if r.Header.Get("Accept") == "text/event-stream" {
-					w.WriteHeader(http.StatusUnauthorized)
-					return
-				}
-				http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-			}
-
-			cookie, err := r.Cookie(handlers.CookieName)
-			if err != nil {
-				redirectToLogin()
-				return
-			}
-			claims, err := jwtManager.ValidateToken(cookie.Value)
-			if err != nil {
-				logger.Info("auth: invalid JWT token", "error", err)
-				redirectToLogin()
-				return
-			}
-			u, err := client.User.Get(r.Context(), claims.UserID)
-			if err != nil {
-				redirectToLogin()
-				return
-			}
-			ctx := context.WithValue(r.Context(), handlers.UserContextKey, u)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
 const protectedMarker = "PROTECTED_CONTENT_e5b2f1"
 
 // b64url is a helper for hand-crafting JWT segments in seeds and table tests.
@@ -235,7 +188,7 @@ func FuzzJWTCookie(f *testing.F) {
 	validToken, err := jwtManager.GenerateToken(u.ID, u.Username)
 	require.NoError(f, err)
 
-	protected := testAuthMiddleware(client, jwtManager, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	protected := middleware.AuthMiddleware(client, jwtManager, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(protectedMarker))
 	}))
 
@@ -311,7 +264,7 @@ func TestAuthMiddleware_AdversarialTokens(t *testing.T) {
 	u, err := client.User.Create().SetUsername("advuser").Save(context.Background())
 	require.NoError(t, err)
 
-	protected := testAuthMiddleware(client, jwtManager, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	protected := middleware.AuthMiddleware(client, jwtManager, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(protectedMarker))
 	}))
 

@@ -57,7 +57,7 @@ func FuzzSpotifyCallbackState(f *testing.F) {
 	f.Add(":"+encryptedID, "", "")                                                  // empty CSRF part
 	f.Add("csrftoken:", "csrftoken", "")                                            // empty encrypted part
 	f.Add("no-colon-at-all", "no-colon-at-all", "")                                 // malformed state
-	f.Add("a:b:c:d", "a:b:c", "")                                                   // multiple colons (last wins)
+	f.Add("a:b:c:d", "a:b:c", "")                                                   // multiple colons (first wins: CSRF "a", ciphertext "b:c:d")
 	f.Add("csrftoken:AAAAAAAA", "csrftoken", "")                                    // garbage ciphertext
 	f.Add("csrftoken:enc:v1:!!!!", "csrftoken", "")                                 // bad base64 with real prefix
 	f.Add(encryptedID, "", "")                                                      // ciphertext alone (has colons from enc:v1:)

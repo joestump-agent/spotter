@@ -4,6 +4,7 @@ package handlers
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -130,7 +131,9 @@ func (h *Handler) SpotifyCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if csrfState != stateCookie.Value {
+	// Constant-time comparison so the CSRF check leaks no timing signal about
+	// how much of the state token matched.
+	if subtle.ConstantTimeCompare([]byte(csrfState), []byte(stateCookie.Value)) != 1 {
 		h.Logger.Warn("Spotify callback: OAuth state mismatch",
 			"expected", stateCookie.Value,
 			"got", csrfState,
