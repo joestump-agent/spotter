@@ -22,12 +22,17 @@ templ LinkNavidromePicker(pl *ent.Playlist, candidates []providers.Playlist) {
 			</h3>
 			if len(candidates) == 0 {
 				<p class="text-sm text-base-content/60">
-					No Navidrome playlists found. Sync this playlist normally to create one.
+					No Navidrome playlists found to link to. Cancel and sync this playlist
+					normally to create one instead.
 				</p>
 			} else {
 				<p class="text-sm text-base-content/60">
-					Choose the Navidrome playlist to pair with. Future syncs will update the
-					selected playlist in place instead of creating a new one.
+					Choose the Navidrome playlist to pair with.
+					<strong class="text-warning">
+						Linking immediately replaces the selected playlist's tracks
+					</strong>
+					with this playlist's matched tracks, and future syncs keep updating it
+					in place.
 				</p>
 				<ul class="menu bg-base-200 rounded-box w-full max-h-64 overflow-y-auto flex-nowrap">
 					for _, c := range candidates {
@@ -50,6 +55,19 @@ templ LinkNavidromePicker(pl *ent.Playlist, candidates []providers.Playlist) {
 					}
 				</ul>
 			}
+			<div class="card-actions justify-end">
+				// Cancel restores the sync dropdown the picker replaced by
+				// re-fetching it and swapping this card back out.
+				<button
+					hx-get={ fmt.Sprintf("/playlists/%d/sync-dropdown", pl.ID) }
+					hx-target="#playlist-link-picker"
+					hx-swap="outerHTML"
+					class="btn btn-sm btn-ghost"
+				>
+					<span class="icon-[heroicons--x-mark] w-4 h-4"></span>
+					Cancel
+				</button>
+			</div>
 		</div>
 	</div>
 }

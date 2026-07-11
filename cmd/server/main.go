@@ -573,6 +573,7 @@ func main() {
 		// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-071, REQ-PLSYNC-072 (arbitrary-target linking)
 		r.Get("/playlists/{id}/link", h.LinkNavidromePicker)
 		r.Post("/playlists/{id}/link/{targetId}", h.LinkWithNavidrome)
+		r.Get("/playlists/{id}/sync-dropdown", h.GetPlaylistSyncDropdown)
 		r.Post("/playlists/{id}/ai/generate-metadata", h.PlaylistGenerateMetadata)
 		r.Post("/playlists/{id}/ai/generate-artwork", h.PlaylistGenerateArtwork)
 		r.Get("/playlists/{id}/enhance-vibes-modal", h.EnhanceVibesModal)
