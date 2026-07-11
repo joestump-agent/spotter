@@ -338,8 +338,10 @@ func main() {
 			logger.Error("invalid metadata interval, using default 1h", "error", err, "value", cfg.Metadata.Interval)
 			metadataInterval = 1 * time.Hour
 		}
+		metadataInitialDelay := cfg.MetadataInitialDelay()
 		logger.Info("metadata enrichment configured",
 			"interval", metadataInterval,
+			"initial_delay", metadataInitialDelay,
 			"order", cfg.MetadataEnricherOrder())
 
 		wg.Add(1)
@@ -354,13 +356,16 @@ func main() {
 				})
 			}
 
-			// Initial delay to let the app start up
-			select {
-			case <-ctx.Done():
-				// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
-				logger.Info("loop shutting down", "loop", "metadata")
-				return
-			case <-time.After(30 * time.Second):
+			// Initial delay to let the app start up (metadata.initial_delay;
+			// zero skips the delay entirely)
+			if metadataInitialDelay > 0 {
+				select {
+				case <-ctx.Done():
+					// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
+					logger.Info("loop shutting down", "loop", "metadata")
+					return
+				case <-time.After(metadataInitialDelay):
+				}
 			}
 
 			// Run immediately on startup
@@ -393,18 +398,24 @@ func main() {
 		logger.Error("invalid playlist sync interval, using default 1h", "error", err, "value", cfg.PlaylistSync.SyncInterval)
 		playlistSyncInterval = 1 * time.Hour
 	}
-	logger.Info("playlist sync configured", "interval", playlistSyncInterval)
+	playlistSyncInitialDelay := cfg.PlaylistSyncInitialDelay()
+	logger.Info("playlist sync configured",
+		"interval", playlistSyncInterval,
+		"initial_delay", playlistSyncInitialDelay)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// Initial delay to let the app start up
-		select {
-		case <-ctx.Done():
-			// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
-			logger.Info("loop shutting down", "loop", "playlist_sync")
-			return
-		case <-time.After(1 * time.Minute):
+		// Initial delay to let the app start up (playlist_sync.initial_delay;
+		// zero skips the delay entirely)
+		if playlistSyncInitialDelay > 0 {
+			select {
+			case <-ctx.Done():
+				// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
+				logger.Info("loop shutting down", "loop", "playlist_sync")
+				return
+			case <-time.After(playlistSyncInitialDelay):
+			}
 		}
 
 		ticker := time.NewTicker(playlistSyncInterval)
