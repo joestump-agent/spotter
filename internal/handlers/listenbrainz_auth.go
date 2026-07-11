@@ -19,14 +19,28 @@ import (
 	"spotter/internal/views/preferences"
 )
 
-// ListenBrainzConnectForm renders the paste-token form.
+// ListenBrainzConnectForm renders the paste-token form. The submit-listens
+// opt-in checkbox is pre-checked from the saved auth state so that
+// reconnecting (e.g. to rotate a token) does not silently reset the opt-in
+// when the form is saved.
 func (h *Handler) ListenBrainzConnectForm(w http.ResponseWriter, r *http.Request) {
 	u := h.RequireUserRedirect(w, r)
 	if u == nil {
 		return
 	}
 
-	h.Render(w, r, preferences.ListenBrainzConnect(u, h.Config, r.URL.Query().Get("error")))
+	refreshed, err := h.Client.User.Query().
+		Where(user.ID(u.ID)).
+		WithListenbrainzAuth().
+		Only(r.Context())
+	if err != nil {
+		h.Logger.Error("failed to query user", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	submitListens := refreshed.Edges.ListenbrainzAuth != nil && refreshed.Edges.ListenbrainzAuth.SubmitListens
+
+	h.Render(w, r, preferences.ListenBrainzConnect(u, h.Config, r.URL.Query().Get("error"), submitListens))
 }
 
 // ListenBrainzConnect validates the submitted token and stores it.
@@ -72,6 +86,11 @@ func (h *Handler) ListenBrainzConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen
+	// Submission" (REQ-PROV-054) — submission is opt-in via the connect-form
+	// checkbox and defaults OFF (an unchecked checkbox submits no value).
+	submitListens := r.FormValue("submit_listens") != ""
+
 	// Governing: ADR-0006 — the token is encrypted at rest by
 	// encryptListenBrainzAuthHook registered in internal/database/hooks.go.
 	if u.Edges.ListenbrainzAuth != nil {
@@ -79,6 +98,7 @@ func (h *Handler) ListenBrainzConnect(w http.ResponseWriter, r *http.Request) {
 		_, err = h.Client.ListenBrainzAuth.UpdateOneID(u.Edges.ListenbrainzAuth.ID).
 			SetToken(token).
 			SetUsername(result.UserName).
+			SetSubmitListens(submitListens).
 			Save(r.Context())
 	} else {
 		// Create new auth
@@ -86,6 +106,7 @@ func (h *Handler) ListenBrainzConnect(w http.ResponseWriter, r *http.Request) {
 			SetUser(u).
 			SetToken(token).
 			SetUsername(result.UserName).
+			SetSubmitListens(submitListens).
 			Save(r.Context())
 	}
 

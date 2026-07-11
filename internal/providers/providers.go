@@ -4,6 +4,7 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"spotter/ent"
@@ -15,6 +16,22 @@ import (
 // contract change that will not succeed on retry).
 // Governing: SPEC error-handling REQ-ERR-003 (unparseable response body is fatal)
 var ErrMalformedResponse = errors.New("malformed provider response")
+
+// StatusError reports a non-2xx response from a provider API, carrying the
+// HTTP status code so callers can distinguish permanent rejections (non-429
+// 4xx: retrying the identical payload can never succeed) from transient
+// failures (429/5xx/network: safe to retry later). Providers wrap it with
+// fmt.Errorf("...: %w", ...) so errors.As finds it through the chain.
+// Governing: SPEC error-handling REQ-ERR-002 (retriable statuses),
+// REQ-ERR-003 (fatal statuses)
+type StatusError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("status %d: %s", e.StatusCode, e.Body)
+}
 
 // Type identifies the source of the data (e.g., "spotify", "navidrome").
 type Type string
@@ -78,6 +95,26 @@ type PlaylistManager interface {
 	GetPlaylists(ctx context.Context) ([]Playlist, error)
 	// CreatePlaylist creates a new playlist with the given tracks.
 	CreatePlaylist(ctx context.Context, name, description string, tracks []Track) error
+}
+
+// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-054)
+// ListenSubmitter is implemented by providers that can receive listens
+// (scrobbles) that originated from OTHER sources. It is the write-side
+// counterpart of HistoryFetcher and reuses the normalized Track struct:
+// Track.PlayedAt carries the listen timestamp, so one Track value equals one
+// listen event. Implementations MUST split large slices into API-sized
+// batches internally, and callers may pass any number of listens.
+// Submissions must be idempotent from the caller's perspective: re-submitting
+// a listen that was already submitted must not create duplicates on the
+// provider (ListenBrainz de-duplicates by user + listened_at + track metadata).
+type ListenSubmitter interface {
+	Provider
+	// SubmitListens pushes the given listens to this provider. Listens
+	// missing a name, artist, or played-at timestamp are skipped (the
+	// provider cannot represent them). An error means at least one batch
+	// was not accepted; the caller should retry the unsubmitted listens on
+	// a later sync rather than failing the overall sync.
+	SubmitListens(ctx context.Context, listens []Track) error
 }
 
 // SyncPlaylistRequest contains the data needed to sync a playlist to a provider.

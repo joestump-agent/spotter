@@ -34,6 +34,15 @@ func (ListenBrainzAuth) Fields() []ent.Field {
 		field.String("token").
 			Sensitive(),
 		field.String("username"),
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen
+		// Submission" (REQ-PROV-049) — submission is opt-in and defaults OFF.
+		// Default(false) is a constant default, so Ent auto-migration emits
+		// `ADD COLUMN ... NOT NULL DEFAULT false`, which is safe on databases
+		// that already contain rows (unlike the Go-side-only time.Now default
+		// that caused the PR #39 migration failure).
+		field.Bool("submit_listens").
+			Default(false).
+			Comment("Opt-in: push listens from other sources to ListenBrainz"),
 	}
 }
 
