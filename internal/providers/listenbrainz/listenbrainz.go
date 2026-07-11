@@ -1,4 +1,4 @@
-// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-045, REQ-PROV-046, REQ-PROV-047),
+// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-045, REQ-PROV-046, REQ-PROV-047, REQ-PROV-048),
 // ADR-0016 (pluggable provider factory pattern)
 package listenbrainz
 
@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -24,10 +25,14 @@ const (
 	// maxRateLimitWait caps how long a single 429 Retry-After pause may last
 	// so a misbehaving server cannot stall a sync worker indefinitely.
 	maxRateLimitWait = 30 * time.Second
+	// listensPageSize is the per-request listen count. The ListenBrainz API
+	// caps count at MAX_ITEMS_PER_GET (100).
+	// Governing: SPEC music-provider-integration REQ-PROV-048
+	listensPageSize = 100
 )
 
-// Provider implements the ListenBrainz provider skeleton (auth + registration).
-// Listen-history sync, scrobbling, and playlist support arrive in later PRs.
+// Provider implements the ListenBrainz provider (auth + listen-history sync).
+// Scrobbling and playlist support arrive in later PRs.
 type Provider struct {
 	logger     *slog.Logger
 	auth       *ent.ListenBrainzAuth
@@ -35,8 +40,10 @@ type Provider struct {
 	httpClient *http.Client
 }
 
-// Governing: SPEC music-provider-integration REQ-PROV-001 (base Provider interface)
+// Governing: SPEC music-provider-integration REQ-PROV-001 (base Provider interface),
+// REQ-PROV-048 (ListenBrainz implements HistoryFetcher)
 var _ providers.Provider = (*Provider)(nil)
+var _ providers.HistoryFetcher = (*Provider)(nil)
 
 // Governing: ADR-0016 (pluggable provider factory), SPEC music-provider-integration REQ-PROV-011 (nil,nil if unconfigured),
 // REQ-PROV-012 (credentials from user.Edges.ListenbrainzAuth), REQ-PROV-045
@@ -125,6 +132,132 @@ func (p *Provider) ValidateToken(ctx context.Context, token string) (*ValidateTo
 		return nil, fmt.Errorf("failed to validate listenbrainz token: %w", err)
 	}
 	return &result, nil
+}
+
+// listensResponse mirrors the GET /1/user/{username}/listens payload.
+type listensResponse struct {
+	Payload struct {
+		Count   int `json:"count"`
+		Listens []struct {
+			ListenedAt    int64  `json:"listened_at"`
+			RecordingMsid string `json:"recording_msid"`
+			TrackMetadata struct {
+				ArtistName     string `json:"artist_name"`
+				TrackName      string `json:"track_name"`
+				ReleaseName    string `json:"release_name"`
+				AdditionalInfo struct {
+					RecordingMbid string `json:"recording_mbid"`
+					RecordingMsid string `json:"recording_msid"`
+					DurationMs    int    `json:"duration_ms"`
+					ISRC          string `json:"isrc"`
+					OriginURL     string `json:"origin_url"`
+				} `json:"additional_info"`
+			} `json:"track_metadata"`
+		} `json:"listens"`
+	} `json:"payload"`
+}
+
+// Governing: SPEC music-provider-integration REQ-PROV-048 (listens endpoint,
+// backwards max_ts pagination, client-side since bound), REQ-PROV-002
+// (batched callback contract)
+// GetRecentListens retrieves listens played after the given timestamp.
+//
+// The ListenBrainz listens endpoint returns listens newest-first and rejects
+// requests that combine min_ts and max_ts, so pagination walks backwards:
+// each page's oldest listened_at becomes the next request's max_ts (which is
+// exclusive), and the since bound is enforced client-side. The loop
+// terminates when a page is empty or short, when a listen at or before since
+// appears, or when max_ts fails to advance (defensive guard against a
+// misbehaving server re-serving the same page).
+func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callback func([]providers.Track) error) error {
+	p.logger.Info("fetching recent listens from listenbrainz", "username", p.auth.Username, "since", since)
+
+	basePath := "/1/user/" + url.PathEscape(p.auth.Username) + "/listens"
+	var maxTS int64 // 0 = unset (first page starts at the newest listen)
+
+	for {
+		query := url.Values{}
+		query.Set("count", strconv.Itoa(listensPageSize))
+		if maxTS > 0 {
+			query.Set("max_ts", strconv.FormatInt(maxTS, 10))
+		}
+
+		var result listensResponse
+		if err := p.doRequest(ctx, http.MethodGet, basePath+"?"+query.Encode(), p.auth.Token, &result); err != nil {
+			return fmt.Errorf("failed to fetch listenbrainz listens: %w", err)
+		}
+
+		listens := result.Payload.Listens
+		p.logger.Debug("fetched listens page", "count", len(listens), "max_ts", maxTS)
+		if len(listens) == 0 {
+			return nil
+		}
+
+		reachedSince := false
+		oldest := int64(0)
+		var tracks []providers.Track
+		for _, l := range listens {
+			if l.ListenedAt <= 0 {
+				// Defensive: a listen without a timestamp cannot be ordered
+				// or deduplicated, and would corrupt the pagination cursor.
+				p.logger.Warn("skipping listen without listened_at", "track", l.TrackMetadata.TrackName)
+				continue
+			}
+			if oldest == 0 || l.ListenedAt < oldest {
+				oldest = l.ListenedAt
+			}
+
+			playedAt := time.Unix(l.ListenedAt, 0).UTC()
+			// Governing: SPEC listen-playlist-sync REQ-SYNC-020 — only listens
+			// after the since watermark are new; at-or-before means the
+			// remaining (older) history is already synced.
+			if !since.IsZero() && !playedAt.After(since) {
+				reachedSince = true
+				continue
+			}
+
+			info := l.TrackMetadata.AdditionalInfo
+			// Prefer the MusicBrainz recording MBID as the stable ID, then the
+			// MessyBrainz MSID; fall back to the listen-level MSID.
+			id := info.RecordingMbid
+			if id == "" {
+				id = info.RecordingMsid
+			}
+			if id == "" {
+				id = l.RecordingMsid
+			}
+
+			tracks = append(tracks, providers.Track{
+				ID:         id,
+				Name:       l.TrackMetadata.TrackName,
+				Artist:     l.TrackMetadata.ArtistName,
+				Album:      l.TrackMetadata.ReleaseName,
+				DurationMs: info.DurationMs,
+				PlayedAt:   playedAt,
+				URL:        info.OriginURL,
+				ISRC:       info.ISRC,
+			})
+		}
+
+		if len(tracks) > 0 {
+			if err := callback(tracks); err != nil {
+				return err
+			}
+		}
+
+		if reachedSince || len(listens) < listensPageSize {
+			return nil
+		}
+		if oldest == 0 || (maxTS > 0 && oldest >= maxTS) {
+			// No usable cursor, or the cursor did not move backwards: stop
+			// rather than loop forever on a misbehaving server.
+			p.logger.Warn("listenbrainz pagination cursor did not advance, stopping", "max_ts", maxTS, "oldest", oldest)
+			return nil
+		}
+		// max_ts is exclusive, so passing the oldest seen listened_at yields
+		// strictly older listens on the next page.
+		maxTS = oldest
+	}
 }
 
 // doRequest performs an authenticated GET/POST against the ListenBrainz API

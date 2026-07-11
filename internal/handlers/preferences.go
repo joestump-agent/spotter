@@ -701,12 +701,9 @@ func (h *Handler) SyncListenBrainz(w http.ResponseWriter, r *http.Request) {
 		h.Bus.Publish(userID, events.Event{
 			Type: events.EventTypeNotification,
 			Payload: events.NotificationPayload{
-				Title: "Sync Complete",
-				// The provider does not implement HistoryFetcher yet, so no
-				// listens are imported; keep the messaging honest until the
-				// listen-sync PR lands.
-				Message:  "ListenBrainz connection checked — listen history sync arrives in an upcoming update",
-				IconType: "info",
+				Title:    "Sync Complete",
+				Message:  "ListenBrainz sync complete",
+				IconType: "success",
 			},
 		})
 	}()
@@ -777,11 +774,9 @@ func (h *Handler) RebuildListenBrainz(w http.ResponseWriter, r *http.Request) {
 		h.Bus.Publish(userID, events.Event{
 			Type: events.EventTypeNotification,
 			Payload: events.NotificationPayload{
-				Title: "Rebuild Complete",
-				// No listens are re-imported until the provider implements
-				// HistoryFetcher; keep the messaging honest until then.
-				Message:  "ListenBrainz data cleared — listen history sync arrives in an upcoming update",
-				IconType: "info",
+				Title:    "Rebuild Complete",
+				Message:  "ListenBrainz rebuild complete",
+				IconType: "success",
 			},
 		})
 	}()

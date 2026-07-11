@@ -109,6 +109,8 @@ type Track struct {
 
 **REQ-PROV-047** — All ListenBrainz API requests MUST send a descriptive `User-Agent` header, and the provider MUST respect ListenBrainz rate limiting: a 429 response MUST NOT be retried before the interval advertised by the `Retry-After` (or `X-RateLimit-Reset-In`) header has elapsed.
 
+**REQ-PROV-048** — The ListenBrainz provider MUST implement `HistoryFetcher`. `GetRecentListens` MUST use the `GET /1/user/{username}/listens` API endpoint with `count` set to at most 100, paginating backwards by setting `max_ts` to the oldest `listened_at` of the previous page until the `since` timestamp is reached or no more listens remain. Because the endpoint rejects requests combining `min_ts` and `max_ts`, the `since` bound MUST be enforced client-side: listens with `listened_at` at or before `since` MUST NOT be delivered to the callback. Pagination MUST terminate even when the server misbehaves (a page whose oldest `listened_at` does not advance the cursor MUST end the fetch rather than loop).
+
 ### Navidrome Provider
 
 **REQ-PROV-050** — The Navidrome provider MUST implement `HistoryFetcher`, `PlaylistManager`, and `PlaylistSyncer`.
