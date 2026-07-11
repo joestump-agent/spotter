@@ -673,8 +673,11 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 	// cur is a working copy tracking both the entity's stored values and the
 	// values already claimed by earlier enrichers in this pass, so later
 	// enrichers cannot overwrite what an earlier one set (first in config
-	// order wins).
-	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-020
+	// order wins). It is also the entity handed to each enricher (in place of
+	// the original art), so an external ID an earlier enricher resolved — e.g.
+	// the MBID MusicBrainz just found — is visible to later enrichers that key
+	// off it, keeping every enricher working the same entity the pass persists.
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-020, REQ-ENRICH-064
 	cur := *art
 	// externalIDsSet tracks whether any external-ID setter was applied so a
 	// unique-constraint failure can be retried without them.
@@ -688,7 +691,10 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 	for _, artistEnricher := range enricherList.ArtistEnrichers() {
 		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
 		enricherStart := time.Now()
-		data, err := artistEnricher.EnrichArtist(ctx, art)
+		// Pass the working copy so a later enricher sees external IDs (e.g. the
+		// MBID) that an earlier enricher resolved this pass.
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-064
+		data, err := artistEnricher.EnrichArtist(ctx, &cur)
 		st := enricherStatsFor(stats, artistEnricher.Type())
 		if st != nil {
 			st.entities++
@@ -792,8 +798,9 @@ func (s *MetadataService) enrichArtist(ctx context.Context, u *ent.User, art *en
 			update = update.SetLastAiEnrichedAt(time.Now())
 		}
 
-		// Get images
-		images, err := artistEnricher.GetArtistImages(ctx, art)
+		// Get images (also from the working copy: an image lookup keyed on a
+		// freshly-resolved MBID would miss on the original entity).
+		images, err := artistEnricher.GetArtistImages(ctx, &cur)
 		if err != nil {
 			s.logger.Warn("failed to get artist images",
 				"enricher", artistEnricher.Name(),
@@ -1113,8 +1120,10 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 	update := s.client.Album.UpdateOne(alb)
 	// cur is a working copy tracking both the entity's stored values and the
 	// values already claimed by earlier enrichers in this pass (first in
-	// config order wins).
-	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-020
+	// config order wins). It is also the entity handed to each enricher (in
+	// place of the original alb), so an external ID an earlier enricher
+	// resolved this pass is visible to later enrichers that key off it.
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-020, REQ-ENRICH-064
 	cur := *alb
 	var allTags []string
 	var allTypedTags []tags.TypedTag
@@ -1124,7 +1133,10 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 	for _, albumEnricher := range enricherList.AlbumEnrichers() {
 		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
 		enricherStart := time.Now()
-		data, err := albumEnricher.EnrichAlbum(ctx, alb)
+		// Pass the working copy so a later enricher sees external IDs (e.g. the
+		// MBID) that an earlier enricher resolved this pass.
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-064
+		data, err := albumEnricher.EnrichAlbum(ctx, &cur)
 		st := enricherStatsFor(stats, albumEnricher.Type())
 		if st != nil {
 			st.entities++
@@ -1239,8 +1251,9 @@ func (s *MetadataService) enrichAlbum(ctx context.Context, u *ent.User, alb *ent
 			update = update.SetLastAiEnrichedAt(time.Now())
 		}
 
-		// Get images
-		images, err := albumEnricher.GetAlbumImages(ctx, alb)
+		// Get images (also from the working copy: an image lookup keyed on a
+		// freshly-resolved MBID would miss on the original entity).
+		images, err := albumEnricher.GetAlbumImages(ctx, &cur)
 		if err != nil {
 			s.logger.Warn("failed to get album images",
 				"enricher", albumEnricher.Name(),
@@ -1436,8 +1449,13 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 	update := s.client.Track.UpdateOne(t)
 	// cur is a working copy tracking both the entity's stored values and the
 	// values already claimed by earlier enrichers in this pass (first in
-	// config order wins).
-	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-020
+	// config order wins). It is also the entity handed to each enricher (in
+	// place of the original t). For a track with no stored MBID this matters
+	// most: once MusicBrainz resolves a recording MBID, later recording-keyed
+	// enrichers (e.g. ListenBrainz) reuse it instead of running their own
+	// lookup that could resolve a different recording — avoiding a silent
+	// tags/duration/popularity mismatch against the persisted MBID.
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-020, REQ-ENRICH-064
 	cur := *t
 	var allTags []string
 	var allGenres []string
@@ -1448,7 +1466,10 @@ func (s *MetadataService) enrichTrack(ctx context.Context, u *ent.User, t *ent.T
 	for _, trackEnricher := range enricherList.TrackEnrichers() {
 		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-004"
 		enricherStart := time.Now()
-		data, err := trackEnricher.EnrichTrack(ctx, t)
+		// Pass the working copy so a later enricher sees external IDs (e.g. the
+		// recording MBID) that an earlier enricher resolved this pass.
+		// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-064
+		data, err := trackEnricher.EnrichTrack(ctx, &cur)
 		st := enricherStatsFor(stats, trackEnricher.Type())
 		if st != nil {
 			st.entities++
