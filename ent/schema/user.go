@@ -43,6 +43,9 @@ func (User) Edges() []ent.Edge {
 			Unique(),
 		edge.To("lastfm_auth", LastFMAuth.Type).
 			Unique(),
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+		edge.To("listenbrainz_auth", ListenBrainzAuth.Type).
+			Unique(),
 		edge.To("navidrome_auth", NavidromeAuth.Type).
 			Unique(),
 		edge.To("playlists", Playlist.Type),

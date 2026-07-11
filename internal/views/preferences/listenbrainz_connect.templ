@@ -1,0 +1,74 @@
+package preferences
+
+// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+// ListenBrainz has no OAuth flow: users paste their static user token from
+// listenbrainz.org/settings, which is validated server-side before it is
+// stored (encrypted at rest per ADR-0006).
+
+import (
+	"spotter/ent"
+	"spotter/internal/config"
+	"spotter/internal/views/layouts"
+)
+
+func listenBrainzErrorMessage(code string) string {
+	switch code {
+	case "missing_token":
+		return "Please enter your ListenBrainz user token."
+	case "invalid_token":
+		return "ListenBrainz rejected that token. Double-check it and try again."
+	case "validation_failed":
+		return "Could not reach ListenBrainz to validate the token. Please try again later."
+	default:
+		return ""
+	}
+}
+
+templ ListenBrainzConnect(user *ent.User, cfg *config.Config, errorCode string) {
+	@layouts.Dashboard("Connect ListenBrainz | Spotter", cfg, "/preferences/providers") {
+		<div class="max-w-xl mx-auto">
+			<div class="mb-8">
+				<h2 class="text-3xl font-bold">Connect ListenBrainz</h2>
+				<p class="text-base-content/60 mt-2">Link your ListenBrainz account using your user token</p>
+			</div>
+			if msg := listenBrainzErrorMessage(errorCode); msg != "" {
+				<div role="alert" class="alert alert-error mb-6">
+					<span class="icon-[heroicons--exclamation-circle] w-5 h-5"></span>
+					<span>{ msg }</span>
+				</div>
+			}
+			<div class="card bg-base-100 shadow-xl">
+				<div class="card-body">
+					<p class="text-sm text-base-content/70">
+						ListenBrainz uses a personal user token instead of a login flow. Copy the
+						token from your
+						<a href="https://listenbrainz.org/settings/" target="_blank" rel="noopener noreferrer" class="link link-primary">ListenBrainz settings page</a>
+						and paste it below. The token is validated with ListenBrainz and stored encrypted.
+					</p>
+					<form method="POST" action="/auth/listenbrainz/connect" class="mt-4">
+						<label class="form-control w-full">
+							<div class="label">
+								<span class="label-text">User token</span>
+							</div>
+							<input
+								type="password"
+								name="token"
+								placeholder="Paste your ListenBrainz user token"
+								class="input input-bordered w-full"
+								autocomplete="off"
+								required
+							/>
+						</label>
+						<div class="card-actions justify-end mt-6">
+							<a href="/preferences/providers" class="btn btn-ghost">Cancel</a>
+							<button type="submit" class="btn" style="background-color: #EB743B; border-color: #EB743B; color: white;">
+								<span class="icon-[simple-icons--listenbrainz] w-5 h-5"></span>
+								Connect ListenBrainz
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+	}
+}

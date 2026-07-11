@@ -4,11 +4,20 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+
+	spmixin "spotter/ent/schema/mixin"
 )
 
 // NavidromeAuth holds the schema definition for the NavidromeAuth entity.
 type NavidromeAuth struct {
 	ent.Schema
+}
+
+// Mixin of the NavidromeAuth.
+func (NavidromeAuth) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		spmixin.Timestamps{},
+	}
 }
 
 // Fields of the NavidromeAuth.

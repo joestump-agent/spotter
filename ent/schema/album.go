@@ -41,9 +41,11 @@ func (Album) Fields() []ent.Field {
 			Optional().
 			MaxLen(500).
 			Comment("Name used for sorting, e.g., 'White Album, The'"),
+		// Governing: AGENTS.md VAL-007 (MusicBrainz IDs MUST be in correct UUID format)
 		field.String("musicbrainz_id").
 			Optional().
 			MaxLen(36).
+			Validate(validateOptionalMusicBrainzID).
 			Comment("MusicBrainz release group ID"),
 		field.String("spotify_id").
 			Optional().

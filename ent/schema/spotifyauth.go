@@ -4,11 +4,20 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+
+	spmixin "spotter/ent/schema/mixin"
 )
 
 // SpotifyAuth holds the schema definition for the SpotifyAuth entity.
 type SpotifyAuth struct {
 	ent.Schema
+}
+
+// Mixin of the SpotifyAuth.
+func (SpotifyAuth) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		spmixin.Timestamps{},
+	}
 }
 
 // Fields of the SpotifyAuth.
