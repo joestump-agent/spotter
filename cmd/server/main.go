@@ -541,6 +541,8 @@ func main() {
 		r.Post("/preferences/listenbrainz/sync", h.SyncListenBrainz)
 		r.Post("/preferences/listenbrainz/rebuild", h.RebuildListenBrainz)
 		r.Post("/preferences/listenbrainz/disconnect", h.DisconnectListenBrainz)
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen Submission" (REQ-PROV-054)
+		r.Post("/preferences/listenbrainz/submit-listens", h.ToggleListenBrainzSubmitListens)
 
 		// Task routes
 		r.Post("/preferences/tasks/sync-listens", h.TaskSyncListens)
