@@ -188,7 +188,7 @@ func (p *Provider) fetchPlaylistStubs(ctx context.Context, path string) ([]jspfP
 		query.Set("offset", strconv.Itoa(offset))
 
 		var result playlistListResponse
-		if err := p.doRequest(ctx, "GET", path+"?"+query.Encode(), p.auth.Token, &result); err != nil {
+		if err := p.doRequest(ctx, "GET", path+"?"+query.Encode(), p.auth.Token, nil, &result); err != nil {
 			return nil, err
 		}
 
@@ -213,7 +213,7 @@ func (p *Provider) fetchPlaylistStubs(ctx context.Context, path string) ([]jspfP
 // Governing: SPEC music-provider-integration REQ-PROV-049 (GET /1/playlist/{playlist_mbid})
 func (p *Provider) getFullPlaylist(ctx context.Context, mbid string) (jspfPlaylist, error) {
 	var result playlistResponse
-	if err := p.doRequest(ctx, "GET", "/1/playlist/"+url.PathEscape(mbid), p.auth.Token, &result); err != nil {
+	if err := p.doRequest(ctx, "GET", "/1/playlist/"+url.PathEscape(mbid), p.auth.Token, nil, &result); err != nil {
 		return jspfPlaylist{}, err
 	}
 	return result.Playlist, nil

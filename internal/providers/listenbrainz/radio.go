@@ -84,7 +84,7 @@ func (p *Provider) RadioPlaylist(ctx context.Context, prompt, mode string) (prov
 	}
 
 	var result radioResponse
-	if err := p.doRequest(ctx, http.MethodGet, "/1/explore/lb-radio?"+query.Encode(), token, &result); err != nil {
+	if err := p.doRequest(ctx, http.MethodGet, "/1/explore/lb-radio?"+query.Encode(), token, nil, &result); err != nil {
 		return providers.Playlist{}, fmt.Errorf("failed to generate lb-radio playlist: %w", err)
 	}
 

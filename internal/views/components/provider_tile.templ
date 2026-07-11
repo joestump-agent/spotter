@@ -23,6 +23,9 @@ type ProviderProps struct {
 	ModalIDDisconnect      string
 	RebuildModalContent    templ.Component
 	DisconnectModalContent templ.Component
+	// ExtraContent is optional provider-specific content (e.g. per-connection
+	// settings) rendered below the actions while the provider is connected.
+	ExtraContent templ.Component
 }
 
 // buildProviderDropdownConfig converts ProviderProps to ActionButtonDropdownConfig
@@ -105,6 +108,9 @@ templ providerConnectedState(props ProviderProps) {
 	<div>
 		@ActionButtonDropdown(buildProviderDropdownConfig(props))
 	</div>
+	if props.ExtraContent != nil {
+		@props.ExtraContent
+	}
 	// Render Modals
 	@props.RebuildModalContent
 	@props.DisconnectModalContent

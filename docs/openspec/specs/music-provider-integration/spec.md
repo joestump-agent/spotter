@@ -134,6 +134,17 @@ type Track struct {
 
 **REQ-PROV-052** — The Navidrome provider MUST NOT implement `Authenticator` — Navidrome credentials are managed by the primary login flow (see ADR-0005), not as a connected service.
 
+### ListenBrainz Listen Submission
+
+**REQ-PROV-054** — The ListenBrainz provider MUST implement `ListenSubmitter` and push listens to ListenBrainz via `POST /1/submit-listens` with `listen_type: "import"`, subject to ALL of the following rules:
+
+- **Opt-in (default OFF)**: Listens MUST only be submitted for users whose `ListenBrainzAuth.submit_listens` flag is true. The flag MUST default to false — both for new connections (the connect-form checkbox starts unchecked) and for pre-existing connections upgraded by migration (the column carries a constant SQL `DEFAULT false`). The user MUST be able to change the flag from the preferences UI without reconnecting.
+- **Batch limit**: A single `submit-listens` request MUST carry at most 1000 listens (the documented ListenBrainz `MAX_LISTENS_PER_REQUEST`). `SubmitListens` MUST split larger inputs into batches of at most this size. Retries of a failed request (429/5xx) MUST resend the complete request body, rebuilt per attempt, and MUST preserve the REQ-PROV-047 rate-limit semantics (never retry a 429 before the advertised interval).
+- **Provenance (never echo)**: Only listens that originated from OTHER sources (e.g. navidrome, spotify, lastfm) are eligible. A listen whose `source` is `listenbrainz` MUST NEVER be submitted back to ListenBrainz — echoing would duplicate the user's own history upstream.
+- **Idempotent resubmission safety**: The syncer MUST track submission state per listen via the nullable `Listen.submitted_to_listenbrainz_at` timestamp: only listens where it is NULL are submitted, and it is set only AFTER ListenBrainz accepts the containing batch. Repeat syncs therefore never resubmit accepted listens, and a listen resubmitted because the flag write failed (or a mixed-outcome run was retried) is safe because ListenBrainz de-duplicates identical listens (user + `listened_at` + track metadata) server-side.
+- **Failure tolerance**: A submission failure MUST NOT fail the surrounding sync run — it is logged and recorded as a sync event, the affected listens keep a NULL submission timestamp, and the next sync run retries them.
+- Listens that ListenBrainz cannot represent (missing track name, artist name, or played-at timestamp) MUST be skipped, not submitted.
+
 ---
 
 ## Interface Diagram
@@ -161,6 +172,11 @@ classDiagram
         +SyncPlaylist(ctx, req) string error
         +DeletePlaylist(ctx, remoteID) error
         +UpdatePlaylistTracks(ctx, remoteID, tracks) error
+    }
+
+    class ListenSubmitter {
+        <<interface>>
+        +SubmitListens(ctx, listens) error
     }
 
     class Authenticator {
@@ -198,9 +214,16 @@ classDiagram
         +UpdatePlaylistTracks()
     }
 
+    class ListenBrainzProvider {
+        +Type() "listenbrainz"
+        +GetRecentListens()
+        +SubmitListens()
+    }
+
     Provider <|-- HistoryFetcher
     Provider <|-- PlaylistManager
     Provider <|-- PlaylistSyncer
+    Provider <|-- ListenSubmitter
     Provider <|-- Authenticator
 
     HistoryFetcher <|.. SpotifyProvider
@@ -216,6 +239,7 @@ classDiagram
 
     HistoryFetcher <|.. ListenBrainzProvider
     PlaylistManager <|.. ListenBrainzProvider
+    ListenSubmitter <|.. ListenBrainzProvider
 ```
 
 ---

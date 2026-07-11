@@ -221,7 +221,7 @@ func TestDoRequest_UserAgent(t *testing.T) {
 
 	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
 
-	err := p.doRequest(context.Background(), http.MethodGet, "/1/validate-token", "token-abc", nil)
+	err := p.doRequest(context.Background(), http.MethodGet, "/1/validate-token", "token-abc", nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "Spotter/1.0.0", gotUA)
 	assert.Equal(t, "Token token-abc", gotAuth)
@@ -254,7 +254,7 @@ func TestDoRequest_RateLimit429(t *testing.T) {
 
 			p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
 
-			err := p.doRequest(context.Background(), http.MethodGet, "/1/test", "token", nil)
+			err := p.doRequest(context.Background(), http.MethodGet, "/1/test", "token", nil, nil)
 			require.NoError(t, err)
 			assert.Equal(t, 2, attempts)
 		})
@@ -277,7 +277,7 @@ func TestDoRequest_Retry500(t *testing.T) {
 
 	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
 
-	err := p.doRequest(context.Background(), http.MethodGet, "/1/test", "token", nil)
+	err := p.doRequest(context.Background(), http.MethodGet, "/1/test", "token", nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 2, attempts)
 }
@@ -293,7 +293,7 @@ func TestDoRequest_No400Retry(t *testing.T) {
 
 	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
 
-	err := p.doRequest(context.Background(), http.MethodGet, "/1/test", "token", nil)
+	err := p.doRequest(context.Background(), http.MethodGet, "/1/test", "token", nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
 	assert.Equal(t, 1, attempts) // 4xx (other than 429) is not retryable
@@ -906,4 +906,260 @@ func TestInterfaceImplementation(t *testing.T) {
 	var _ providers.Provider = (*Provider)(nil)
 	_, isFetcher := interface{}(&Provider{}).(providers.HistoryFetcher)
 	assert.True(t, isFetcher, "provider must satisfy HistoryFetcher")
+}
+
+// --- Listen submission (REQ-PROV-054) ---
+
+// submitRequestCapture holds one decoded POST /1/submit-listens request body.
+type submitRequestCapture struct {
+	ListenType string `json:"listen_type"`
+	Payload    []struct {
+		ListenedAt    int64 `json:"listened_at"`
+		TrackMetadata struct {
+			ArtistName     string `json:"artist_name"`
+			TrackName      string `json:"track_name"`
+			ReleaseName    string `json:"release_name"`
+			AdditionalInfo struct {
+				DurationMs              int    `json:"duration_ms"`
+				ISRC                    string `json:"isrc"`
+				OriginURL               string `json:"origin_url"`
+				SubmissionClient        string `json:"submission_client"`
+				SubmissionClientVersion string `json:"submission_client_version"`
+			} `json:"additional_info"`
+		} `json:"track_metadata"`
+	} `json:"payload"`
+}
+
+func makeListens(n int, base time.Time) []providers.Track {
+	listens := make([]providers.Track, 0, n)
+	for i := 0; i < n; i++ {
+		listens = append(listens, providers.Track{
+			Name:     fmt.Sprintf("Track %d", i),
+			Artist:   fmt.Sprintf("Artist %d", i),
+			Album:    fmt.Sprintf("Album %d", i),
+			PlayedAt: base.Add(time.Duration(i) * time.Minute),
+		})
+	}
+	return listens
+}
+
+// Governing: SPEC music-provider-integration REQ-PROV-054 (submit-listens with
+// listen_type "import" and Authorization: Token header)
+func TestSubmitListens_PayloadShape(t *testing.T) {
+	var captured submitRequestCapture
+	var gotPath, gotAuth, gotContentType string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		require.Equal(t, http.MethodPost, r.Method)
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&captured))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+
+	playedAt := time.Unix(1700000000, 0).UTC()
+	err := p.SubmitListens(context.Background(), []providers.Track{{
+		Name:       "Song",
+		Artist:     "Artist",
+		Album:      "Album",
+		DurationMs: 215000,
+		ISRC:       "USRC12345678",
+		URL:        "https://example.com/song",
+		PlayedAt:   playedAt,
+	}})
+	require.NoError(t, err)
+
+	assert.Equal(t, "/1/submit-listens", gotPath)
+	assert.Equal(t, "Token user-token-123", gotAuth)
+	assert.Equal(t, "application/json", gotContentType)
+	assert.Equal(t, "import", captured.ListenType)
+	require.Len(t, captured.Payload, 1)
+	l := captured.Payload[0]
+	assert.Equal(t, int64(1700000000), l.ListenedAt)
+	assert.Equal(t, "Song", l.TrackMetadata.TrackName)
+	assert.Equal(t, "Artist", l.TrackMetadata.ArtistName)
+	assert.Equal(t, "Album", l.TrackMetadata.ReleaseName)
+	assert.Equal(t, 215000, l.TrackMetadata.AdditionalInfo.DurationMs)
+	assert.Equal(t, "USRC12345678", l.TrackMetadata.AdditionalInfo.ISRC)
+	assert.Equal(t, "https://example.com/song", l.TrackMetadata.AdditionalInfo.OriginURL)
+	// The ListenBrainz payload spec splits the client into name + version.
+	assert.Equal(t, httputil.ClientName, l.TrackMetadata.AdditionalInfo.SubmissionClient)
+	assert.Equal(t, httputil.ClientVersion, l.TrackMetadata.AdditionalInfo.SubmissionClientVersion)
+}
+
+// Governing: SPEC music-provider-integration REQ-PROV-054 (batches of at most
+// MaxListensPerRequest = 1000 listens per request)
+func TestSubmitListens_BatchSplittingAtLimit(t *testing.T) {
+	var batchSizes []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var captured submitRequestCapture
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&captured))
+		assert.Equal(t, "import", captured.ListenType)
+		batchSizes = append(batchSizes, len(captured.Payload))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+
+	err := p.SubmitListens(context.Background(), makeListens(MaxListensPerRequest+500, time.Unix(1700000000, 0)))
+	require.NoError(t, err)
+	assert.Equal(t, []int{MaxListensPerRequest, 500}, batchSizes,
+		"input must be split into batches of at most MaxListensPerRequest")
+
+	// Exactly at the limit: a single request.
+	batchSizes = nil
+	err = p.SubmitListens(context.Background(), makeListens(MaxListensPerRequest, time.Unix(1700000000, 0)))
+	require.NoError(t, err)
+	assert.Equal(t, []int{MaxListensPerRequest}, batchSizes)
+}
+
+// Governing: SPEC music-provider-integration REQ-PROV-047, REQ-PROV-054 — a
+// 429 on submission is retried after the advertised interval, and the retry
+// resends the COMPLETE request body (rebuilt per attempt, not a drained reader).
+func TestSubmitListens_Regression_RetryRebuildsBody(t *testing.T) {
+	attempts := 0
+	var secondBody submitRequestCapture
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&secondBody),
+			"retry must carry a complete, parseable body")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+
+	err := p.SubmitListens(context.Background(), makeListens(3, time.Unix(1700000000, 0)))
+	require.NoError(t, err)
+	assert.Equal(t, 2, attempts)
+	assert.Equal(t, "import", secondBody.ListenType)
+	assert.Len(t, secondBody.Payload, 3, "retried request must contain all listens")
+}
+
+// Governing: SPEC music-provider-integration REQ-PROV-054 — listens missing a
+// track name, artist name, or timestamp cannot be represented and are skipped.
+func TestSubmitListens_SkipsUnsubmittableListens(t *testing.T) {
+	requests := 0
+	var captured submitRequestCapture
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&captured))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+
+	playedAt := time.Unix(1700000000, 0)
+	err := p.SubmitListens(context.Background(), []providers.Track{
+		{Name: "", Artist: "Artist", PlayedAt: playedAt},       // no track name
+		{Name: "Track", Artist: "", PlayedAt: playedAt},        // no artist
+		{Name: "Track", Artist: "Artist"},                      // no timestamp
+		{Name: "Keeper", Artist: "Artist", PlayedAt: playedAt}, // valid
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, requests)
+	require.Len(t, captured.Payload, 1)
+	assert.Equal(t, "Keeper", captured.Payload[0].TrackMetadata.TrackName)
+
+	// All-unsubmittable input makes no request at all.
+	requests = 0
+	err = p.SubmitListens(context.Background(), []providers.Track{{Name: "", Artist: "", PlayedAt: playedAt}})
+	require.NoError(t, err)
+	assert.Equal(t, 0, requests)
+
+	// Empty input makes no request at all.
+	err = p.SubmitListens(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, requests)
+}
+
+// Regression: PR #55 adversarial review MAJOR 1 — POST /1/submit-listens
+// rejects the ENTIRE request with 400 if ANY listen is invalid, so a single
+// bad listen used to poison its whole batch on every sync. Listens that
+// ListenBrainz is known to reject — whitespace-only names, listened_at before
+// the LB minimum (~Oct 2002), and future timestamps from clock skew — must be
+// filtered out before batching, and padded names must be trimmed.
+func TestSubmitListens_Regression_FiltersBatchPoisoningListens(t *testing.T) {
+	requests := 0
+	var captured submitRequestCapture
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&captured))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+
+	playedAt := time.Unix(1700000000, 0)
+	err := p.SubmitListens(context.Background(), []providers.Track{
+		{Name: "   ", Artist: "Artist", PlayedAt: playedAt},                                  // whitespace-only track name
+		{Name: "Track", Artist: "\t \n", PlayedAt: playedAt},                                 // whitespace-only artist name
+		{Name: "Too Old", Artist: "Artist", PlayedAt: time.Unix(1000000000, 0)},              // 2001: before the LB minimum
+		{Name: "Prehistoric", Artist: "Artist", PlayedAt: time.Unix(100, 0)},                 // way before the LB minimum
+		{Name: "From The Future", Artist: "Artist", PlayedAt: time.Now().Add(2 * time.Hour)}, // clock-skew future
+		{Name: "  Padded  ", Artist: "  Artist  ", PlayedAt: playedAt},                       // valid after trimming
+		{Name: "Keeper", Artist: "Artist", PlayedAt: playedAt},                               // valid
+		{Name: "Boundary", Artist: "Artist", PlayedAt: time.Unix(listenMinimumUnix, 0)},      // exactly the minimum: valid
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, requests, "poison listens must be filtered, not sent")
+	require.Len(t, captured.Payload, 3, "only submittable listens reach the API")
+
+	names := map[string]string{}
+	for _, l := range captured.Payload {
+		names[l.TrackMetadata.TrackName] = l.TrackMetadata.ArtistName
+	}
+	assert.Contains(t, names, "Keeper")
+	assert.Contains(t, names, "Boundary")
+	assert.Contains(t, names, "Padded", "padded names must be submitted trimmed")
+	assert.Equal(t, "Artist", names["Padded"], "padded artist names must be submitted trimmed")
+
+	// All-poison input makes no request at all.
+	requests = 0
+	err = p.SubmitListens(context.Background(), []providers.Track{
+		{Name: " ", Artist: " ", PlayedAt: playedAt},
+		{Name: "Too Old", Artist: "Artist", PlayedAt: time.Unix(1000000000, 0)},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 0, requests)
+}
+
+// Governing: SPEC music-provider-integration REQ-PROV-054 — a rejected batch
+// surfaces as an error so the caller retries the unsubmitted listens later.
+func TestSubmitListens_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"code":401,"error":"Invalid authorization token."}`))
+	}))
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+
+	err := p.SubmitListens(context.Background(), makeListens(2, time.Unix(1700000000, 0)))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "401")
+}
+
+func TestListenSubmitterInterface(t *testing.T) {
+	// Governing: SPEC music-provider-integration REQ-PROV-054 — the provider
+	// must satisfy ListenSubmitter so the syncer's type assertion picks it up
+	// for listen submission.
+	_, isSubmitter := interface{}(&Provider{}).(providers.ListenSubmitter)
+	assert.True(t, isSubmitter, "provider must satisfy ListenSubmitter")
 }
