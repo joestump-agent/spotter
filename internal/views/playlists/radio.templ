@@ -1,0 +1,120 @@
+// Governing: ADR-0030 (LB Radio through the standard playlist pipeline),
+// SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-053)
+package playlists
+
+import (
+	"spotter/internal/config"
+	"spotter/internal/views/layouts"
+)
+
+// Radio renders the LB Radio prompt page: a prompt input, mode select,
+// example chips, and brief syntax help. The POST swaps errors into the
+// result target; on success the server issues an HX-Redirect to the
+// persisted playlist's show page.
+templ Radio(connected bool, cfg *config.Config) {
+	@layouts.Dashboard("LB Radio | Spotter", cfg, "/playlists") {
+		<div class="max-w-3xl mx-auto">
+			<div class="mb-8">
+				<a href="/playlists" class="btn btn-ghost btn-sm gap-2 mb-4">
+					<span class="icon-[heroicons--arrow-left] w-4 h-4"></span>
+					Back to Playlists
+				</a>
+				<div class="flex items-center gap-3">
+					<span class="icon-[simple-icons--listenbrainz] w-8 h-8 text-warning"></span>
+					<div>
+						<h2 class="text-3xl font-bold">LB Radio</h2>
+						<p class="text-base-content/60 mt-1">Generate a playlist from a ListenBrainz Radio prompt. The result is saved as a regular playlist you can sync to Navidrome.</p>
+					</div>
+				</div>
+			</div>
+			if !connected {
+				<div class="alert alert-warning">
+					<span class="icon-[heroicons--exclamation-triangle] w-6 h-6"></span>
+					<div>
+						<h3 class="font-bold">ListenBrainz is not connected</h3>
+						<div class="text-sm">LB Radio uses your ListenBrainz account. Connect it first, then come back here.</div>
+					</div>
+					<a href="/auth/listenbrainz/connect" class="btn btn-sm">Connect ListenBrainz</a>
+				</div>
+			} else {
+				<div class="card bg-base-100 shadow-xl">
+					<div class="card-body">
+						<form hx-post="/playlists/lb-radio" hx-target="#lb-radio-result" hx-swap="innerHTML" hx-disabled-elt="find button[type='submit']">
+							<div class="form-control">
+								<label class="label" for="lb-radio-prompt">
+									<span class="label-text font-medium">Prompt</span>
+								</label>
+								<input
+									id="lb-radio-prompt"
+									name="prompt"
+									type="text"
+									required
+									maxlength="200"
+									placeholder="artist:(radiohead) or tag:(jazz)"
+									class="input input-bordered w-full"
+								/>
+							</div>
+							<!-- Example chips -->
+							<div class="flex flex-wrap gap-2 mt-3">
+								<button type="button" class="badge badge-outline hover:badge-primary cursor-pointer" data-prompt="artist:(radiohead)" onclick="lbRadioSetPrompt(this)">artist:(radiohead)</button>
+								<button type="button" class="badge badge-outline hover:badge-primary cursor-pointer" data-prompt="tag:(jazz)" onclick="lbRadioSetPrompt(this)">tag:(jazz)</button>
+								<button type="button" class="badge badge-outline hover:badge-primary cursor-pointer" data-prompt="tag:(trip hop, downtempo)" onclick="lbRadioSetPrompt(this)">tag:(trip hop, downtempo)</button>
+								<button type="button" class="badge badge-outline hover:badge-primary cursor-pointer" data-prompt="artist:(nina simone):2 tag:(soul):1" onclick="lbRadioSetPrompt(this)">artist:(nina simone):2 tag:(soul):1</button>
+							</div>
+							<div class="form-control mt-4 max-w-xs">
+								<label class="label" for="lb-radio-mode">
+									<span class="label-text font-medium">Mode</span>
+								</label>
+								<select id="lb-radio-mode" name="mode" class="select select-bordered">
+									<option value="easy" selected>Easy — stick close to the prompt</option>
+									<option value="medium">Medium — mix in related music</option>
+									<option value="hard">Hard — adventurous picks</option>
+								</select>
+							</div>
+							<div class="card-actions items-center mt-6">
+								<button type="submit" class="btn btn-primary gap-2">
+									<span class="icon-[heroicons--radio] w-4 h-4"></span>
+									Generate Playlist
+								</button>
+								<span class="loading loading-spinner loading-md htmx-indicator"></span>
+							</div>
+						</form>
+						<div id="lb-radio-result" class="mt-2"></div>
+					</div>
+				</div>
+				<!-- Syntax help -->
+				<div class="card bg-base-200 mt-6">
+					<div class="card-body py-4">
+						<h3 class="font-bold text-sm uppercase tracking-wide text-base-content/60">Prompt syntax</h3>
+						<ul class="text-sm text-base-content/70 space-y-1 mt-1">
+							<li><code class="bg-base-300 px-1 rounded">artist:(name)</code> — radio seeded from an artist and similar artists</li>
+							<li><code class="bg-base-300 px-1 rounded">tag:(rock)</code> or <code class="bg-base-300 px-1 rounded">tag:(tag one, tag two)</code> — radio from one or more tags</li>
+							<li>Combine elements with spaces and weight them with <code class="bg-base-300 px-1 rounded">:N</code>, e.g. <code class="bg-base-300 px-1 rounded">artist:(nina simone):2 tag:(soul):1</code></li>
+							<li>
+								Full syntax in the
+								<a href="https://troi.readthedocs.io/en/latest/lb_radio.html" target="_blank" rel="noopener noreferrer" class="link">LB Radio prompt documentation</a>
+							</li>
+						</ul>
+						<p class="text-xs text-base-content/50 mt-2">Regenerating with the same prompt updates the existing playlist instead of creating a new one.</p>
+					</div>
+				</div>
+				<script>
+					function lbRadioSetPrompt(el) {
+						const input = document.getElementById("lb-radio-prompt");
+						input.value = el.dataset.prompt;
+						input.focus();
+					}
+				</script>
+			}
+		</div>
+	}
+}
+
+// RadioError is swapped into the LB Radio form's result target when
+// generation fails (bad prompt, API error, or an empty result).
+templ RadioError(message string) {
+	<div class="alert alert-error">
+		<span class="icon-[heroicons--exclamation-circle] w-6 h-6"></span>
+		<span>{ message }</span>
+	</div>
+}
