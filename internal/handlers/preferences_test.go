@@ -205,6 +205,24 @@ func TestPostPreferencesAppearance_InvalidPaginationSizeIgnored(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 25, updated.PaginationSize, "pagination size %q must be rejected", badSize)
 	}
+
+	// Boundary values are accepted — pins the inclusive >=10 / <=100 bounds.
+	for _, goodSize := range []struct {
+		val  string
+		want int
+	}{{"10", 10}, {"100", 100}} {
+		form := url.Values{}
+		form.Set("theme", "dark")
+		form.Set("pagination_size", goodSize.val)
+
+		w := httptest.NewRecorder()
+		h.PostPreferencesAppearance(w, prefsPostForm("/preferences/appearance", u, form))
+		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+
+		updated, err := client.User.Get(context.Background(), u.ID)
+		require.NoError(t, err)
+		assert.Equal(t, goodSize.want, updated.PaginationSize, "boundary pagination size %q must be accepted", goodSize.val)
+	}
 }
 
 func TestPreferencesAccount_Success(t *testing.T) {

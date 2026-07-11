@@ -237,7 +237,11 @@ func TestArtistImage_PathTraversalBlocked(t *testing.T) {
 		SetSource("fanart").
 		SetImageType(artistimage.ImageTypeThumbnail).
 		SetURL("https://example.com/orig.png").
-		SetLocalPath("data/../../../etc/passwd").
+		// The payload must reference a file that actually exists outside
+		// ./data — a nonexistent target (e.g. /etc/passwd relative to the
+		// package cwd) returns 404 even without the guard, making the test
+		// vacuous. images.go is guaranteed to exist next to the test cwd.
+		SetLocalPath("data/../images.go").
 		SetIsPrimary(true).
 		Save(ctx)
 	require.NoError(t, err)
