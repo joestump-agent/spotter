@@ -101,6 +101,14 @@ type Track struct {
 
 **REQ-PROV-042** — The Last.fm provider's `GetRecentListens` MUST use the `user.getRecentTracks` API endpoint with the `from` parameter set to `since.Unix()`.
 
+### ListenBrainz Provider
+
+**REQ-PROV-045** — The ListenBrainz provider MUST be registered with the syncer via the provider factory pattern (ADR-0016), returning `nil, nil` when the user has no `ListenBrainzAuth` edge. It MAY register before implementing `HistoryFetcher`; capability interfaces are discovered at sync time via type assertion.
+
+**REQ-PROV-046** — ListenBrainz authentication MUST use the user's static user token (no OAuth flow; users paste the token from listenbrainz.org/settings). On connect, the token MUST be validated via `GET /1/validate-token` with the `Authorization: Token <token>` header before it is persisted, and the persisted token MUST be encrypted at rest (ADR-0006) as `ListenBrainzAuth.Token`.
+
+**REQ-PROV-047** — All ListenBrainz API requests MUST send a descriptive `User-Agent` header, and the provider MUST respect ListenBrainz rate limiting: a 429 response MUST NOT be retried before the interval advertised by the `Retry-After` (or `X-RateLimit-Reset-In`) header has elapsed.
+
 ### Navidrome Provider
 
 **REQ-PROV-050** — The Navidrome provider MUST implement `HistoryFetcher`, `PlaylistManager`, and `PlaylistSyncer`.

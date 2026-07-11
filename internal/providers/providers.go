@@ -23,6 +23,8 @@ const (
 	TypeSpotify   Type = "spotify"
 	TypeNavidrome Type = "navidrome"
 	TypeLastFM    Type = "lastfm"
+	// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-045)
+	TypeListenBrainz Type = "listenbrainz"
 )
 
 // Governing: SPEC music-provider-integration REQ-PROV-020 (normalized Track struct), REQ-PROV-022 (ISRC for cross-provider matching)

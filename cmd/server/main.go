@@ -33,6 +33,7 @@ import (
 	"spotter/internal/migrations"
 	"spotter/internal/notifications"
 	"spotter/internal/providers/lastfm"
+	"spotter/internal/providers/listenbrainz"
 	"spotter/internal/providers/navidrome"
 	"spotter/internal/providers/spotify"
 	"spotter/internal/services"
@@ -156,6 +157,8 @@ func main() {
 	syncer.Register(navidrome.New(logger, cfg))
 	syncer.Register(spotify.New(logger, cfg, client))
 	syncer.Register(lastfm.New(logger, cfg))
+	// Governing: ADR-0016, SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-045)
+	syncer.Register(listenbrainz.New(logger, cfg))
 
 	// Initialize Playlist Sync Service (for syncing playlists to Navidrome)
 	playlistSyncSvc := services.NewPlaylistSyncService(client, cfg, logger, bus)
@@ -335,8 +338,10 @@ func main() {
 			logger.Error("invalid metadata interval, using default 1h", "error", err, "value", cfg.Metadata.Interval)
 			metadataInterval = 1 * time.Hour
 		}
+		metadataInitialDelay := cfg.MetadataInitialDelay()
 		logger.Info("metadata enrichment configured",
 			"interval", metadataInterval,
+			"initial_delay", metadataInitialDelay,
 			"order", cfg.MetadataEnricherOrder())
 
 		wg.Add(1)
@@ -351,13 +356,16 @@ func main() {
 				})
 			}
 
-			// Initial delay to let the app start up
-			select {
-			case <-ctx.Done():
-				// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
-				logger.Info("loop shutting down", "loop", "metadata")
-				return
-			case <-time.After(30 * time.Second):
+			// Initial delay to let the app start up (metadata.initial_delay;
+			// zero skips the delay entirely)
+			if metadataInitialDelay > 0 {
+				select {
+				case <-ctx.Done():
+					// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
+					logger.Info("loop shutting down", "loop", "metadata")
+					return
+				case <-time.After(metadataInitialDelay):
+				}
 			}
 
 			// Run immediately on startup
@@ -390,18 +398,24 @@ func main() {
 		logger.Error("invalid playlist sync interval, using default 1h", "error", err, "value", cfg.PlaylistSync.SyncInterval)
 		playlistSyncInterval = 1 * time.Hour
 	}
-	logger.Info("playlist sync configured", "interval", playlistSyncInterval)
+	playlistSyncInitialDelay := cfg.PlaylistSyncInitialDelay()
+	logger.Info("playlist sync configured",
+		"interval", playlistSyncInterval,
+		"initial_delay", playlistSyncInitialDelay)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// Initial delay to let the app start up
-		select {
-		case <-ctx.Done():
-			// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
-			logger.Info("loop shutting down", "loop", "playlist_sync")
-			return
-		case <-time.After(1 * time.Minute):
+		// Initial delay to let the app start up (playlist_sync.initial_delay;
+		// zero skips the delay entirely)
+		if playlistSyncInitialDelay > 0 {
+			select {
+			case <-ctx.Done():
+				// Governing: SPEC graceful-shutdown REQ-CTX-001 (log loop shutdown)
+				logger.Info("loop shutting down", "loop", "playlist_sync")
+				return
+			case <-time.After(playlistSyncInitialDelay):
+			}
 		}
 
 		ticker := time.NewTicker(playlistSyncInterval)
@@ -520,6 +534,10 @@ func main() {
 		r.Post("/preferences/lastfm/sync", h.SyncLastFM)
 		r.Post("/preferences/lastfm/rebuild", h.RebuildLastFM)
 		r.Post("/preferences/lastfm/disconnect", h.DisconnectLastFM)
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+		r.Post("/preferences/listenbrainz/sync", h.SyncListenBrainz)
+		r.Post("/preferences/listenbrainz/rebuild", h.RebuildListenBrainz)
+		r.Post("/preferences/listenbrainz/disconnect", h.DisconnectListenBrainz)
 
 		// Task routes
 		r.Post("/preferences/tasks/sync-listens", h.TaskSyncListens)
@@ -533,6 +551,13 @@ func main() {
 		// OAuth login initiators (require existing session)
 		r.Get("/auth/spotify/login", h.SpotifyLogin)
 		r.Get("/auth/lastfm/login", h.LastFMLogin)
+
+		// ListenBrainz has no OAuth: users paste their token from
+		// listenbrainz.org/settings while logged in, so both routes stay
+		// behind auth (no public callback needed).
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Provider" (REQ-PROV-046)
+		r.Get("/auth/listenbrainz/connect", h.ListenBrainzConnectForm)
+		r.Post("/auth/listenbrainz/connect", h.ListenBrainzConnect)
 
 		r.Get("/recent", h.RecentListens)
 		r.Get("/playlists", h.Playlists)

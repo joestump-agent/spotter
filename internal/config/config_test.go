@@ -35,6 +35,11 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, 720*time.Hour, cfg.HistoryLookbackDuration())
 	// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-003, ADR-0014 (default fuzzy match threshold 0.7)
 	assert.Equal(t, 0.7, cfg.PlaylistSync.MinMatchConfidence)
+	// Startup delays for background loops
+	assert.Equal(t, "30s", cfg.Metadata.InitialDelay)
+	assert.Equal(t, 30*time.Second, cfg.MetadataInitialDelay())
+	assert.Equal(t, "1m", cfg.PlaylistSync.InitialDelay)
+	assert.Equal(t, 1*time.Minute, cfg.PlaylistSyncInitialDelay())
 }
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-020 (sync.history_lookback config key)
@@ -397,6 +402,96 @@ func TestConfig_LidarrFullyConfigured(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:8686", cfg.Lidarr.BaseURL)
 	assert.Equal(t, "test-api-key", cfg.Lidarr.APIKey)
+}
+
+// TestConfig_InitialDelays covers the configurable startup delays for the
+// background metadata enrichment and playlist sync loops: defaults, env
+// overrides, zero (skip the delay entirely), and rejection of negative or
+// unparseable values.
+func TestConfig_InitialDelays(t *testing.T) {
+	tests := []struct {
+		name              string
+		metadataDelay     string // SPOTTER_METADATA_INITIAL_DELAY; "" leaves the env var unset
+		playlistSyncDelay string // SPOTTER_PLAYLIST_SYNC_INITIAL_DELAY; "" leaves the env var unset
+		wantMetadata      time.Duration
+		wantPlaylistSync  time.Duration
+		wantErr           string
+	}{
+		{
+			name:             "defaults",
+			wantMetadata:     30 * time.Second,
+			wantPlaylistSync: 1 * time.Minute,
+		},
+		{
+			name:              "env overrides",
+			metadataDelay:     "2m",
+			playlistSyncDelay: "45s",
+			wantMetadata:      2 * time.Minute,
+			wantPlaylistSync:  45 * time.Second,
+		},
+		{
+			name:              "zero skips the delay",
+			metadataDelay:     "0s",
+			playlistSyncDelay: "0s",
+			wantMetadata:      0,
+			wantPlaylistSync:  0,
+		},
+		{
+			name:          "negative metadata delay rejected",
+			metadataDelay: "-30s",
+			wantErr:       "metadata.initial_delay must not be negative",
+		},
+		{
+			name:              "negative playlist sync delay rejected",
+			playlistSyncDelay: "-1m",
+			wantErr:           "playlist_sync.initial_delay must not be negative",
+		},
+		{
+			name:          "unparseable metadata delay rejected",
+			metadataDelay: "not-a-duration",
+			wantErr:       "metadata.initial_delay must be a valid duration string",
+		},
+		{
+			name:              "unparseable playlist sync delay rejected",
+			playlistSyncDelay: "soon",
+			wantErr:           "playlist_sync.initial_delay must be a valid duration string",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setRequiredEnvVars(t)
+			if tt.metadataDelay != "" {
+				t.Setenv("SPOTTER_METADATA_INITIAL_DELAY", tt.metadataDelay)
+			}
+			if tt.playlistSyncDelay != "" {
+				t.Setenv("SPOTTER_PLAYLIST_SYNC_INITIAL_DELAY", tt.playlistSyncDelay)
+			}
+
+			cfg, err := Load()
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMetadata, cfg.MetadataInitialDelay())
+			assert.Equal(t, tt.wantPlaylistSync, cfg.PlaylistSyncInitialDelay())
+		})
+	}
+}
+
+// TestConfig_InitialDelaysEmptyEnvFallsBack: Viper treats an empty-string env
+// var as "set", so Load applies the defaults instead of failing to parse "".
+func TestConfig_InitialDelaysEmptyEnvFallsBack(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("SPOTTER_METADATA_INITIAL_DELAY", "")
+	t.Setenv("SPOTTER_PLAYLIST_SYNC_INITIAL_DELAY", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 30*time.Second, cfg.MetadataInitialDelay())
+	assert.Equal(t, 1*time.Minute, cfg.PlaylistSyncInitialDelay())
 }
 
 // Governing: SPEC-0015 REQ "Email Content" — email links point at the Spotter instance

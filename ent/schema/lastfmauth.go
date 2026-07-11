@@ -4,11 +4,20 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+
+	spmixin "spotter/ent/schema/mixin"
 )
 
 // LastFMAuth holds the schema definition for the LastFMAuth entity.
 type LastFMAuth struct {
 	ent.Schema
+}
+
+// Mixin of the LastFMAuth.
+func (LastFMAuth) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		spmixin.Timestamps{},
+	}
 }
 
 // Fields of the LastFMAuth.
