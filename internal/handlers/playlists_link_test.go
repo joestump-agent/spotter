@@ -635,6 +635,42 @@ func TestLinkNavidromePicker_HappyPath(t *testing.T) {
 	// Candidate buttons post to the link endpoint
 	assert.Contains(t, bodyStr, "/playlists/"+strconv.Itoa(pl.ID)+"/link/nav-a")
 	assert.Contains(t, bodyStr, "/playlists/"+strconv.Itoa(pl.ID)+"/link/nav-b")
+	// Copy warns that linking immediately replaces the target's tracks
+	assert.Contains(t, bodyStr, "immediately replaces")
+	// Cancel button restores the sync dropdown via the sync-dropdown partial
+	assert.Contains(t, bodyStr, "Cancel")
+	assert.Contains(t, bodyStr, "/playlists/"+strconv.Itoa(pl.ID)+"/sync-dropdown")
+}
+
+// The zero-candidate case must show an explanatory message and still offer
+// Cancel so the picker is never a dead-end.
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-071
+func TestLinkNavidromePicker_NoCandidates(t *testing.T) {
+	client, h, _ := setupPlaylistLinkHandler(t, false)
+	u := createLinkTestUser(t, client)
+
+	pl, err := client.Playlist.Create().
+		SetUser(u).
+		SetRemoteID("spotify-picker-empty").
+		SetName("Pick For Me").
+		SetSource("spotify").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	req := newPlaylistRequest("GET", "/playlists/"+strconv.Itoa(pl.ID)+"/link", "", u,
+		map[string]string{"id": strconv.Itoa(pl.ID)})
+	w := httptest.NewRecorder()
+
+	h.LinkNavidromePicker(w, req)
+
+	resp := w.Result()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, "No Navidrome playlists found")
+	assert.Contains(t, bodyStr, "Cancel")
+	assert.Contains(t, bodyStr, "/playlists/"+strconv.Itoa(pl.ID)+"/sync-dropdown")
 }
 
 func TestLinkNavidromePicker_ProviderError(t *testing.T) {
@@ -731,10 +767,58 @@ func TestLinkWithNavidrome_MissingTargetID(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Result().StatusCode)
 }
 
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-072 (candidate membership
+// validation before any state change)
+func TestLinkWithNavidrome_UnknownTarget(t *testing.T) {
+	client, h, mock := setupPlaylistLinkHandler(t, false)
+	u := createLinkTestUser(t, client)
+
+	// The user's Navidrome provider knows only nav-a; nav-bogus is not a
+	// candidate and must be rejected before any state change.
+	mock.playlists = []providers.Playlist{
+		{ID: "nav-a", Name: "Morning Coffee", TrackCount: 12},
+	}
+
+	pl, err := client.Playlist.Create().
+		SetUser(u).
+		SetRemoteID("spotify-bogus-target").
+		SetName("My Spotify Mix").
+		SetSource("spotify").
+		SetSyncToNavidrome(false).
+		Save(context.Background())
+	require.NoError(t, err)
+
+	req := newPlaylistRequest("POST", "/playlists/"+strconv.Itoa(pl.ID)+"/link/nav-bogus", "", u,
+		map[string]string{"id": strconv.Itoa(pl.ID), "targetId": "nav-bogus"})
+	w := httptest.NewRecorder()
+
+	h.LinkWithNavidrome(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Result().StatusCode)
+
+	// Give a (buggy) async pairing path time to run before asserting nothing
+	// happened, mirroring TestTogglePlaylistSync_DisableSync_KeepOverride.
+	time.Sleep(300 * time.Millisecond)
+
+	updatedPl, err := client.Playlist.Get(context.Background(), pl.ID)
+	require.NoError(t, err)
+	assert.False(t, updatedPl.SyncToNavidrome,
+		"rejected link must not flip sync_to_navidrome")
+	assert.Empty(t, updatedPl.NavidromePlaylistID,
+		"rejected link must not pair the playlist")
+	assert.Empty(t, mock.UpdatedID(), "rejected link must not touch Navidrome")
+}
+
 // Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-072 (arbitrary-target linking)
 func TestLinkWithNavidrome_HappyPath(t *testing.T) {
 	client, h, mock := setupPlaylistLinkHandler(t, false)
 	u := createLinkTestUser(t, client)
+
+	// The chosen target must be one of the user's Navidrome playlists
+	// (candidate membership is validated before pairing).
+	mock.playlists = []providers.Playlist{
+		{ID: "nav-arbitrary-99", Name: "Completely Unrelated Name", TrackCount: 7},
+	}
 
 	// Sync disabled and target name completely unrelated: linking must work
 	// for ANY Navidrome playlist, not just same-name conflicts.

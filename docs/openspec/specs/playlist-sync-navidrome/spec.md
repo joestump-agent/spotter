@@ -111,19 +111,9 @@ The disable-sync UI SHOULD present both choices ("Disable sync & keep Navidrome 
 - `GET /playlists/{id}/sync-progress` — progress display during active sync
 - `GET /playlists/{id}/link` — list candidate Navidrome playlists for linking (see REQ-PLSYNC-071)
 - `POST /playlists/{id}/link/{targetId}` — link the playlist to an arbitrary Navidrome playlist (see REQ-PLSYNC-072)
+- `GET /playlists/{id}/sync-dropdown` — re-render the sync dropdown partial (used by the link picker's Cancel action, see REQ-PLSYNC-071)
 
 **REQ-PLSYNC-051** — All on-demand sync operations MUST run in background goroutines. The HTTP response MUST be returned before sync completes.
-
-### Playlist Pairing and Linking
-
-**REQ-PLSYNC-070** — `PairWithNavidrome(ctx, playlistID, navidromeRemoteID)` MUST:
-1. Set `navidrome_playlist_id` on the Spotter playlist to the given remote ID
-2. Delete any cached Navidrome-source duplicate playlist (same user, `remote_id == navidromeRemoteID`) from Spotter's DB, so the pair is not listed twice
-3. Trigger an immediate sync, which per REQ-PLSYNC-031 updates the existing Navidrome playlist in place rather than creating a new one
-
-**REQ-PLSYNC-071** — `GET /playlists/{id}/link` MUST list candidate Navidrome playlists fetched live from the user's Navidrome provider via `PlaylistManager.GetPlaylists`. The endpoint MUST enforce user isolation (playlist ownership via traversal) and MUST reject Navidrome-source playlists with HTTP 400 — only non-Navidrome playlists can be linked.
-
-**REQ-PLSYNC-072** — `POST /playlists/{id}/link/{targetId}` MUST pair the playlist with ANY user-chosen Navidrome playlist (not only same-name conflicts) by reusing `PairWithNavidrome`. The handler MUST enable `sync_to_navidrome` before pairing if it is disabled, MUST enforce user isolation and the non-Navidrome-source restriction from REQ-PLSYNC-071, and MUST run the pairing asynchronously per REQ-PLSYNC-051.
 
 ### Audit Logging
 
@@ -133,6 +123,24 @@ The disable-sync UI SHOULD present both choices ("Disable sync & keep Navidrome 
 - matched count, unmatched count, match rate
 - final status
 - any error message
+
+### Playlist Pairing and Linking
+
+**REQ-PLSYNC-070** — `PairWithNavidrome(ctx, playlistID, navidromeRemoteID)` MUST:
+1. Set `navidrome_playlist_id` on the Spotter playlist to the given remote ID
+2. Delete any cached Navidrome-source duplicate playlist (same user, `remote_id == navidromeRemoteID`) from Spotter's DB, so the pair is not listed twice
+3. Trigger an immediate sync, which per REQ-PLSYNC-031 updates the existing Navidrome playlist in place rather than creating a new one
+
+Callers MUST validate the remote ID before invoking `PairWithNavidrome` — the endpoint-level validation is specified in REQ-PLSYNC-072.
+
+**REQ-PLSYNC-071** — `GET /playlists/{id}/link` MUST list candidate Navidrome playlists fetched live from the user's Navidrome provider via `PlaylistManager.GetPlaylists`. The endpoint MUST enforce user isolation (playlist ownership via traversal) and MUST reject Navidrome-source playlists with HTTP 400 — only non-Navidrome playlists can be linked. The picker UI MUST warn that linking immediately replaces the selected Navidrome playlist's tracks, MUST offer a Cancel action that restores the sync dropdown without making changes, and MUST handle the zero-candidate case with an explanatory message plus the same Cancel action.
+
+**REQ-PLSYNC-072** — `POST /playlists/{id}/link/{targetId}` MUST pair the playlist with ANY user-chosen Navidrome playlist (not only same-name conflicts) by reusing `PairWithNavidrome`. The handler MUST complete ALL validation before making any state change:
+1. Enforce user isolation and the non-Navidrome-source restriction from REQ-PLSYNC-071
+2. Verify the sync service is available
+3. Verify `targetId` appears in the candidate list returned by the user's Navidrome provider (the same list REQ-PLSYNC-071 renders); an unknown `targetId` MUST be rejected with HTTP 404 and MUST NOT modify `sync_to_navidrome` or pairing state
+
+Only after validation passes MUST the handler enable `sync_to_navidrome` (if disabled) and run the pairing asynchronously per REQ-PLSYNC-051.
 
 ---
 

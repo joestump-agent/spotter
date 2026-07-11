@@ -724,9 +724,13 @@ func (h *Handler) LinkNavidromePicker(w http.ResponseWriter, r *http.Request) {
 
 // LinkWithNavidrome pairs a non-Navidrome playlist with an arbitrary Navidrome
 // playlist chosen by the user, reusing the PairWithNavidrome service flow.
+// All validation (ownership, source, service availability, target membership)
+// happens BEFORE any state change so a rejected request can never strand the
+// playlist in a sync-enabled-but-unpaired state.
 // POST /playlists/{id}/link/{targetId}
-// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-072 (arbitrary-target linking),
-// REQ-PLSYNC-051 (async pairing in background goroutine)
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-072 (arbitrary-target linking,
+// validate-before-mutate incl. candidate membership), REQ-PLSYNC-051 (async pairing
+// in background goroutine)
 func (h *Handler) LinkWithNavidrome(w http.ResponseWriter, r *http.Request) {
 	u := h.RequireUser(w, r)
 	if u == nil {
@@ -766,7 +770,41 @@ func (h *Handler) LinkWithNavidrome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enable sync first so SyncPlaylistToNavidrome proceeds after pairing
+	if h.PlaylistSyncSvc == nil {
+		h.Logger.Error("PlaylistSyncSvc is nil, cannot link playlist",
+			"playlist_id", playlistID)
+		http.Error(w, "Playlist sync service not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Verify the posted targetId is one of the user's actual Navidrome
+	// playlists (the same candidate list the picker rendered), rejecting
+	// bogus or stale targets before any state change.
+	candidates, err := h.PlaylistSyncSvc.ListNavidromePlaylists(r.Context(), u.ID)
+	if err != nil {
+		h.Logger.Error("failed to list Navidrome playlists for link validation",
+			"playlist_id", playlistID,
+			"error", err)
+		http.Error(w, "Failed to load Navidrome playlists", http.StatusInternalServerError)
+		return
+	}
+	targetIsCandidate := false
+	for _, c := range candidates {
+		if c.ID == targetID {
+			targetIsCandidate = true
+			break
+		}
+	}
+	if !targetIsCandidate {
+		h.Logger.Warn("attempted to link to unknown Navidrome playlist",
+			"playlist_id", playlistID,
+			"target_id", targetID)
+		http.Error(w, "Navidrome playlist not found: targetId is not one of your Navidrome playlists", http.StatusNotFound)
+		return
+	}
+
+	// All validation passed — only now enable sync so SyncPlaylistToNavidrome
+	// proceeds after pairing.
 	if !pl.SyncToNavidrome {
 		pl, err = h.Client.Playlist.UpdateOne(pl).
 			SetSyncToNavidrome(true).
@@ -780,21 +818,16 @@ func (h *Handler) LinkWithNavidrome(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.PlaylistSyncSvc != nil {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), asyncDefaultTimeout)
-			defer cancel()
-			if err := h.PlaylistSyncSvc.PairWithNavidrome(ctx, playlistID, targetID); err != nil {
-				h.Logger.Error("failed to link playlist with Navidrome",
-					"playlist_id", playlistID,
-					"target_id", targetID,
-					"error", err)
-			}
-		}()
-	} else {
-		h.Logger.Warn("PlaylistSyncSvc is nil, cannot link playlist",
-			"playlist_id", playlistID)
-	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), asyncDefaultTimeout)
+		defer cancel()
+		if err := h.PlaylistSyncSvc.PairWithNavidrome(ctx, playlistID, targetID); err != nil {
+			h.Logger.Error("failed to link playlist with Navidrome",
+				"playlist_id", playlistID,
+				"target_id", targetID,
+				"error", err)
+		}
+	}()
 
 	h.Logger.Info("playlist linking triggered",
 		"playlist_id", playlistID,
@@ -1015,6 +1048,34 @@ func (h *Handler) RebuildPlaylistSync(w http.ResponseWriter, r *http.Request) {
 
 	// Return the updated sync dropdown component
 	h.renderPlaylistSyncDropdown(w, r, updatedPlaylist)
+}
+
+// GetPlaylistSyncDropdown re-renders the sync dropdown partial for a playlist.
+// Used by the link picker's Cancel button to restore the dropdown it replaced.
+// GET /playlists/{id}/sync-dropdown
+// Governing: SPEC playlist-sync-navidrome REQ-PLSYNC-071 (picker Cancel restores dropdown)
+func (h *Handler) GetPlaylistSyncDropdown(w http.ResponseWriter, r *http.Request) {
+	u := h.RequireUser(w, r)
+	if u == nil {
+		return
+	}
+
+	playlistID, ok := h.ParseIntParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	// Verify ownership (user isolation via traversal)
+	pl, err := h.GetPlaylistForUser(r.Context(), playlistID, u.ID)
+	if err != nil {
+		h.Logger.Error("failed to get playlist for sync dropdown",
+			"playlist_id", playlistID,
+			"error", err)
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	h.renderPlaylistSyncDropdown(w, r, pl)
 }
 
 // renderPlaylistSyncDropdown renders the playlist sync dropdown component
