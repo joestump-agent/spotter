@@ -469,8 +469,10 @@ func TestGetRecentListens_Pagination(t *testing.T) {
 	assert.Equal(t, 2, requests)
 	assert.Len(t, collected, 103)
 	// max_ts advances backwards: unset on page 1, then the oldest
-	// listened_at of page 1 (exclusive bound) on page 2.
-	require.Equal(t, []string{"", strconv.FormatInt(newest-99, 10)}, maxTSSeen)
+	// listened_at of page 1 PLUS ONE on page 2 — max_ts is exclusive, so
+	// oldest+1 re-fetches the boundary second and never drops ties that
+	// share the oldest timestamp (REQ-PROV-048).
+	require.Equal(t, []string{"", strconv.FormatInt(newest-99+1, 10)}, maxTSSeen)
 }
 
 // Governing: SPEC music-provider-integration REQ-PROV-048 (client-side since bound)
@@ -494,12 +496,15 @@ func TestGetRecentListens_SinceFiltering(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, requests, "reaching since must terminate pagination even on a full page")
-	// Only listens strictly after since are delivered: newest-49 .. newest.
-	require.Len(t, collected, 50)
+	// Listens at or after since are delivered: newest-50 .. newest. The
+	// listen AT since is included — the watermark second may hold unsynced
+	// ties, and the idempotent persist layer absorbs the re-delivery
+	// (REQ-PROV-048). Listens strictly before since are excluded.
+	require.Len(t, collected, 51)
 	assert.Equal(t, time.Unix(newest, 0).UTC(), collected[0].PlayedAt)
-	assert.Equal(t, time.Unix(newest-49, 0).UTC(), collected[len(collected)-1].PlayedAt)
+	assert.Equal(t, time.Unix(newest-50, 0).UTC(), collected[len(collected)-1].PlayedAt)
 	for _, track := range collected {
-		assert.True(t, track.PlayedAt.After(since), "listen at %v is not after since %v", track.PlayedAt, since)
+		assert.False(t, track.PlayedAt.Before(since), "listen at %v is before since %v", track.PlayedAt, since)
 	}
 }
 
@@ -687,6 +692,211 @@ func TestGetRecentListens_SkipsListensWithoutTimestamp(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, collected, 1)
 	assert.Equal(t, "Valid", collected[0].Name)
+}
+
+// faithfulListen is a listen served by newFaithfulListensServer.
+type faithfulListen struct {
+	ts   int64
+	name string
+}
+
+// newFaithfulListensServer serves the given listens (which must be sorted
+// newest-first) with the real ListenBrainz GET /1/user/{u}/listens semantics:
+// max_ts is EXCLUSIVE (only listens with listened_at strictly less than
+// max_ts are returned), listens are returned newest-first, and at most
+// listensPageSize items are returned per request. requests counts calls.
+func newFaithfulListensServer(t *testing.T, listens []faithfulListen, requests *int) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*requests++
+		require.LessOrEqual(t, *requests, 20, "runaway pagination: too many requests")
+
+		maxTS := int64(0)
+		if v := r.URL.Query().Get("max_ts"); v != "" {
+			parsed, err := strconv.ParseInt(v, 10, 64)
+			require.NoError(t, err)
+			maxTS = parsed
+		}
+
+		var page []interface{}
+		for _, l := range listens {
+			if maxTS > 0 && l.ts >= maxTS {
+				continue // max_ts is exclusive: strictly-less only
+			}
+			page = append(page, lbListen(l.ts, l.name, "Artist", "Album", nil))
+			if len(page) == listensPageSize {
+				break
+			}
+		}
+		writeListens(t, w, page)
+	}))
+}
+
+// collectNames runs GetRecentListens against the provider and returns the set
+// of distinct track names delivered to the callback (duplicate re-deliveries
+// across pages are allowed and collapsed here).
+func collectNames(t *testing.T, p *Provider, since time.Time) map[string]bool {
+	t.Helper()
+	delivered := map[string]bool{}
+	err := p.GetRecentListens(context.Background(), since, func(tracks []providers.Track) error {
+		for _, track := range tracks {
+			delivered[track.Name] = true
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	return delivered
+}
+
+// Regression test for the data-loss bug found by adversarial review on PR #47:
+// the pagination cursor was set to maxTS = oldest listened_at of the previous
+// page, but the ListenBrainz max_ts parameter is EXCLUSIVE (returns listens
+// strictly older). When two listens share listened_at == T and one of them is
+// the 100th item of a page, the follow-up request with max_ts=T only returns
+// listens < T — the second tie was silently and permanently lost. The fix
+// paginates with max_ts = oldest+1 so boundary ties are re-fetched
+// (re-delivery is safe: persistListens de-duplicates idempotently).
+// Governing: SPEC music-provider-integration REQ-PROV-048
+func TestGetRecentListens_Regression_PageBoundaryTieLoss(t *testing.T) {
+	const base = int64(1700000999)
+
+	// 102 listens, newest-first. listens[99] (last item of page 1) and
+	// listens[100] (first item beyond the page boundary) share a timestamp.
+	var listens []faithfulListen
+	for i := 0; i < 100; i++ {
+		listens = append(listens, faithfulListen{ts: base - int64(i), name: fmt.Sprintf("Listen-%03d", i)})
+	}
+	listens = append(listens,
+		faithfulListen{ts: base - 99, name: "Listen-100"}, // tie with listens[99]
+		faithfulListen{ts: base - 100, name: "Listen-101"},
+	)
+
+	requests := 0
+	server := newFaithfulListensServer(t, listens, &requests)
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+	delivered := collectNames(t, p, time.Time{})
+
+	// Every listen must be delivered at least once; dupes across pages are
+	// fine (the persist layer is idempotent), losing one is not.
+	for _, l := range listens {
+		assert.True(t, delivered[l.name], "listen %s (ts %d) was never delivered", l.name, l.ts)
+	}
+	assert.GreaterOrEqual(t, requests, 2, "a full first page must trigger a second request")
+}
+
+// Regression test for the sibling tie-loss at the since watermark (PR #47
+// adversarial review): listens with played_at exactly equal to since were
+// filtered out client-side, so a tie sharing the watermark second that had
+// not been synced yet was permanently lost. They are now delivered (the
+// idempotent persist layer absorbs the re-delivered watermark listen), while
+// listens strictly before since remain excluded, and pagination still
+// terminates when ties at since span a page boundary.
+// Governing: SPEC music-provider-integration REQ-PROV-048
+func TestGetRecentListens_Regression_SinceBoundaryTieDelivered(t *testing.T) {
+	const base = int64(1700001000)
+	sinceTS := base - 97
+	since := time.Unix(sinceTS, 0).UTC()
+
+	// 106 listens newest-first: 97 strictly after since, then FOUR ties at
+	// exactly since (three end page 1, the fourth spills onto page 2), then
+	// five strictly before since.
+	var listens []faithfulListen
+	for i := 0; i < 97; i++ {
+		listens = append(listens, faithfulListen{ts: base - int64(i), name: fmt.Sprintf("Listen-%03d", i)})
+	}
+	for i := 97; i <= 100; i++ {
+		listens = append(listens, faithfulListen{ts: sinceTS, name: fmt.Sprintf("Listen-%03d", i)})
+	}
+	for i := 101; i <= 105; i++ {
+		listens = append(listens, faithfulListen{ts: sinceTS - int64(i-100), name: fmt.Sprintf("Listen-%03d", i)})
+	}
+
+	requests := 0
+	server := newFaithfulListensServer(t, listens, &requests)
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+	delivered := collectNames(t, p, since)
+
+	// All ties at exactly since must be delivered, including the one past
+	// the page boundary.
+	for i := 97; i <= 100; i++ {
+		name := fmt.Sprintf("Listen-%03d", i)
+		assert.True(t, delivered[name], "tie at since (%s) was never delivered", name)
+	}
+	// Listens strictly before since must not be delivered.
+	for i := 101; i <= 105; i++ {
+		name := fmt.Sprintf("Listen-%03d", i)
+		assert.False(t, delivered[name], "listen strictly before since (%s) must not be delivered", name)
+	}
+	assert.Equal(t, 97+4, len(delivered))
+	assert.Equal(t, 2, requests, "walk must fetch exactly one page past the since-tie boundary and stop")
+}
+
+// A pathological page where 100+ listens share one timestamp: with the
+// tie-safe cursor (max_ts = oldest+1) a faithful server re-serves the same
+// page forever, so the strict-decrease termination guard must end the walk.
+// Governing: SPEC music-provider-integration REQ-PROV-048 (pagination MUST
+// terminate even when the cursor cannot strictly decrease)
+func TestGetRecentListens_MassTiePageTerminates(t *testing.T) {
+	const ts = int64(1700000500)
+	var listens []faithfulListen
+	for i := 0; i < 150; i++ {
+		listens = append(listens, faithfulListen{ts: ts, name: fmt.Sprintf("Listen-%03d", i)})
+	}
+
+	requests := 0
+	server := newFaithfulListensServer(t, listens, &requests)
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := p.GetRecentListens(ctx, time.Time{}, func(tracks []providers.Track) error {
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.LessOrEqual(t, requests, 3, "cursor cannot strictly decrease past a >=100-listen tie: the guard must stop the walk")
+}
+
+// Regression test for the duration fallback nit from the PR #47 review:
+// some ListenBrainz submitters populate track_metadata.additional_info with
+// `duration` (seconds) instead of `duration_ms`. Both must be read, with
+// duration_ms preferred when both are present.
+func TestGetRecentListens_Regression_DurationSecondsFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeListens(t, w, []interface{}{
+			lbListen(1700000300, "Millis", "Artist", "Album", map[string]interface{}{
+				"duration_ms": 215000,
+			}),
+			lbListen(1700000200, "Both", "Artist", "Album", map[string]interface{}{
+				"duration_ms": 215000,
+				"duration":    999,
+			}),
+			lbListen(1700000100, "Seconds Only", "Artist", "Album", map[string]interface{}{
+				"duration": 187,
+			}),
+		})
+	}))
+	defer server.Close()
+
+	p := createTestProvider(t, &config.Config{}, testUser(), server.URL)
+
+	var collected []providers.Track
+	err := p.GetRecentListens(context.Background(), time.Time{}, func(tracks []providers.Track) error {
+		collected = append(collected, tracks...)
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.Len(t, collected, 3)
+	assert.Equal(t, 215000, collected[0].DurationMs)
+	assert.Equal(t, 215000, collected[1].DurationMs, "duration_ms must win over duration")
+	assert.Equal(t, 187000, collected[2].DurationMs, "duration (seconds) must be converted to ms")
 }
 
 func TestInterfaceImplementation(t *testing.T) {

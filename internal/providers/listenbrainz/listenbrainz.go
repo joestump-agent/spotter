@@ -149,8 +149,11 @@ type listensResponse struct {
 					RecordingMbid string `json:"recording_mbid"`
 					RecordingMsid string `json:"recording_msid"`
 					DurationMs    int    `json:"duration_ms"`
-					ISRC          string `json:"isrc"`
-					OriginURL     string `json:"origin_url"`
+					// Duration is the track length in seconds; some submitting
+					// clients populate it instead of duration_ms.
+					Duration  int    `json:"duration"`
+					ISRC      string `json:"isrc"`
+					OriginURL string `json:"origin_url"`
 				} `json:"additional_info"`
 			} `json:"track_metadata"`
 		} `json:"listens"`
@@ -164,11 +167,18 @@ type listensResponse struct {
 //
 // The ListenBrainz listens endpoint returns listens newest-first and rejects
 // requests that combine min_ts and max_ts, so pagination walks backwards:
-// each page's oldest listened_at becomes the next request's max_ts (which is
-// exclusive), and the since bound is enforced client-side. The loop
-// terminates when a page is empty or short, when a listen at or before since
-// appears, or when max_ts fails to advance (defensive guard against a
-// misbehaving server re-serving the same page).
+// each page's oldest listened_at plus one second becomes the next request's
+// max_ts. max_ts is EXCLUSIVE (strictly-older listens only), so passing
+// oldest itself would permanently drop any listens sharing the boundary
+// timestamp that fell past the page cut; oldest+1 re-fetches the boundary
+// second instead, and the idempotent persist layer absorbs the re-delivered
+// duplicates. The since bound is enforced client-side: listens strictly
+// before since are already synced and are not delivered, while listens AT
+// since are delivered (the watermark second may hold not-yet-synced ties).
+// The loop terminates when a page is empty or short, when a listen strictly
+// before since appears, or when the cursor fails to strictly decrease
+// (>= 100 listens sharing one timestamp, or a misbehaving server re-serving
+// the same page).
 func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callback func([]providers.Track) error) error {
 	p.logger.Info("fetching recent listens from listenbrainz", "username", p.auth.Username, "since", since)
 
@@ -208,10 +218,14 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 			}
 
 			playedAt := time.Unix(l.ListenedAt, 0).UTC()
-			// Governing: SPEC listen-playlist-sync REQ-SYNC-020 — only listens
-			// after the since watermark are new; at-or-before means the
-			// remaining (older) history is already synced.
-			if !since.IsZero() && !playedAt.After(since) {
+			// Governing: SPEC listen-playlist-sync REQ-SYNC-020 — listens
+			// strictly before the since watermark are already synced. Listens
+			// AT since are still delivered: the watermark second may hold ties
+			// that were never synced, dropping them would lose them forever,
+			// and re-delivering the already-synced one is safe because
+			// persistListens de-duplicates idempotently (SPEC
+			// listen-playlist-sync REQ-SYNC-021).
+			if !since.IsZero() && playedAt.Before(since) {
 				reachedSince = true
 				continue
 			}
@@ -227,12 +241,19 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 				id = l.RecordingMsid
 			}
 
+			// Prefer duration_ms; fall back to duration (seconds), which some
+			// submitting clients send instead.
+			durationMs := info.DurationMs
+			if durationMs == 0 && info.Duration > 0 {
+				durationMs = info.Duration * 1000
+			}
+
 			tracks = append(tracks, providers.Track{
 				ID:         id,
 				Name:       l.TrackMetadata.TrackName,
 				Artist:     l.TrackMetadata.ArtistName,
 				Album:      l.TrackMetadata.ReleaseName,
-				DurationMs: info.DurationMs,
+				DurationMs: durationMs,
 				PlayedAt:   playedAt,
 				URL:        info.OriginURL,
 				ISRC:       info.ISRC,
@@ -248,15 +269,23 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 		if reachedSince || len(listens) < listensPageSize {
 			return nil
 		}
-		if oldest == 0 || (maxTS > 0 && oldest >= maxTS) {
-			// No usable cursor, or the cursor did not move backwards: stop
-			// rather than loop forever on a misbehaving server.
-			p.logger.Warn("listenbrainz pagination cursor did not advance, stopping", "max_ts", maxTS, "oldest", oldest)
+		// max_ts is EXCLUSIVE, so the tie-safe cursor is oldest+1: passing
+		// oldest itself would silently drop any listens that share oldest's
+		// timestamp but fell past the page boundary. Re-fetching the boundary
+		// second re-delivers at most one second of listens, which the
+		// idempotent persist layer de-duplicates.
+		next := oldest + 1
+		if oldest == 0 || (maxTS > 0 && next >= maxTS) {
+			// No usable cursor, or the cursor failed to STRICTLY decrease.
+			// On a well-behaved server every listen satisfies listened_at <
+			// maxTS, so next <= maxTS always; next == maxTS means the entire
+			// page shares the boundary timestamp (>= 100 listens in one
+			// second) and re-requesting would re-serve it forever. The same
+			// guard also stops a misbehaving server that ignores max_ts.
+			p.logger.Warn("listenbrainz pagination cursor did not strictly decrease, stopping", "max_ts", maxTS, "oldest", oldest)
 			return nil
 		}
-		// max_ts is exclusive, so passing the oldest seen listened_at yields
-		// strictly older listens on the next page.
-		maxTS = oldest
+		maxTS = next
 	}
 }
 
