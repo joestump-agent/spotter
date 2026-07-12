@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -351,39 +352,68 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 		s.logger.Debug("fetching history", "provider", provider.Type(), "since", since)
 
-		var totalAdded, totalSkipped, totalFound int
-
+		// Governing: issue #50 (mid-pagination failure must not advance the
+		// watermark past an unfetched range), SPEC graceful-shutdown REQ-REC-001,
+		// REQ-REC-002 (idempotent listen sync via timestamp watermark).
+		//
+		// Providers deliver history pages NEWEST-FIRST (ListenBrainz walks max_ts
+		// backwards, Last.fm walks page numbers forward from the most recent play,
+		// Spotify walks cursors backwards) and the `since` watermark is the MAX
+		// persisted PlayedAt. Persisting a newest page and THEN failing on an
+		// older page would leave a permanent gap: the next sync resumes from the
+		// new high watermark and never re-fetches the older, unpersisted range
+		// below it. So buffer every delivered page during the walk and persist
+		// only AFTER the walk completes without error, OLDEST-FIRST. A failed
+		// walk persists nothing, leaving the watermark untouched so the next sync
+		// re-fetches from the same `since`; oldest-first persistence also keeps
+		// the DB gap-free when persistence itself is interrupted (e.g. graceful
+		// shutdown), because every listen at or below the resulting watermark is
+		// contiguous. Re-fetching after a failure re-delivers already-synced
+		// listens, which persistListens de-duplicates idempotently (SPEC
+		// listen-playlist-sync REQ-SYNC-021).
+		var buffered []providers.Track
 		err = fetcher.GetRecentListens(ctx, since, func(tracks []providers.Track) error {
-			if len(tracks) == 0 {
-				return nil
-			}
-			totalFound += len(tracks)
-			s.logger.Info("found new tracks batch", "count", len(tracks), "provider", provider.Type())
-
-			count, skipped, err := s.persistListens(ctx, u, provider.Type(), tracks)
-			if err != nil {
-				// Forward-looking: persistListens currently handles per-item DB
-				// failures internally (Warn + continue) and always returns nil,
-				// so this branch only fires once the persist layer aggregates
-				// and returns real errors.
-				s.logger.Error("failed to persist listens batch", "error", err)
-				return err
-			}
-			totalAdded += count
-			totalSkipped += skipped
+			buffered = append(buffered, tracks...)
 			return nil
 		})
 
+		var totalAdded, totalSkipped, totalFound int
+		if err == nil && len(buffered) > 0 {
+			// Sort oldest-first so the watermark (max stored PlayedAt) never
+			// passes an unfetched range, even if the persist loop is interrupted
+			// part-way: every listen persisted is older than every one not yet
+			// persisted.
+			sort.SliceStable(buffered, func(i, j int) bool {
+				return buffered[i].PlayedAt.Before(buffered[j].PlayedAt)
+			})
+			totalFound = len(buffered)
+			s.logger.Info("persisting fetched listens", "count", totalFound, "provider", provider.Type())
+			totalAdded, totalSkipped, err = s.persistListens(ctx, u, provider.Type(), buffered)
+			if err != nil {
+				// Forward-looking: persistListens currently handles per-item DB
+				// failures internally (Warn + continue) and always returns nil,
+				// so this branch only fires once the persist layer aggregates and
+				// returns real errors. A persist failure is handled as a provider
+				// failure below (backoff + aggregated error); the oldest-first
+				// ordering means any listens saved before it are contiguous, so
+				// the watermark still never passes an unfetched range.
+				s.logger.Error("failed to persist listens", "error", err)
+			}
+		}
+
 		if err != nil {
-			// Governing: SPEC observability REQ "BG-003" (per-provider failure recorded;
-			// listens persisted by earlier batches before the failure still count)
+			// Governing: SPEC observability REQ "BG-003" (per-provider failure recorded).
+			// A fetch failure discarded the buffered pages and persisted nothing
+			// (totalAdded == 0); a persist failure saved a contiguous oldest-first
+			// prefix before it, and those are real synced listens.
 			if st := syncStatsFor(stats, provider.Type()); st != nil {
 				st.listensSynced += totalAdded
 				st.duration += time.Since(providerStart)
 				st.failed = true
 				st.errs = append(st.errs, err.Error())
 			}
-			// Batches persisted before the failure are real synced listens.
+			// Listens persisted (oldest-first) before a persist failure count;
+			// a fetch failure adds zero.
 			allAdded += totalAdded
 			// Classify error and record backoff state
 			// Governing: SPEC error-handling REQ-ERR-001 through REQ-ERR-004
