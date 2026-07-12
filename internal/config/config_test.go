@@ -518,6 +518,78 @@ func TestSpotterBaseURL_Fallback(t *testing.T) {
 	assert.Equal(t, "http://localhost:8080", cfg.SpotterBaseURL())
 }
 
+// Governing: ADR-0009 (Viper configuration), ADR-0023 (multi-database support), SPEC-0016 REQ "Driver Validation", REQ "Driver-Specific Default Source"
+// TestLoadDatabase verifies the admin CLI's database resolution helper mirrors
+// the server's Database resolution: the same SPOTTER_DATABASE_* env vars, the
+// same defaults, the same driver validation, and the same driver-specific
+// default source — without requiring the server-only settings that Load needs.
+func TestLoadDatabase(t *testing.T) {
+	tests := []struct {
+		name       string
+		driverEnv  string // SPOTTER_DATABASE_DRIVER ("" leaves it effectively unset — Viper treats empty as default)
+		sourceEnv  string // SPOTTER_DATABASE_SOURCE ("" leaves it effectively unset)
+		wantDriver string
+		wantSource string
+		wantErr    string
+	}{
+		{
+			name:       "defaults to sqlite3",
+			wantDriver: "sqlite3",
+			wantSource: "file:spotter.db?cache=shared&_fk=1",
+		},
+		{
+			name:       "postgres uses driver-specific default source",
+			driverEnv:  "postgres",
+			wantDriver: "postgres",
+			wantSource: "host=localhost port=5432 dbname=spotter sslmode=disable",
+		},
+		{
+			name:       "mysql uses driver-specific default source",
+			driverEnv:  "mysql",
+			wantDriver: "mysql",
+			wantSource: "spotter:spotter@tcp(localhost:3306)/spotter?parseTime=true&charset=utf8mb4",
+		},
+		{
+			name:       "explicit source overrides driver-specific default",
+			driverEnv:  "postgres",
+			sourceEnv:  "host=db.example.com port=5432 dbname=prod sslmode=require",
+			wantDriver: "postgres",
+			wantSource: "host=db.example.com port=5432 dbname=prod sslmode=require",
+		},
+		{
+			name:       "sqlite3 explicit source respected",
+			driverEnv:  "sqlite3",
+			sourceEnv:  "file:/var/lib/spotter/custom.db",
+			wantDriver: "sqlite3",
+			wantSource: "file:/var/lib/spotter/custom.db",
+		},
+		{
+			name:      "invalid driver rejected",
+			driverEnv: "cockroachdb",
+			wantErr:   "unsupported database driver",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set both explicitly so the developer's shell environment cannot
+			// leak in; empty string is treated by Viper as unset (defaults).
+			t.Setenv("SPOTTER_DATABASE_DRIVER", tt.driverEnv)
+			t.Setenv("SPOTTER_DATABASE_SOURCE", tt.sourceEnv)
+
+			driver, source, err := LoadDatabase()
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantDriver, driver)
+			assert.Equal(t, tt.wantSource, source)
+		})
+	}
+}
+
 func TestSpotterBaseURL_EnvVar(t *testing.T) {
 	t.Setenv("SPOTTER_NAVIDROME_BASE_URL", "http://localhost:4533")
 	t.Setenv("SPOTTER_OPENAI_API_KEY", "sk-test-key")
