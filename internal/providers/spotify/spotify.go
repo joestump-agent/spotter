@@ -16,6 +16,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/httputil"
 	"spotter/internal/providers"
+	"spotter/internal/resilience"
 
 	"golang.org/x/oauth2"
 	spotifyOAuth "golang.org/x/oauth2/spotify"
@@ -352,7 +353,8 @@ func (p *Provider) fetchUserProfile(ctx context.Context, accessToken string) (*s
 	}
 	defer p.closeBody(resp)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("spotify API returned status %d", resp.StatusCode)
+		// Governing: ADR-0020, SPEC error-handling REQ-ERR-002/REQ-ERR-003
+		return nil, resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("spotify API returned status %d", resp.StatusCode))
 	}
 
 	var user spotifyUser
@@ -425,7 +427,8 @@ func (p *Provider) GetRecentListens(ctx context.Context, since time.Time, callba
 
 		if resp.StatusCode != http.StatusOK {
 			p.closeBody(resp)
-			return fmt.Errorf("spotify API returned status %d", resp.StatusCode)
+			// Governing: ADR-0020, SPEC error-handling REQ-ERR-002/REQ-ERR-003
+			return resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("spotify API returned status %d", resp.StatusCode))
 		}
 
 		var result recentlyPlayedResponse
@@ -548,7 +551,8 @@ func (p *Provider) GetPlaylists(ctx context.Context) ([]providers.Playlist, erro
 
 		if resp.StatusCode != http.StatusOK {
 			p.closeBody(resp)
-			return nil, fmt.Errorf("spotify API returned status %d", resp.StatusCode)
+			// Governing: ADR-0020, SPEC error-handling REQ-ERR-002/REQ-ERR-003
+			return nil, resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("spotify API returned status %d", resp.StatusCode))
 		}
 
 		var result playlistsResponse
@@ -707,7 +711,8 @@ func (p *Provider) createPlaylist(ctx context.Context, name, description string,
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		p.closeBody(resp)
-		return "", fmt.Errorf("spotify API returned status %d", resp.StatusCode)
+		// Governing: ADR-0020, SPEC error-handling REQ-ERR-002/REQ-ERR-003
+		return "", resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("spotify API returned status %d", resp.StatusCode))
 	}
 
 	var created struct {
@@ -751,7 +756,8 @@ func (p *Provider) createPlaylist(ctx context.Context, name, description string,
 		}
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 			p.closeBody(resp)
-			return "", fmt.Errorf("spotify API returned status %d", resp.StatusCode)
+			// Governing: ADR-0020, SPEC error-handling REQ-ERR-002/REQ-ERR-003
+			return "", resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("spotify API returned status %d", resp.StatusCode))
 		}
 		p.closeBody(resp)
 	}

@@ -23,6 +23,8 @@ import (
 
 	"github.com/nfnt/resize"
 	_ "golang.org/x/image/webp"
+
+	"spotter/internal/resilience"
 )
 
 const (
@@ -125,7 +127,8 @@ func DownloadAndSaveImage(ctx context.Context, url, localPath string, logger *sl
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download image, status: %s", resp.Status)
+		// Governing: ADR-0020, SPEC error-handling REQ-ERR-002/REQ-ERR-003
+		return "", resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("failed to download image, status: %s", resp.Status))
 	}
 
 	// Decode the image data. The blank import of image decoders allows
