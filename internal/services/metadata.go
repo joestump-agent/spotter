@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
+
 	"spotter/ent"
 	"spotter/ent/album"
 	"spotter/ent/albumimage"
@@ -57,6 +59,31 @@ func NewMetadataService(client *ent.Client, db *sql.DB, cfg *config.Config, logg
 		logger:   logger,
 		bus:      bus,
 		registry: enrichers.NewRegistry(),
+	}
+}
+
+// byLastEnrichedAtNullsFirst orders enrichment batches so never-enriched rows
+// (NULL last_enriched_at) come first, then the least-recently-enriched, with ID
+// as a deterministic tie-breaker. Because each processed row gets its
+// last_enriched_at bumped, successive Limit(N) batches rotate through the whole
+// library instead of re-selecting the same first N rows — even for rows whose
+// Or-predicates (e.g. LidarrIDIsNil) still match after enrichment.
+//
+// The NULL grouping is expressed as a portable boolean sort key ("IS NOT NULL"
+// ascending puts NULLs first) because NULL ordering defaults differ across
+// dialects (Postgres sorts NULLs last on ASC) and MySQL does not support the
+// NULLS FIRST clause.
+//
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-040 (enrich ALL
+// un-enriched or stale entities), issue #343 (batch starvation)
+func byLastEnrichedAtNullsFirst(lastEnrichedAtField, idField string) func(*entsql.Selector) {
+	return func(s *entsql.Selector) {
+		col := s.C(lastEnrichedAtField)
+		s.OrderExpr(
+			entsql.Expr(col+" IS NOT NULL"),
+			entsql.Expr(col),
+			entsql.Expr(s.C(idField)),
+		)
 	}
 }
 
@@ -624,6 +651,9 @@ func (s *MetadataService) EnrichArtists(ctx context.Context, u *ent.User) (int, 
 			q.WithAlbum()
 		}).
 		WithImages().
+		// Rotate batches through the library so rows beyond the limit are not starved.
+		// Governing: issue #343 (batch starvation), SPEC metadata-enrichment-pipeline REQ-ENRICH-040
+		Order(byLastEnrichedAtNullsFirst(artist.FieldLastEnrichedAt, artist.FieldID)).
 		Limit(100). // Process in batches
 		All(ctx)
 	if err != nil {
@@ -958,6 +988,9 @@ func (s *MetadataService) EnrichAlbums(ctx context.Context, u *ent.User) (int, e
 		WithArtist().
 		WithTracks().
 		WithImages().
+		// Rotate batches through the library so rows beyond the limit are not starved.
+		// Governing: issue #343 (batch starvation), SPEC metadata-enrichment-pipeline REQ-ENRICH-040
+		Order(byLastEnrichedAtNullsFirst(album.FieldLastEnrichedAt, album.FieldID)).
 		Limit(100).
 		All(ctx)
 	if err != nil {
@@ -1393,6 +1426,9 @@ func (s *MetadataService) EnrichTracks(ctx context.Context, u *ent.User) (int, e
 			q.Where(artist.HasUserWith(user.ID(u.ID)))
 		}).
 		WithAlbum().
+		// Rotate batches through the library so rows beyond the limit are not starved.
+		// Governing: issue #343 (batch starvation), SPEC metadata-enrichment-pipeline REQ-ENRICH-040
+		Order(byLastEnrichedAtNullsFirst(track.FieldLastEnrichedAt, track.FieldID)).
 		Limit(200).
 		All(ctx)
 	if err != nil {
