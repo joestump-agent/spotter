@@ -275,6 +275,31 @@ func (h *Handler) DisconnectListenBrainz(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
+		// Governing: SPEC music-provider-integration REQ "ListenBrainz Listen
+		// Submission" (REQ-PROV-054) — also remove this account's OWN native
+		// (listenbrainz-source) listens. The submission pipeline treats any
+		// listenbrainz-source row within the cross-provider dedup window as
+		// proof ListenBrainz already has that play and suppresses submitting the
+		// surviving spotify/navidrome copy (submitListensToListenBrainz's
+		// sibling check via duplicateListenExists). Clearing the stamps above is
+		// not enough: if the user reconnects a DIFFERENT ListenBrainz account,
+		// the old account's sibling rows would keep suppressing the other-source
+		// copies and the new account would never receive the pre-existing
+		// history. A same-account reconnect simply re-imports this history on the
+		// next sync, and any resubmission it triggers is absorbed by
+		// ListenBrainz's server-side dedup — so deleting the sibling rows keeps
+		// same-account reconnect behavior intact while unblocking account
+		// switches.
+		if _, err := h.Client.Listen.Delete().
+			Where(
+				listen.HasUserWith(user.ID(u.ID)),
+				listen.Source(string(providers.TypeListenBrainz)),
+			).Exec(r.Context()); err != nil {
+			h.Logger.Error("failed to delete listenbrainz-source listens", "error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
 		if err := h.Client.ListenBrainzAuth.DeleteOne(u.Edges.ListenbrainzAuth).Exec(r.Context()); err != nil {
 			h.Logger.Error("failed to delete listenbrainz auth", "error", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)

@@ -203,3 +203,95 @@ func TestDisconnectListenBrainz_Regression_ClearsSubmittedFlags(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, otherRemaining)
 }
+
+// Regression: issue #59 — reconnecting a DIFFERENT ListenBrainz account after a
+// disconnect used to skip old plays. DisconnectListenBrainz cleared the
+// submission stamps but left the old account's listenbrainz-SOURCE listens in
+// place; the scrobble submitter's sibling check (a listenbrainz-source row
+// within the cross-provider dedup window) then suppressed submission of the
+// surviving spotify/navidrome copies, so the newly connected account never
+// received the pre-existing history. Disconnect must delete the user's own
+// listenbrainz-source listens (the sibling markers) while preserving
+// other-source listens with their stamps cleared, and must leave other users'
+// listens untouched.
+func TestDisconnectListenBrainz_Regression_AccountSwitchRemovesListenBrainzSiblings(t *testing.T) {
+	client, h := setupPrefsHandler(t)
+	ctx := context.Background()
+	u := createPrefsTestUser(t, client)
+	other := createPrefsTestUser(t, client)
+
+	_, err := client.ListenBrainzAuth.Create().
+		SetUser(u).
+		SetToken("tok").
+		SetUsername("old-lb-account").
+		Save(ctx)
+	require.NoError(t, err)
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	// A spotify play whose listenbrainz-source sibling proves the OLD account
+	// already had it — the copy was stamped as processed during the old
+	// account's submission run.
+	spotifyCopy, err := client.Listen.Create().
+		SetUser(u).
+		SetTrackName("Shared Song").
+		SetArtistName("Shared Artist").
+		SetAlbumName("Shared Album").
+		SetSource("spotify").
+		SetPlayedAt(base).
+		SetSubmittedToListenbrainzAt(base.Add(time.Hour)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// The listenbrainz-source sibling imported from the old account (30s apart,
+	// inside the ±2min dedup window).
+	_, err = client.Listen.Create().
+		SetUser(u).
+		SetTrackName("Shared Song").
+		SetArtistName("Shared Artist").
+		SetAlbumName("Shared Album").
+		SetSource("listenbrainz").
+		SetPlayedAt(base.Add(30 * time.Second)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Another user's listenbrainz-source listen must survive (scoping).
+	otherLB, err := client.Listen.Create().
+		SetUser(other).
+		SetTrackName("Other Song").
+		SetArtistName("Other Artist").
+		SetAlbumName("Other Album").
+		SetSource("listenbrainz").
+		SetPlayedAt(base).
+		Save(ctx)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	h.DisconnectListenBrainz(w, prefsPostForm("/preferences/listenbrainz/disconnect", u, url.Values{}))
+	require.Equal(t, http.StatusOK, w.Result().StatusCode)
+
+	// The auth row is gone.
+	assert.Nil(t, listenBrainzAuthFor(t, client, u))
+
+	// The user's listenbrainz-source siblings are deleted so they no longer
+	// suppress submission of the other-source copies to a newly connected
+	// account.
+	lbRemaining, err := client.Listen.Query().
+		Where(listen.HasUserWith(user.ID(u.ID)), listen.Source("listenbrainz")).
+		Count(ctx)
+	require.NoError(t, err)
+	assert.Zero(t, lbRemaining, "disconnect must delete the user's listenbrainz-source listens")
+
+	// The other-source copy is preserved and its stamp cleared, so the next
+	// sync submits it to the reconnected (different) account.
+	preserved, err := client.Listen.Get(ctx, spotifyCopy.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "spotify", preserved.Source, "other-source listens must be preserved on disconnect")
+	assert.Nil(t, preserved.SubmittedToListenbrainzAt,
+		"the preserved copy's stamp must be cleared so it resubmits to the new account")
+
+	// The other user's listenbrainz-source listen is untouched.
+	stillThere, err := client.Listen.Get(ctx, otherLB.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "listenbrainz", stillThere.Source, "another user's listens must not be deleted")
+}
