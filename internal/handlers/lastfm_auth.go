@@ -241,7 +241,12 @@ func (h *Handler) LastFMCallback(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 
-		if err := h.Syncer.Sync(ctx, syncUser); err != nil {
+		// Sync only the just-connected provider: a full Sync() would surface a
+		// pre-existing failure in a DIFFERENT provider as a misleading "Sync
+		// Failed" mid-connect.
+		// Governing: ADR-0020; issue #36 (sync UX)
+		res, err := h.Syncer.SyncProviderWithResult(ctx, syncUser, providers.TypeLastFM)
+		if err != nil {
 			h.Logger.Error("Last.fm sync failed", "error", err, "username", username)
 			h.Bus.Publish(userID, events.Event{
 				Type: events.EventTypeNotification,
@@ -250,6 +255,16 @@ func (h *Handler) LastFMCallback(w http.ResponseWriter, r *http.Request) {
 					Message:  "Failed to sync Last.fm data. Please try again later.",
 					IconType: "error",
 				},
+			})
+			return
+		}
+		// A pre-existing backoff on Last.fm means nothing synced yet; say so
+		// instead of staying silent (which reads as success).
+		// Governing: SPEC error-handling REQ-BACK-004; issue #36 (sync UX)
+		if r, ok := res.BackingOffFor(providers.TypeLastFM); ok {
+			h.Bus.Publish(userID, events.Event{
+				Type:    events.EventTypeNotification,
+				Payload: providerBackoffToast(providers.TypeLastFM, r.RetryAfter),
 			})
 		}
 	}(u.ID, u.Username)

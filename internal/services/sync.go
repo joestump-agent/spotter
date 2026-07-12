@@ -79,6 +79,16 @@ type providerSyncStats struct {
 	duration        time.Duration
 	failed          bool
 	errs            []string
+	// executed marks that at least one phase actually contacted the provider
+	// this run, so a provider that was skipped entirely (backoff window) emits
+	// no metric.sync event, preserving prior behaviour.
+	executed bool
+	// skippedBackoff marks a provider that was not contacted because it is in a
+	// backoff window; retryAfter is the remaining time until it may retry.
+	// Governing: issue #36 (sync UX) — surfaced via SyncResult so manual-sync
+	// callers can report "backing off (retry in Xs)".
+	skippedBackoff bool
+	retryAfter     time.Duration
 }
 
 // syncStatsFor returns the stats entry for a provider, creating it on first
@@ -95,6 +105,121 @@ func syncStatsFor(stats map[providers.Type]*providerSyncStats, t providers.Type)
 	return st
 }
 
+// ProviderSyncOutcome is the outcome of syncing one provider within a run.
+// Governing: ADR-0020 (error handling and resilience); issue #36 (sync UX)
+type ProviderSyncOutcome int
+
+const (
+	// ProviderSynced means the provider was contacted and synced (possibly with
+	// zero new items).
+	ProviderSynced ProviderSyncOutcome = iota
+	// ProviderSyncFailed means the provider returned an error this run.
+	ProviderSyncFailed
+	// ProviderBackingOff means the provider was skipped because it is in a
+	// backoff window, so nothing ran for it.
+	ProviderBackingOff
+)
+
+// ProviderResult captures one provider's outcome within a SyncResult.
+type ProviderResult struct {
+	Provider   providers.Type
+	Outcome    ProviderSyncOutcome
+	Err        error         // non-nil only when Outcome == ProviderSyncFailed
+	RetryAfter time.Duration // > 0 only when Outcome == ProviderBackingOff
+}
+
+// SyncResult aggregates the per-provider outcomes of a Sync/SyncProvider run so
+// callers can distinguish total failure, partial success, and "nothing ran
+// because a provider is backing off" — distinctions a bare error cannot carry.
+// Governing: ADR-0020 (error handling and resilience); issue #36 (sync UX)
+type SyncResult struct {
+	Providers []ProviderResult
+}
+
+// Succeeded returns the providers that synced successfully this run.
+func (r *SyncResult) Succeeded() []providers.Type { return r.typesWithOutcome(ProviderSynced) }
+
+// Failed returns the providers that returned an error this run.
+func (r *SyncResult) Failed() []providers.Type { return r.typesWithOutcome(ProviderSyncFailed) }
+
+// BackingOff returns the per-provider results for providers skipped this run
+// because they are in a backoff window.
+func (r *SyncResult) BackingOff() []ProviderResult {
+	if r == nil {
+		return nil
+	}
+	var out []ProviderResult
+	for _, p := range r.Providers {
+		if p.Outcome == ProviderBackingOff {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// BackingOffFor returns the backoff result for a specific provider, if it was
+// skipped this run because it is in a backoff window.
+func (r *SyncResult) BackingOffFor(t providers.Type) (ProviderResult, bool) {
+	if r == nil {
+		return ProviderResult{}, false
+	}
+	for _, p := range r.Providers {
+		if p.Provider == t && p.Outcome == ProviderBackingOff {
+			return p, true
+		}
+	}
+	return ProviderResult{}, false
+}
+
+// HasFailures reports whether any provider failed this run.
+func (r *SyncResult) HasFailures() bool { return len(r.Failed()) > 0 }
+
+// PartialSuccess reports whether at least one provider synced AND at least one
+// failed — the case where callers should still process the data that landed.
+func (r *SyncResult) PartialSuccess() bool {
+	return len(r.Succeeded()) > 0 && len(r.Failed()) > 0
+}
+
+func (r *SyncResult) typesWithOutcome(o ProviderSyncOutcome) []providers.Type {
+	if r == nil {
+		return nil
+	}
+	var out []providers.Type
+	for _, p := range r.Providers {
+		if p.Outcome == o {
+			out = append(out, p.Provider)
+		}
+	}
+	return out
+}
+
+// buildSyncResult translates the per-provider stats collected during a run into
+// a SyncResult, applying precedence failed > backing-off > succeeded so a
+// provider that failed one phase and was then skipped in the next reports as
+// failed. Providers that never participated (not a HistoryFetcher/PlaylistManager,
+// or fatally blocked) have no stats entry and are omitted.
+// Governing: ADR-0020 (error handling and resilience); issue #36 (sync UX)
+func buildSyncResult(stats map[providers.Type]*providerSyncStats) *SyncResult {
+	res := &SyncResult{}
+	for t, st := range stats {
+		pr := ProviderResult{Provider: t}
+		switch {
+		case st.failed:
+			pr.Outcome = ProviderSyncFailed
+			if len(st.errs) > 0 {
+				pr.Err = errors.New(strings.Join(st.errs, "; "))
+			}
+		case st.skippedBackoff && !st.executed:
+			pr.Outcome = ProviderBackingOff
+			pr.RetryAfter = st.retryAfter
+		default:
+			pr.Outcome = ProviderSynced
+		}
+		res.Providers = append(res.Providers, pr)
+	}
+	return res
+}
+
 // Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
 // Governing: SPEC graceful-shutdown REQ-REC-004 (ctx propagated to DB ops; cancellation leaves DB consistent)
 // Governing: SPEC listen-playlist-sync REQ-SYNC-010 (full sync: providers -> history -> playlists)
@@ -104,11 +229,21 @@ func syncStatsFor(stats map[providers.Type]*providerSyncStats, t providers.Type)
 // joined errors so callers can observe partial failure.
 // Governing: SPEC observability REQ-BG-001 (callers count real per-user errors)
 func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
+	_, err := s.SyncWithResult(ctx, u)
+	return err
+}
+
+// SyncWithResult performs a full synchronization and returns a SyncResult
+// describing each provider's outcome alongside the aggregated error, so callers
+// (the reset flow, manual-sync handlers) can tell partial success and
+// backing-off providers apart from a total failure.
+// Governing: ADR-0020 (error handling and resilience); issue #36 (sync UX)
+func (s *Syncer) SyncWithResult(ctx context.Context, u *ent.User) (*SyncResult, error) {
 	s.logger.Info("starting full sync", "username", u.Username)
 
 	refreshedUser, activeProviders, err := s.getActiveProviders(ctx, u)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
@@ -135,11 +270,11 @@ func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 	}
 
 	// Emit metric.sync with the real per-provider values collected above.
-	// Providers skipped entirely (e.g. in a backoff window) have no stats
-	// entry and emit no event.
+	// Providers skipped entirely (e.g. in a backoff window) never ran, so they
+	// emit no event even though they now carry a stats entry recording the skip.
 	for _, p := range activeProviders {
 		st, ok := stats[p.Type()]
-		if !ok {
+		if !ok || !st.executed {
 			continue
 		}
 		s.logger.Info("metric.sync",
@@ -151,26 +286,38 @@ func (s *Syncer) Sync(ctx context.Context, u *ent.User) error {
 			"error", strings.Join(st.errs, "; "))
 	}
 
+	result := buildSyncResult(stats)
+
 	// Surface aggregated per-provider errors without having blocked partial
 	// success: providers that succeeded have already persisted their data.
 	// Governing: ADR-0020, SPEC listen-playlist-sync REQ-SYNC-011 (history
 	// failure does not abort playlist sync) — both phases ran above.
 	if syncErr := errors.Join(histErr, plErr); syncErr != nil {
 		s.logger.Error("full sync completed with errors", "username", refreshedUser.Username, "error", syncErr)
-		return fmt.Errorf("sync completed with errors: %w", syncErr)
+		return result, fmt.Errorf("sync completed with errors: %w", syncErr)
 	}
 
 	s.logger.Info("full sync completed", "username", refreshedUser.Username)
-	return nil
+	return result, nil
 }
 
 // SyncProvider performs a full synchronization for a specific provider only.
 func (s *Syncer) SyncProvider(ctx context.Context, u *ent.User, providerType providers.Type) error {
+	_, err := s.SyncProviderWithResult(ctx, u, providerType)
+	return err
+}
+
+// SyncProviderWithResult performs a full synchronization for a single provider
+// and returns a SyncResult describing its outcome alongside the aggregated
+// error, so manual-sync handlers can report a backing-off provider ("nothing
+// ran, retry in Xs") distinctly from a real failure or a genuine success.
+// Governing: ADR-0020 (error handling and resilience); issue #36 (sync UX)
+func (s *Syncer) SyncProviderWithResult(ctx context.Context, u *ent.User, providerType providers.Type) (*SyncResult, error) {
 	s.logger.Info("starting provider sync", "username", u.Username, "provider", providerType)
 
 	refreshedUser, activeProviders, err := s.getActiveProviders(ctx, u)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Filter to only the requested provider
@@ -183,11 +330,15 @@ func (s *Syncer) SyncProvider(ctx context.Context, u *ent.User, providerType pro
 
 	if len(targetProviders) == 0 {
 		s.logger.Warn("provider not found or not active", "provider", providerType)
-		return nil
+		return &SyncResult{}, nil
 	}
 
+	// Collect per-provider outcomes so backoff skips surface to callers.
+	// Governing: issue #36 (sync UX)
+	stats := make(map[providers.Type]*providerSyncStats)
+
 	// 1. History
-	_, histErr := s.syncHistory(ctx, refreshedUser, targetProviders, nil)
+	_, histErr := s.syncHistory(ctx, refreshedUser, targetProviders, stats)
 	if histErr != nil {
 		s.logger.Error("failed to sync history", "username", refreshedUser.Username, "provider", providerType, "error", histErr)
 	}
@@ -198,21 +349,23 @@ func (s *Syncer) SyncProvider(ctx context.Context, u *ent.User, providerType pro
 	s.submitListensToListenBrainz(ctx, refreshedUser, targetProviders)
 
 	// 2. Playlists
-	_, plErr := s.syncPlaylists(ctx, refreshedUser, targetProviders, nil)
+	_, plErr := s.syncPlaylists(ctx, refreshedUser, targetProviders, stats)
 	if plErr != nil {
 		s.logger.Error("failed to sync playlists", "username", refreshedUser.Username, "provider", providerType, "error", plErr)
 	}
+
+	result := buildSyncResult(stats)
 
 	// Surface aggregated errors so callers (e.g. the manual "Sync Failed"
 	// toast paths in handlers) report real failures instead of silently
 	// succeeding. Both phases still ran, preserving partial success.
 	// Governing: ADR-0020 (error handling and resilience)
 	if err := errors.Join(histErr, plErr); err != nil {
-		return fmt.Errorf("provider sync completed with errors: %w", err)
+		return result, fmt.Errorf("provider sync completed with errors: %w", err)
 	}
 
 	s.logger.Info("provider sync completed", "username", refreshedUser.Username, "provider", providerType)
-	return nil
+	return result, nil
 }
 
 // SyncRecentListens pulls recent listening history from all registered providers.
@@ -305,11 +458,26 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 		// Check backoff state before calling provider
 		// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
 		// A backoff skip is deliberate throttling, not a new failure — it is
-		// not added to the aggregated error.
+		// not added to the aggregated error. A backoff-window skip is recorded
+		// in stats so manual-sync callers can surface a "backing off (retry in
+		// Xs)" outcome instead of a misleading success.
+		// Governing: issue #36 (sync UX)
 		backoffKey := BackoffKey{UserID: u.ID, ProviderType: provider.Type()}
-		if skip, reason := s.backoff.ShouldSkip(backoffKey); skip {
-			s.logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
+		if ss := s.backoff.SkipStatusFor(backoffKey); ss.Skip() {
+			s.logger.Info("skipping provider due to backoff", "provider", providerName, "reason", ss.Reason)
+			if ss.Kind == SkipBackoff {
+				if st := syncStatsFor(stats, provider.Type()); st != nil {
+					st.skippedBackoff = true
+					st.retryAfter = ss.RetryAfter
+				}
+			}
 			continue
+		}
+
+		// The provider is being contacted this run; mark it so it emits a
+		// metric.sync event and is not misread as backing off.
+		if st := syncStatsFor(stats, provider.Type()); st != nil {
+			st.executed = true
 		}
 
 		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
@@ -745,11 +913,26 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 		// Check backoff state before calling provider
 		// Governing: SPEC error-handling REQ-BACK-004, REQ-STATE-004
 		// A backoff skip is deliberate throttling, not a new failure — it is
-		// not added to the aggregated error.
+		// not added to the aggregated error. A backoff-window skip is recorded
+		// in stats so manual-sync callers can surface a "backing off (retry in
+		// Xs)" outcome instead of a misleading success.
+		// Governing: issue #36 (sync UX)
 		backoffKey := BackoffKey{UserID: u.ID, ProviderType: provider.Type()}
-		if skip, reason := s.backoff.ShouldSkip(backoffKey); skip {
-			s.logger.Info("skipping provider due to backoff", "provider", providerName, "reason", reason)
+		if ss := s.backoff.SkipStatusFor(backoffKey); ss.Skip() {
+			s.logger.Info("skipping provider due to backoff", "provider", providerName, "reason", ss.Reason)
+			if ss.Kind == SkipBackoff {
+				if st := syncStatsFor(stats, provider.Type()); st != nil {
+					st.skippedBackoff = true
+					st.retryAfter = ss.RetryAfter
+				}
+			}
 			continue
+		}
+
+		// The provider is being contacted this run; mark it so it emits a
+		// metric.sync event and is not misread as backing off.
+		if st := syncStatsFor(stats, provider.Type()); st != nil {
+			st.executed = true
 		}
 
 		// Governing: ADR-0019 (structured metrics), SPEC observability REQ "BG-003"
