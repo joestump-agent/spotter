@@ -30,6 +30,11 @@ import (
 const (
 	defaultTimeout = 120 * time.Second
 	defaultModel   = "gpt-4o"
+
+	// aiReEnrichWindow is the minimum interval between AI re-enrichments of the
+	// same entity. Entities enriched more recently than this are skipped.
+	// Governing: AGENTS.md ENR-AI-004 (AI re-enrichment MUST NOT occur more than once per 7 days).
+	aiReEnrichWindow = 7 * 24 * time.Hour
 )
 
 // Enricher implements the OpenAI metadata enricher.
@@ -418,8 +423,9 @@ func deduplicateTags(newTags, existingTags []string, maxTags int) []string {
 
 // EnrichArtist fetches AI-generated metadata for an artist.
 func (e *Enricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enrichers.ArtistData, error) {
-	// Check if we've enriched this artist recently (within 30 days)
-	if artist.LastAiEnrichedAt != nil && time.Since(*artist.LastAiEnrichedAt) < 30*24*time.Hour {
+	// Governing: AGENTS.md ENR-AI-004 (skip AI enrichment for entities enriched within 7 days)
+	// Check if we've enriched this artist recently (within the re-enrich window).
+	if artist.LastAiEnrichedAt != nil && time.Since(*artist.LastAiEnrichedAt) < aiReEnrichWindow {
 		e.logger.Debug("skipping AI enrichment for artist (recently enriched)", "name", artist.Name, "last_enriched", artist.LastAiEnrichedAt)
 		return nil, nil
 	}
@@ -555,6 +561,13 @@ func (e *Enricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]e
 
 // EnrichAlbum fetches AI-generated metadata for an album.
 func (e *Enricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enrichers.AlbumData, error) {
+	// Governing: AGENTS.md ENR-AI-004 (skip AI enrichment for entities enriched within 7 days)
+	// Check if we've enriched this album recently (within the re-enrich window).
+	if album.LastAiEnrichedAt != nil && time.Since(*album.LastAiEnrichedAt) < aiReEnrichWindow {
+		e.logger.Debug("skipping AI enrichment for album (recently enriched)", "name", album.Name, "last_enriched", album.LastAiEnrichedAt)
+		return nil, nil
+	}
+
 	e.logger.Info("AI enricher called for album", "name", album.Name, "id", album.ID)
 
 	artistName := ""
@@ -725,6 +738,13 @@ func (e *Enricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enri
 
 // EnrichTrack fetches AI-generated metadata for a track.
 func (e *Enricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enrichers.TrackData, error) {
+	// Governing: AGENTS.md ENR-AI-004 (skip AI enrichment for entities enriched within 7 days)
+	// Check if we've enriched this track recently (within the re-enrich window).
+	if track.LastAiEnrichedAt != nil && time.Since(*track.LastAiEnrichedAt) < aiReEnrichWindow {
+		e.logger.Debug("skipping AI enrichment for track (recently enriched)", "name", track.Name, "last_enriched", track.LastAiEnrichedAt)
+		return nil, nil
+	}
+
 	e.logger.Info("AI enricher called for track", "name", track.Name, "id", track.ID)
 
 	artistName := ""
