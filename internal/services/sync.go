@@ -362,10 +362,12 @@ func (s *Syncer) syncHistory(ctx context.Context, u *ent.User, activeProviders [
 
 			count, skipped, err := s.persistListens(ctx, u, provider.Type(), tracks)
 			if err != nil {
-				// Forward-looking: persistListens currently handles per-item DB
-				// failures internally (Warn + continue) and always returns nil,
-				// so this branch only fires once the persist layer aggregates
-				// and returns real errors.
+				// persistListens Warn+continues per bad track but aggregates
+				// genuine DB failures and returns them here (issue #35); a
+				// mid-sync DB outage therefore fails the batch and flows into
+				// the per-provider error/backoff/metric path below rather than
+				// being swallowed. Listens saved by earlier batches still count.
+				// Governing: ADR-0020, SPEC listen-playlist-sync REQ-SYNC-022
 				s.logger.Error("failed to persist listens batch", "error", err)
 				return err
 			}
@@ -819,13 +821,12 @@ func (s *Syncer) syncPlaylists(ctx context.Context, u *ent.User, activeProviders
 			added, skipped, err := s.persistPlaylists(ctx, u, provider.Type(), playlists)
 			if err != nil {
 				s.logger.Error("failed to persist playlists", "error", err)
-				// Forward-looking: persistPlaylists currently handles per-item
-				// DB failures internally (Warn + continue) and always returns
-				// nil, so this branch only fires once the persist layer
-				// aggregates and returns real errors. When it does, persistence
-				// failures are real sync failures: record them in the
-				// per-provider stats and the aggregated error instead of
-				// logging a "completed" event.
+				// persistPlaylists Warn+continues per bad playlist but aggregates
+				// genuine DB failures and returns them here (issue #35). A
+				// persistence failure is a real sync failure: record it in the
+				// per-provider stats and the aggregated error, and skip the
+				// "completed" event below. Playlists persisted before the
+				// failure still count.
 				// Governing: ADR-0020, SPEC observability REQ "BG-003"
 				if st := syncStatsFor(stats, provider.Type()); st != nil {
 					st.failed = true
@@ -893,10 +894,20 @@ func (s *Syncer) publishFatalNotification(userID int, key BackoffKey, providerNa
 }
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-021 (upsert Listen with dedup by provider+track+played_at)
+// Governing: SPEC listen-playlist-sync REQ-SYNC-022 (per-track errors logged, sync continues)
+// Governing: ADR-0020 — a genuine DB failure on any track is collected and
+// returned via errors.Join so a mid-sync DB outage surfaces as a sync failure
+// (the GetRecentListens callback forwards it into the aggregated per-provider
+// error/backoff/metric path) instead of being swallowed. We still Warn+continue
+// per track so one bad row does not abort the batch. Only genuine DB errors
+// (existence-check failure, insert failure) join the returned error; EXPECTED
+// skips (validation, cross-provider dedup, already-exists) are not errors and
+// never join.
 func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source providers.Type, tracks []providers.Track) (int, int, error) {
 	savedCount := 0
 	skippedCount := 0
 	providerName := string(source)
+	var dbErrs []error
 
 	for _, track := range tracks {
 		// Basic validation
@@ -940,7 +951,11 @@ func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source provide
 		exists, err := dedupQuery.Exist(ctx)
 
 		if err != nil {
+			// Genuine DB failure: the existence check could not run. Collect it
+			// (a swallowed check-failure would let a real DB outage report success)
+			// but keep going so the rest of the batch is still attempted.
 			s.logger.Warn("failed to check existence of listen", "error", err)
+			dbErrs = append(dbErrs, fmt.Errorf("check listen existence for %q: %w", track.Name, err))
 			continue
 		}
 
@@ -971,34 +986,40 @@ func (s *Syncer) persistListens(ctx context.Context, u *ent.User, source provide
 
 		l, err := builder.Save(ctx)
 		if err != nil {
+			// Genuine DB failure: the insert did not persist. Collect it so the
+			// sync reports failure, but keep going with the rest of the batch.
 			s.logger.Warn("failed to save listen",
 				"track", track.Name,
 				"provider", source,
 				"error", err,
 			)
-		} else {
-			savedCount++
-			s.logger.Debug("saved listen", "track", track.Name, "artist", track.Artist, "provider", source)
-
-			// Log track added event
-			s.logEvent(ctx, u, syncevent.EventTypeTrackAdded, providerName,
-				fmt.Sprintf("Added: %s by %s", track.Name, track.Artist),
-				map[string]interface{}{"track": track.Name, "artist": track.Artist, "album": track.Album})
-
-			// Governing: SPEC event-bus-sse REQ-BUS-011 (recent-listen carries RecentListenPayload),
-			// REQ-BUS-012 (convenience Publish* methods)
-			s.bus.PublishRecentListen(u.ID, events.RecentListenPayload{
-				ListenID:   l.ID,
-				TrackName:  l.TrackName,
-				ArtistName: l.ArtistName,
-				AlbumName:  l.AlbumName,
-				Source:     l.Source,
-				PlayedAt:   l.PlayedAt,
-				URL:        l.URL,
-			})
+			dbErrs = append(dbErrs, fmt.Errorf("save listen %q: %w", track.Name, err))
+			continue
 		}
+
+		savedCount++
+		s.logger.Debug("saved listen", "track", track.Name, "artist", track.Artist, "provider", source)
+
+		// Log track added event
+		s.logEvent(ctx, u, syncevent.EventTypeTrackAdded, providerName,
+			fmt.Sprintf("Added: %s by %s", track.Name, track.Artist),
+			map[string]interface{}{"track": track.Name, "artist": track.Artist, "album": track.Album})
+
+		// Governing: SPEC event-bus-sse REQ-BUS-011 (recent-listen carries RecentListenPayload),
+		// REQ-BUS-012 (convenience Publish* methods)
+		s.bus.PublishRecentListen(u.ID, events.RecentListenPayload{
+			ListenID:   l.ID,
+			TrackName:  l.TrackName,
+			ArtistName: l.ArtistName,
+			AlbumName:  l.AlbumName,
+			Source:     l.Source,
+			PlayedAt:   l.PlayedAt,
+			URL:        l.URL,
+		})
 	}
-	return savedCount, skippedCount, nil
+	// Governing: ADR-0020 — collected per-track DB errors returned via errors.Join
+	// (nil when dbErrs is empty).
+	return savedCount, skippedCount, errors.Join(dbErrs...)
 }
 
 // listenDedupWindow is the ± window within which two listens with the same
@@ -1063,11 +1084,24 @@ func (s *Syncer) updateLastSyncedAt(ctx context.Context, u *ent.User, providerTy
 }
 
 // Governing: SPEC listen-playlist-sync REQ-SYNC-031 (upsert Playlist by source+remoteID)
+// Governing: ADR-0020 — genuine DB failures are collected and returned via
+// errors.Join so a mid-sync DB outage surfaces as a sync failure (the caller
+// marks the provider failed and aggregates the error) instead of being
+// swallowed. Per-playlist Warn+continue is kept so one bad playlist does not
+// abort the batch. Genuine DB errors that join: the Spotter-managed pre-query
+// failure, upsertPlaylistRow failures (existence-check / update / create), and
+// persistPlaylistTracks failures. DECISION: persistPlaylistTracks failures DO
+// join — they are real DB write failures that leave a playlist's tracks
+// inconsistent, and the sibling UpsertGeneratedPlaylist path already treats
+// them as hard errors, so persistPlaylists must not report success when they
+// fail. EXPECTED skips (empty name, Spotter-managed Navidrome playlists) are
+// not errors and never join.
 func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source providers.Type, playlists []providers.Playlist) (int, int, error) {
 	addedCount := 0
 	updatedCount := 0
 	skippedCount := 0
 	providerName := string(source)
+	var dbErrs []error
 
 	// If importing from Navidrome, get all playlist IDs that are managed by Spotter
 	// (i.e., playlists synced from other sources to Navidrome)
@@ -1081,7 +1115,11 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 			).
 			All(ctx)
 		if err != nil {
+			// Genuine DB failure: without the managed set we cannot safely
+			// exclude Spotter-managed playlists, and a failed read signals a DB
+			// problem — collect it rather than silently proceeding as success.
 			s.logger.Warn("failed to query Spotter-managed playlists", "error", err)
+			dbErrs = append(dbErrs, fmt.Errorf("query Spotter-managed playlists: %w", err))
 		} else {
 			for _, mp := range managedPlaylists {
 				spotterManagedNavidromeIDs[mp.NavidromePlaylistID] = true
@@ -1115,7 +1153,11 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 		// Governing: SPEC graceful-shutdown REQ-REC-001 (idempotent sync), REQ-REC-003 (existence check before insert)
 		saved, created, err := s.upsertPlaylistRow(ctx, u, source, pl)
 		if err != nil {
+			// Genuine DB failure (existence-check / update / create): the row did
+			// not persist. Collect it so the sync reports failure, but keep going
+			// with the remaining playlists.
 			s.logger.Warn("failed to upsert playlist", "name", pl.Name, "error", err)
+			dbErrs = append(dbErrs, fmt.Errorf("upsert playlist %q: %w", pl.Name, err))
 			continue
 		}
 		if created {
@@ -1131,7 +1173,11 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 		// Persist playlist tracks
 		if len(pl.Tracks) > 0 {
 			if err := s.persistPlaylistTracks(ctx, saved.ID, pl.Tracks); err != nil {
+				// Genuine DB failure: the playlist row saved but its tracks did
+				// not, leaving it inconsistent. Collect it (see the decision in
+				// this function's doc comment) so the sync reports failure.
 				s.logger.Warn("failed to persist playlist tracks", "playlist", pl.Name, "error", err)
+				dbErrs = append(dbErrs, fmt.Errorf("persist tracks for playlist %q: %w", pl.Name, err))
 			}
 		}
 	}
@@ -1139,7 +1185,9 @@ func (s *Syncer) persistPlaylists(ctx context.Context, u *ent.User, source provi
 		s.logger.Info("skipped Spotter-managed playlists during import",
 			"provider", providerName, "skipped", skippedCount)
 	}
-	return addedCount, updatedCount, nil
+	// Governing: ADR-0020 — collected per-playlist DB errors returned via errors.Join
+	// (nil when dbErrs is empty).
+	return addedCount, updatedCount, errors.Join(dbErrs...)
 }
 
 // upsertPlaylistRow creates or updates a single playlist row keyed by
