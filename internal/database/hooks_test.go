@@ -3,8 +3,10 @@ package database
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -657,5 +659,346 @@ func TestMultipleAuthRecords(t *testing.T) {
 		if auth.RefreshToken != expectedRefresh {
 			t.Errorf("auth[%d]: expected refresh_token %q, got %q", i, expectedRefresh, auth.RefreshToken)
 		}
+	}
+}
+
+// rawColumnValue reads the raw stored value of a column, bypassing Ent and the
+// decrypt interceptors, via a second connection to the same shared-cache
+// in-memory database. The caller must keep an ent.Client on the same DSN open
+// so the shared in-memory database is not dropped.
+func rawColumnValue(t *testing.T, dsn, query string, args ...interface{}) string {
+	t.Helper()
+	rawDB, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("failed to open raw db: %v", err)
+	}
+	defer func() { _ = rawDB.Close() }()
+
+	var value string
+	if err := rawDB.QueryRow(query, args...).Scan(&value); err != nil {
+		t.Fatalf("failed to read raw value: %v", err)
+	}
+	return value
+}
+
+// newKey returns a fresh random 32-byte AES-256 key.
+func newKey(t *testing.T) []byte {
+	t.Helper()
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	return key
+}
+
+// TestResolveEncryptedFieldSafety is a focused, function-level check of the
+// issue #335 safe-migration invariant on resolveEncryptedField:
+//   - legacy ciphertext + CORRECT key -> decrypts and yields a marked value to
+//     migrate to;
+//   - legacy ciphertext + WRONG key   -> returned as-is with NO migration value
+//     (the stored row must never be rewritten);
+//   - marked ciphertext + WRONG key   -> error (never silently healed);
+//   - genuine plaintext               -> returned as-is with no migration.
+func TestResolveEncryptedFieldSafety(t *testing.T) {
+	encCorrect, err := crypto.NewEncryptor(newKey(t))
+	if err != nil {
+		t.Fatalf("new encryptor: %v", err)
+	}
+	encWrong, err := crypto.NewEncryptor(newKey(t))
+	if err != nil {
+		t.Fatalf("new encryptor: %v", err)
+	}
+
+	const pw = "s3cr3t-value"
+	marked, err := encCorrect.Encrypt(pw)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	legacy := strings.TrimPrefix(marked, crypto.EncPrefixV1)
+	if legacy == marked {
+		t.Fatal("test setup: marked value has no enc:v1: prefix")
+	}
+
+	// Legacy + correct key -> decrypt + migrate.
+	plaintext, migrated, err := resolveEncryptedField(encCorrect, legacy)
+	if err != nil {
+		t.Fatalf("legacy+correct: unexpected error: %v", err)
+	}
+	if plaintext != pw {
+		t.Errorf("legacy+correct: plaintext = %q, want %q", plaintext, pw)
+	}
+	if migrated == "" {
+		t.Fatal("legacy+correct: expected a migration value, got none")
+	}
+	if !crypto.IsEncrypted(migrated) {
+		t.Errorf("legacy+correct: migration value %q lacks the enc:v1: marker", migrated)
+	}
+	if dec, err := encCorrect.Decrypt(migrated); err != nil || dec != pw {
+		t.Errorf("legacy+correct: migration value decrypts to (%q, %v), want (%q, nil)", dec, err, pw)
+	}
+
+	// Legacy + WRONG key -> returned as-is, NO migration (the safety invariant).
+	plaintext, migrated, err = resolveEncryptedField(encWrong, legacy)
+	if err != nil {
+		t.Fatalf("legacy+wrong: unexpected error: %v", err)
+	}
+	if migrated != "" {
+		t.Errorf("legacy+wrong: produced a migration value %q; a wrong-key read must NOT rewrite the row", migrated)
+	}
+	if plaintext != legacy {
+		t.Errorf("legacy+wrong: plaintext = %q, want the stored value returned as-is (%q)", plaintext, legacy)
+	}
+
+	// Marked + WRONG key -> error, never healed.
+	if _, migrated, err := resolveEncryptedField(encWrong, marked); err == nil {
+		t.Errorf("marked+wrong: expected error, got migrated=%q", migrated)
+	}
+
+	// Marked + correct key -> decrypt, no churn.
+	plaintext, migrated, err = resolveEncryptedField(encCorrect, marked)
+	if err != nil {
+		t.Fatalf("marked+correct: unexpected error: %v", err)
+	}
+	if plaintext != pw {
+		t.Errorf("marked+correct: plaintext = %q, want %q", plaintext, pw)
+	}
+	if migrated != "" {
+		t.Errorf("marked+correct: already-marked value should not be rewritten, got migrated=%q", migrated)
+	}
+
+	// Genuine plaintext -> returned as-is, no migration.
+	plaintext, migrated, err = resolveEncryptedField(encCorrect, "just-a-plaintext-password")
+	if err != nil {
+		t.Fatalf("plaintext: unexpected error: %v", err)
+	}
+	if plaintext != "just-a-plaintext-password" || migrated != "" {
+		t.Errorf("plaintext: got (%q, %q), want (%q, \"\")", plaintext, migrated, "just-a-plaintext-password")
+	}
+}
+
+// TestLegacyCiphertextMigratesOnCorrectKeyRead verifies the SUCCESS path of the
+// read-path migration: a row stored as legacy (pre-marker) ciphertext decrypts
+// on read and is upgraded to the enc:v1: marked format.
+func TestLegacyCiphertextMigratesOnCorrectKeyRead(t *testing.T) {
+	encryptor, err := crypto.NewEncryptor(newKey(t))
+	if err != nil {
+		t.Fatalf("new encryptor: %v", err)
+	}
+
+	const dsn = "file:ent_legacy_migrate?mode=memory&cache=shared&_fk=1"
+	client, err := ent.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer client.Close()
+	if err := client.Schema.Create(context.Background()); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	ctx := context.Background()
+
+	user, err := client.User.Create().SetUsername("testuser").Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Build legacy (unmarked) ciphertext and store it raw (no hooks yet).
+	const sessionKey = "legacy-session-key"
+	marked, err := encryptor.Encrypt(sessionKey)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	legacy := strings.TrimPrefix(marked, crypto.EncPrefixV1)
+	auth, err := client.LastFMAuth.Create().
+		SetUser(user).
+		SetSessionKey(legacy).
+		SetUsername("lastfm_user").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create auth: %v", err)
+	}
+
+	// Confirm the stored value really is the bare legacy form before the read.
+	if before := rawColumnValue(t, dsn, "SELECT session_key FROM last_fm_auths WHERE id = ?", auth.ID); before != legacy {
+		t.Fatalf("test setup: stored value = %q, want legacy %q", before, legacy)
+	}
+
+	// Now register hooks (correct key) and read: value must decrypt and migrate.
+	RegisterEncryptionHooks(client, encryptor, testLogger())
+	got, err := client.LastFMAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("read legacy row: %v", err)
+	}
+	if got.SessionKey != sessionKey {
+		t.Errorf("session_key = %q, want %q", got.SessionKey, sessionKey)
+	}
+
+	after := rawColumnValue(t, dsn, "SELECT session_key FROM last_fm_auths WHERE id = ?", auth.ID)
+	if !crypto.IsEncrypted(after) {
+		t.Fatalf("row did not migrate: stored value %q has no enc:v1: marker", after)
+	}
+	if dec, err := encryptor.Decrypt(after); err != nil || dec != sessionKey {
+		t.Errorf("migrated value decrypts to (%q, %v), want (%q, nil)", dec, err, sessionKey)
+	}
+}
+
+// TestWrongKeyReadLeavesLegacyCiphertextUntouched is the core regression test
+// for the confirmed upstream bug (issue #335). A legacy-ciphertext row read
+// under the WRONG encryption key must:
+//   - NOT error the query,
+//   - leave the stored DB value byte-for-byte UNCHANGED (no CAS write-back),
+//   - NOT gain an enc:v1: marker.
+//
+// It then re-reads with the CORRECT key to prove the original was never
+// destroyed: the value still decrypts and now migrates to the marked format.
+func TestWrongKeyReadLeavesLegacyCiphertextUntouched(t *testing.T) {
+	correctEnc, err := crypto.NewEncryptor(newKey(t))
+	if err != nil {
+		t.Fatalf("new encryptor: %v", err)
+	}
+	wrongEnc, err := crypto.NewEncryptor(newKey(t))
+	if err != nil {
+		t.Fatalf("new encryptor: %v", err)
+	}
+
+	const dsn = "file:ent_wrongkey_untouched?mode=memory&cache=shared&_fk=1"
+
+	// clientWrong stays open for the whole test so the shared in-memory DB
+	// survives; it also keeps the (wrong-key) hooks isolated from the later
+	// correct-key client.
+	clientWrong, err := ent.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer clientWrong.Close()
+	if err := clientWrong.Schema.Create(context.Background()); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	ctx := context.Background()
+
+	user, err := clientWrong.User.Create().SetUsername("testuser").Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Legacy ciphertext produced with the CORRECT key, stored raw (no hooks).
+	const pw = "navidrome-legacy-password"
+	marked, err := correctEnc.Encrypt(pw)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	legacy := strings.TrimPrefix(marked, crypto.EncPrefixV1)
+	auth, err := clientWrong.NavidromeAuth.Create().
+		SetUser(user).
+		SetPassword(legacy).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create auth: %v", err)
+	}
+
+	rawBefore := rawColumnValue(t, dsn, "SELECT password FROM navidrome_auths WHERE id = ?", auth.ID)
+	if rawBefore != legacy {
+		t.Fatalf("test setup: stored value = %q, want legacy %q", rawBefore, legacy)
+	}
+
+	// Register WRONG-key hooks and read. The read must not error, and must not
+	// touch the stored row.
+	RegisterEncryptionHooks(clientWrong, wrongEnc, testLogger())
+	gotWrong, err := clientWrong.NavidromeAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("wrong-key read errored (must not, to keep data recoverable): %v", err)
+	}
+	// Contract: undecryptable legacy value is returned as-is for in-memory use.
+	if gotWrong.Password != legacy {
+		t.Errorf("wrong-key read: in-memory password = %q, want the raw stored value %q", gotWrong.Password, legacy)
+	}
+
+	rawAfter := rawColumnValue(t, dsn, "SELECT password FROM navidrome_auths WHERE id = ?", auth.ID)
+	if rawAfter != rawBefore {
+		t.Fatalf("SAFETY VIOLATION: wrong-key read rewrote the stored value: before=%q after=%q", rawBefore, rawAfter)
+	}
+	if crypto.IsEncrypted(rawAfter) {
+		t.Fatalf("SAFETY VIOLATION: wrong-key read produced an enc:v1: marker: %q", rawAfter)
+	}
+
+	// Prove the original was never destroyed: reading with the CORRECT key on a
+	// fresh client (same shared DB) still recovers the plaintext and migrates.
+	clientCorrect, err := ent.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("open correct-key db: %v", err)
+	}
+	defer clientCorrect.Close()
+	RegisterEncryptionHooks(clientCorrect, correctEnc, testLogger())
+
+	gotCorrect, err := clientCorrect.NavidromeAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("correct-key read after wrong-key read: %v", err)
+	}
+	if gotCorrect.Password != pw {
+		t.Errorf("correct-key read: password = %q, want %q (data should be fully recoverable)", gotCorrect.Password, pw)
+	}
+	migratedRaw := rawColumnValue(t, dsn, "SELECT password FROM navidrome_auths WHERE id = ?", auth.ID)
+	if !crypto.IsEncrypted(migratedRaw) {
+		t.Errorf("correct-key read did not migrate the recovered row: %q", migratedRaw)
+	}
+	if dec, err := correctEnc.Decrypt(migratedRaw); err != nil || dec != pw {
+		t.Errorf("migrated value decrypts to (%q, %v), want (%q, nil)", dec, err, pw)
+	}
+}
+
+// TestMarkerPrefixedCredentialEncryptedOnWrite covers the write-side hazard the
+// self-heal context closes: an application credential whose plaintext literally
+// starts with the enc:v1: marker must still be encrypted on write (never stored
+// verbatim) and must round-trip on read. Storing it verbatim would hard-error
+// every subsequent read on GCM failure — the bricking bug again.
+func TestMarkerPrefixedCredentialEncryptedOnWrite(t *testing.T) {
+	encryptor, err := crypto.NewEncryptor(newKey(t))
+	if err != nil {
+		t.Fatalf("new encryptor: %v", err)
+	}
+
+	const dsn = "file:ent_marker_prefix?mode=memory&cache=shared&_fk=1"
+	client, err := ent.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer client.Close()
+	RegisterEncryptionHooks(client, encryptor, testLogger())
+	if err := client.Schema.Create(context.Background()); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	ctx := context.Background()
+
+	user, err := client.User.Create().SetUsername("testuser").Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Adversarial input: plaintext that impersonates the ciphertext marker.
+	password := crypto.EncPrefixV1 + "supersecret"
+	auth, err := client.NavidromeAuth.Create().
+		SetUser(user).
+		SetPassword(password).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create auth: %v", err)
+	}
+
+	got, err := client.NavidromeAuth.Get(ctx, auth.ID)
+	if err != nil {
+		t.Fatalf("read marker-prefixed password (bricked row?): %v", err)
+	}
+	if got.Password != password {
+		t.Errorf("password = %q, want %q", got.Password, password)
+	}
+
+	raw := rawColumnValue(t, dsn, "SELECT password FROM navidrome_auths WHERE id = ?", auth.ID)
+	if raw == password {
+		t.Fatal("marker-prefixed password was stored verbatim (plaintext), want ciphertext")
+	}
+	if !crypto.IsEncrypted(raw) {
+		t.Errorf("stored password %q lacks the enc:v1: marker", raw)
+	}
+	if dec, err := encryptor.Decrypt(raw); err != nil || dec != password {
+		t.Errorf("stored password decrypts to (%q, %v), want (%q, nil)", dec, err, password)
 	}
 }
