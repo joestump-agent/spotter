@@ -20,6 +20,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/httputil"
 	"spotter/internal/providers"
+	"spotter/internal/resilience"
 )
 
 const (
@@ -395,7 +396,8 @@ func (p *Provider) doRequest(ctx context.Context, method string, params map[stri
 		body, _ := io.ReadAll(resp.Body)
 		retryAfter := httputil.RetryAfter(resp)
 		p.closeBody(resp)
-		lastErr = fmt.Errorf("last.fm api returned status %d: %s", resp.StatusCode, string(body))
+		// Governing: ADR-0020, SPEC error-handling REQ-ERR-002/REQ-ERR-003
+		lastErr = resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("last.fm api returned status %d: %s", resp.StatusCode, string(body)))
 
 		switch {
 		case resp.StatusCode == http.StatusTooManyRequests:

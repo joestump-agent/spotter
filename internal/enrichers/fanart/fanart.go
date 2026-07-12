@@ -13,6 +13,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
 	"spotter/internal/httputil"
+	"spotter/internal/resilience"
 )
 
 const (
@@ -118,7 +119,8 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("Fanart.tv API returned status %d", resp.StatusCode)
+			// Governing: ADR-0020, SPEC error-handling REQ-ERR-002/REQ-ERR-003
+			return nil, resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("Fanart.tv API returned status %d", resp.StatusCode))
 		}
 
 		if readErr != nil {

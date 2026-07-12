@@ -16,6 +16,7 @@ import (
 	"spotter/internal/config"
 	"spotter/internal/enrichers"
 	"spotter/internal/httputil"
+	"spotter/internal/resilience"
 	"spotter/internal/tags"
 
 	"golang.org/x/oauth2"
@@ -221,7 +222,8 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 			resp.Body.Close()
 
 			if attempt == maxRetries {
-				return nil, fmt.Errorf("Spotify API rate limited after %d retries", maxRetries)
+				// Governing: ADR-0020, SPEC error-handling REQ-ERR-002 (429 retriable)
+				return nil, resilience.NewHTTPStatusError(http.StatusTooManyRequests, fmt.Errorf("Spotify API rate limited after %d retries", maxRetries))
 			}
 
 			e.logger.Warn("Spotify API rate limited, retrying",
@@ -252,17 +254,20 @@ func (e *Enricher) doRequest(ctx context.Context, endpoint string) ([]byte, erro
 				}
 				continue
 			}
-			return nil, fmt.Errorf("Spotify API unauthorized - token may be invalid")
+			// Governing: ADR-0020, SPEC error-handling REQ-ERR-003 (401 is fatal)
+			return nil, resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("Spotify API unauthorized - token may be invalid"))
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("Spotify API returned status %d", resp.StatusCode)
+			// Governing: ADR-0020, SPEC error-handling REQ-ERR-002/REQ-ERR-003
+			return nil, resilience.NewHTTPStatusError(resp.StatusCode, fmt.Errorf("Spotify API returned status %d", resp.StatusCode))
 		}
 
 		return body, nil
 	}
 
-	return nil, fmt.Errorf("Spotify API rate limited after %d retries", maxRetries)
+	// Governing: ADR-0020, SPEC error-handling REQ-ERR-002 (429 retriable)
+	return nil, resilience.NewHTTPStatusError(http.StatusTooManyRequests, fmt.Errorf("Spotify API rate limited after %d retries", maxRetries))
 }
 
 // Spotify API response types
