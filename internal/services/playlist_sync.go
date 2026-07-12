@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"spotter/ent"
@@ -26,6 +27,14 @@ type PlaylistSyncService struct {
 	bus          *events.Bus
 	trackMatcher *TrackMatcher
 	factories    []providers.Factory
+
+	// Per-playlist mutexes serialize sync, rebuild, pair, and remove operations
+	// on the same playlist so their read-decide-write cycles cannot interleave.
+	// locksMu guards the locks map itself; each entry is the mutex for one
+	// playlist ID. See lockPlaylist.
+	// Governing: issue #48 (playlist sync concurrency guard)
+	locksMu sync.Mutex
+	locks   map[int]*sync.Mutex
 }
 
 // NewPlaylistSyncService creates a new PlaylistSyncService.
@@ -43,7 +52,33 @@ func NewPlaylistSyncService(
 		bus:          bus,
 		trackMatcher: trackMatcher,
 		factories:    make([]providers.Factory, 0),
+		locks:        make(map[int]*sync.Mutex),
 	}
+}
+
+// lockPlaylist acquires the per-playlist mutex for playlistID, lazily creating
+// it on first use, and returns the function that releases it. Every operation
+// that reads a playlist's pairing state and then writes it back — sync,
+// rebuild, pair, and remove — must hold this lock for the whole read-write
+// cycle so they serialize per playlist instead of racing last-write-wins.
+//
+// Without it, a sync in flight for an enabled-but-unpaired playlist loads the
+// row with an empty navidrome_playlist_id, creates a fresh remote playlist, and
+// its Save overwrites the id a concurrent PairWithNavidrome just committed —
+// leaving the user unlinked with a duplicate Navidrome playlist. The lock is
+// per playlist, so syncs of different playlists still proceed concurrently.
+// Governing: issue #48 (playlist sync concurrency guard)
+func (s *PlaylistSyncService) lockPlaylist(playlistID int) func() {
+	s.locksMu.Lock()
+	mu, ok := s.locks[playlistID]
+	if !ok {
+		mu = &sync.Mutex{}
+		s.locks[playlistID] = mu
+	}
+	s.locksMu.Unlock()
+
+	mu.Lock()
+	return mu.Unlock
 }
 
 // Register adds a provider factory to the service.
@@ -62,11 +97,25 @@ func (s *PlaylistSyncService) SyncPlaylistToNavidrome(ctx context.Context, playl
 	return s.syncPlaylistToNavidrome(ctx, playlistID, nil)
 }
 
-// syncPlaylistToNavidrome performs the sync. libraryIndex may be nil (it is
-// loaded on demand); callers syncing many playlists in one tick (issue #330)
-// pass a shared index so the user's library is loaded once per tick instead
-// of once per playlist.
+// syncPlaylistToNavidrome acquires the per-playlist lock and then performs the
+// sync. It is the entry point for callers that do NOT already hold the lock:
+// SyncPlaylistToNavidrome and the scheduler's SyncAllEnabledPlaylists (each
+// playlist in a tick is locked independently). Callers that already hold the
+// lock (PairWithNavidrome, RebuildPlaylistSync) call syncPlaylistToNavidromeLocked
+// directly to avoid re-entrant deadlock.
+// Governing: issue #48 (playlist sync concurrency guard)
 func (s *PlaylistSyncService) syncPlaylistToNavidrome(ctx context.Context, playlistID int, libraryIndex *LibraryIndex) error {
+	unlock := s.lockPlaylist(playlistID)
+	defer unlock()
+	return s.syncPlaylistToNavidromeLocked(ctx, playlistID, libraryIndex)
+}
+
+// syncPlaylistToNavidromeLocked performs the sync. The caller MUST hold the
+// per-playlist lock (see lockPlaylist) for the duration of the call.
+// libraryIndex may be nil (it is loaded on demand); callers syncing many
+// playlists in one tick (issue #330) pass a shared index so the user's library
+// is loaded once per tick instead of once per playlist.
+func (s *PlaylistSyncService) syncPlaylistToNavidromeLocked(ctx context.Context, playlistID int, libraryIndex *LibraryIndex) error {
 	startTime := time.Now()
 
 	s.logger.Info("starting playlist sync to Navidrome",
@@ -367,6 +416,14 @@ func (s *PlaylistSyncService) PairWithNavidrome(ctx context.Context, playlistID 
 		"playlist_id", playlistID,
 		"navidrome_remote_id", navidromeRemoteID)
 
+	// Hold the per-playlist lock across the whole pairing so a concurrent sync
+	// cannot load the still-unpaired row, create a duplicate remote playlist,
+	// and overwrite (last-write-wins) the navidrome_playlist_id we set below.
+	// The follow-up sync runs via the *Locked variant because we already hold it.
+	// Governing: issue #48 (playlist sync concurrency guard)
+	unlock := s.lockPlaylist(playlistID)
+	defer unlock()
+
 	// 1. Update the Spotter playlist: set navidrome_playlist_id
 	pl, err := s.client.Playlist.Query().
 		Where(playlist.ID(playlistID)).
@@ -410,8 +467,9 @@ func (s *PlaylistSyncService) PairWithNavidrome(ctx context.Context, playlistID 
 		}
 	}
 
-	// 4. Trigger sync (will UPDATE the existing Navidrome playlist)
-	return s.SyncPlaylistToNavidrome(ctx, playlistID)
+	// 4. Trigger sync (will UPDATE the existing Navidrome playlist).
+	// We already hold the per-playlist lock, so call the *Locked variant.
+	return s.syncPlaylistToNavidromeLocked(ctx, playlistID, nil)
 }
 
 // ListNavidromePlaylists returns the user's playlists straight from the
@@ -535,6 +593,12 @@ func (s *PlaylistSyncService) RemovePlaylistFromNavidromeWithChoice(ctx context.
 		"playlist_id", playlistID,
 		"delete_remote", deleteRemote)
 
+	// Hold the per-playlist lock so clearing the pairing does not race a
+	// concurrent sync or pair on the same playlist.
+	// Governing: issue #48 (playlist sync concurrency guard)
+	unlock := s.lockPlaylist(playlistID)
+	defer unlock()
+
 	// Check if deletion is requested
 	if !deleteRemote {
 		s.logger.Debug("delete not requested, keeping Navidrome playlist",
@@ -653,6 +717,13 @@ func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistI
 	s.logger.Info("rebuild playlist sync requested",
 		"playlist_id", playlistID)
 
+	// Hold the per-playlist lock across the delete + clear + fresh sync so a
+	// concurrent pair or sync cannot interleave with the rebuild's read-write
+	// cycle. The fresh sync below runs via the *Locked variant since we hold it.
+	// Governing: issue #48 (playlist sync concurrency guard)
+	unlock := s.lockPlaylist(playlistID)
+	defer unlock()
+
 	// Load playlist with user
 	pl, err := s.client.Playlist.Query().
 		Where(playlist.ID(playlistID)).
@@ -761,12 +832,13 @@ func (s *PlaylistSyncService) RebuildPlaylistSync(ctx context.Context, playlistI
 	s.logger.Debug("cleared sync info, starting fresh sync",
 		"playlist_id", playlistID)
 
-	// Now perform a fresh sync
-	if err := s.SyncPlaylistToNavidrome(ctx, playlistID); err != nil {
+	// Now perform a fresh sync. We already hold the per-playlist lock, so call
+	// the *Locked variant to avoid re-entrant deadlock.
+	if err := s.syncPlaylistToNavidromeLocked(ctx, playlistID, nil); err != nil {
 		s.logger.Error("failed to sync playlist after rebuild",
 			"playlist_id", playlistID,
 			"error", err)
-		return err // Error already logged and handled by SyncPlaylistToNavidrome
+		return err // Error already logged and handled by syncPlaylistToNavidromeLocked
 	}
 
 	duration := time.Since(startTime)
