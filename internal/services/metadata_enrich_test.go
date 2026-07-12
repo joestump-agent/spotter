@@ -124,6 +124,200 @@ func TestEnrichArtist_ExternalIDConflictKeepsRestOfUpdate(t *testing.T) {
 	assert.NotNil(t, got.LastEnrichedAt, "LastEnrichedAt must survive the retry")
 }
 
+// mbidRecordingArtistEnricher records the MBID present on the artist it is
+// handed, so a test can assert it saw an MBID that a prior enricher resolved
+// in the same pass.
+type mbidRecordingArtistEnricher struct {
+	name    string
+	sawMBID string
+}
+
+func (s *mbidRecordingArtistEnricher) Type() enrichers.Type { return enrichers.Type(s.name) }
+func (s *mbidRecordingArtistEnricher) Name() string         { return s.name }
+func (s *mbidRecordingArtistEnricher) IsAvailable() bool    { return true }
+
+func (s *mbidRecordingArtistEnricher) EnrichArtist(ctx context.Context, artist *ent.Artist) (*enrichers.ArtistData, error) {
+	s.sawMBID = artist.MusicbrainzID
+	return nil, nil
+}
+
+func (s *mbidRecordingArtistEnricher) GetArtistImages(ctx context.Context, artist *ent.Artist) ([]enrichers.ImageData, error) {
+	return nil, nil
+}
+
+// TestEnrichArtist_ResolvedMBIDVisibleToLaterEnricher verifies that when an
+// earlier enricher (playing the MusicBrainz role) resolves an MBID for an
+// artist that had none, a later enricher in the same pass is handed the
+// freshly-resolved MBID rather than the stale, empty stored value.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-064
+func TestEnrichArtist_ResolvedMBIDVisibleToLaterEnricher(t *testing.T) {
+	svc := newTestMetadataService(t)
+	ctx := context.Background()
+
+	u, err := svc.client.User.Create().SetUsername("testuser").SetTheme("dark").Save(ctx)
+	require.NoError(t, err)
+
+	art, err := svc.client.Artist.Create().SetName("Test Artist").SetUser(u).Save(ctx)
+	require.NoError(t, err)
+	require.Empty(t, art.MusicbrainzID, "precondition: artist has no stored MBID")
+
+	const mbid = "33333333-3333-3333-3333-333333333333"
+	resolver := &stubArtistEnricher{
+		name: "musicbrainz",
+		data: &enrichers.ArtistData{MusicBrainzID: mbid},
+	}
+	recorder := &mbidRecordingArtistEnricher{name: "listenbrainz"}
+
+	err = svc.enrichArtist(ctx, u, art, enrichers.List{resolver, recorder}, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, mbid, recorder.sawMBID,
+		"later enricher must see the MBID the earlier enricher resolved this pass")
+
+	got, err := svc.client.Artist.Get(ctx, art.ID)
+	require.NoError(t, err)
+	assert.Equal(t, mbid, got.MusicbrainzID, "resolved MBID must be persisted")
+}
+
+// mbidRecordingTrackEnricher records the MBID present on the track it is handed.
+type mbidRecordingTrackEnricher struct {
+	name    string
+	sawMBID string
+	sawSet  bool
+}
+
+func (s *mbidRecordingTrackEnricher) Type() enrichers.Type { return enrichers.Type(s.name) }
+func (s *mbidRecordingTrackEnricher) Name() string         { return s.name }
+func (s *mbidRecordingTrackEnricher) IsAvailable() bool    { return true }
+
+func (s *mbidRecordingTrackEnricher) EnrichTrack(ctx context.Context, track *ent.Track) (*enrichers.TrackData, error) {
+	if track.MusicbrainzID != nil {
+		s.sawMBID = *track.MusicbrainzID
+		s.sawSet = true
+	}
+	return nil, nil
+}
+
+// TestEnrichTrack_ResolvedMBIDVisibleToLaterEnricher verifies the primary
+// scenario from the issue: for a track with no stored MBID, once the earlier
+// enricher (MusicBrainz role) resolves a recording MBID, the later enricher
+// (ListenBrainz role, which keys off the recording MBID) is handed that same
+// MBID instead of running its own lookup that could resolve a different
+// recording and silently append mismatched tags/duration/popularity.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-064
+func TestEnrichTrack_ResolvedMBIDVisibleToLaterEnricher(t *testing.T) {
+	svc := newTestMetadataService(t)
+	ctx := context.Background()
+
+	u, err := svc.client.User.Create().SetUsername("testuser").SetTheme("dark").Save(ctx)
+	require.NoError(t, err)
+
+	art, err := svc.client.Artist.Create().SetName("Test Artist").SetUser(u).Save(ctx)
+	require.NoError(t, err)
+
+	alb, err := svc.client.Album.Create().SetName("Test Album").SetArtist(art).SetUser(u).Save(ctx)
+	require.NoError(t, err)
+
+	track, err := svc.client.Track.Create().
+		SetName("Test Track").
+		SetArtist(art).
+		SetAlbum(alb).
+		Save(ctx)
+	require.NoError(t, err)
+	require.Nil(t, track.MusicbrainzID, "precondition: track has no stored MBID")
+
+	const mbid = "44444444-4444-4444-4444-444444444444"
+	resolver := &stubTrackEnricher{
+		name: "musicbrainz",
+		data: &enrichers.TrackData{MusicBrainzID: mbid},
+	}
+	recorder := &mbidRecordingTrackEnricher{name: "listenbrainz"}
+
+	err = svc.enrichTrack(ctx, u, track, enrichers.List{resolver, recorder}, nil)
+	require.NoError(t, err)
+
+	require.True(t, recorder.sawSet, "later enricher must receive a non-nil MBID")
+	assert.Equal(t, mbid, recorder.sawMBID,
+		"later track enricher must see the recording MBID resolved this pass")
+
+	got, err := svc.client.Track.Get(ctx, track.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.MusicbrainzID)
+	assert.Equal(t, mbid, *got.MusicbrainzID, "resolved MBID must be persisted")
+}
+
+// stubAlbumEnricher is a configurable fake implementing enrichers.AlbumEnricher.
+type stubAlbumEnricher struct {
+	name string
+	data *enrichers.AlbumData
+}
+
+func (s *stubAlbumEnricher) Type() enrichers.Type { return enrichers.Type(s.name) }
+func (s *stubAlbumEnricher) Name() string         { return s.name }
+func (s *stubAlbumEnricher) IsAvailable() bool    { return true }
+
+func (s *stubAlbumEnricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enrichers.AlbumData, error) {
+	return s.data, nil
+}
+
+func (s *stubAlbumEnricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enrichers.ImageData, error) {
+	return nil, nil
+}
+
+// mbidRecordingAlbumEnricher records the MBID present on the album it is handed.
+type mbidRecordingAlbumEnricher struct {
+	name    string
+	sawMBID string
+}
+
+func (s *mbidRecordingAlbumEnricher) Type() enrichers.Type { return enrichers.Type(s.name) }
+func (s *mbidRecordingAlbumEnricher) Name() string         { return s.name }
+func (s *mbidRecordingAlbumEnricher) IsAvailable() bool    { return true }
+
+func (s *mbidRecordingAlbumEnricher) EnrichAlbum(ctx context.Context, album *ent.Album) (*enrichers.AlbumData, error) {
+	s.sawMBID = album.MusicbrainzID
+	return nil, nil
+}
+
+func (s *mbidRecordingAlbumEnricher) GetAlbumImages(ctx context.Context, album *ent.Album) ([]enrichers.ImageData, error) {
+	return nil, nil
+}
+
+// TestEnrichAlbum_ResolvedMBIDVisibleToLaterEnricher verifies the same-pass
+// MBID propagation fix for the album path.
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-064
+func TestEnrichAlbum_ResolvedMBIDVisibleToLaterEnricher(t *testing.T) {
+	svc := newTestMetadataService(t)
+	ctx := context.Background()
+
+	u, err := svc.client.User.Create().SetUsername("testuser").SetTheme("dark").Save(ctx)
+	require.NoError(t, err)
+
+	art, err := svc.client.Artist.Create().SetName("Test Artist").SetUser(u).Save(ctx)
+	require.NoError(t, err)
+
+	alb, err := svc.client.Album.Create().SetName("Test Album").SetArtist(art).SetUser(u).Save(ctx)
+	require.NoError(t, err)
+	require.Empty(t, alb.MusicbrainzID, "precondition: album has no stored MBID")
+
+	const mbid = "55555555-5555-5555-5555-555555555555"
+	resolver := &stubAlbumEnricher{
+		name: "musicbrainz",
+		data: &enrichers.AlbumData{MusicBrainzID: mbid},
+	}
+	recorder := &mbidRecordingAlbumEnricher{name: "listenbrainz"}
+
+	err = svc.enrichAlbum(ctx, u, alb, enrichers.List{resolver, recorder}, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, mbid, recorder.sawMBID,
+		"later album enricher must see the MBID the earlier enricher resolved this pass")
+
+	got, err := svc.client.Album.Get(ctx, alb.ID)
+	require.NoError(t, err)
+	assert.Equal(t, mbid, got.MusicbrainzID, "resolved MBID must be persisted")
+}
+
 // TestArtistExternalIDs_UniquePerUserNotGlobally verifies the schema change:
 // artists are per-user rows, so the same MBID/Spotify ID may exist for
 // different users, but not twice for the same user.
