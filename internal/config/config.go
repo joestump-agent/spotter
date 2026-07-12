@@ -346,6 +346,44 @@ func (c *Config) GetEncryptionKeyBytes() ([]byte, error) {
 	return key, nil
 }
 
+// Governing: ADR-0009 (Viper configuration), ADR-0023 (multi-database support), SPEC-0016 REQ "Driver Validation", REQ "Driver-Specific Default Source"
+// LoadDatabase resolves only the database driver and source, applying the same
+// SPOTTER_* environment binding, defaults, driver validation, and
+// driver-specific default source that Load() applies to the Database section.
+// It exists so the admin CLI can obtain database configuration through this
+// package — honoring the same env vars and precedence as the server — without
+// triggering the server-only validation (encryption key, JWT secret, Navidrome,
+// OpenAI) that a full Load() would require.
+func LoadDatabase() (driver, source string, err error) {
+	v := viper.New()
+
+	v.SetEnvPrefix("SPOTTER")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	v.SetDefault("database.driver", "sqlite3")
+	v.SetDefault("database.source", "file:spotter.db?cache=shared&_fk=1")
+
+	driver = v.GetString("database.driver")
+	source = v.GetString("database.source")
+
+	// Governing: SPEC-0016 REQ "Driver Validation", ADR-0023
+	validDrivers := map[string]bool{"sqlite3": true, "postgres": true, "mysql": true}
+	if !validDrivers[driver] {
+		return "", "", fmt.Errorf("unsupported database driver %q: must be one of sqlite3, postgres, mysql", driver)
+	}
+
+	// Governing: SPEC-0016 REQ "Driver-Specific Default Source", ADR-0023
+	const sqliteDefault = "file:spotter.db?cache=shared&_fk=1"
+	if driver == "postgres" && (source == "" || source == sqliteDefault) {
+		source = "host=localhost port=5432 dbname=spotter sslmode=disable"
+	} else if driver == "mysql" && (source == "" || source == sqliteDefault) {
+		source = "spotter:spotter@tcp(localhost:3306)/spotter?parseTime=true&charset=utf8mb4"
+	}
+
+	return driver, source, nil
+}
+
 func Load() (*Config, error) {
 	v := viper.New()
 
