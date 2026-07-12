@@ -332,7 +332,7 @@ func main() {
 	}()
 
 	// Background Metadata Enrichment Loop
-	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-040 (background scheduler on configurable interval),
+	// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-041 (background scheduler on configurable interval),
 	// SPEC metadata-enrichment-pipeline REQ-ENRICH-042 (per-user isolation in enrichment runs),
 	// SPEC metadata-enrichment-pipeline REQ-ENRICH-043 (MetadataService coordinates all enrichers)
 	if cfg.Metadata.Enabled {

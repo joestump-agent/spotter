@@ -5,7 +5,7 @@ package services
 // SyncAllArtistImages / SyncAllAlbumImages. All fetches go to a local
 // httptest server; no network is touched.
 //
-// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030/032/033, ADR-0027
+// Governing: SPEC metadata-enrichment-pipeline REQ-ENRICH-030/033, ADR-0027
 
 import (
 	"bytes"
